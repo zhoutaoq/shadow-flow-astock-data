@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="GLfPlOD52lIgVIHxkIl1Sh">
+<head data-page-node-id="GWIRAaz2rSmyf6Pir8tVg7">
+    <meta charset="UTF-8" data-page-node-id="IFxfZLByN82ba2Ena2A7YQ">
+    <title>策略回测 - 金牛数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260907f" data-page-node-id="IblNgYhVsHPlrioFhjaH2B">
+    <style>
+        /* ============ 参数区：2×2，右侧买入/卖出更宽，保证判断组件一行放得下 ============ */
+        .cfg-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+            gap: 14px;
+            align-items: start;
+        }
+
+        /* 左列：回测对象 / 时间范围；右列：买入策略 / 卖出策略 */
+        .cfg-card.c1 { grid-column: 1; grid-row: 1; }
+        .cfg-card.c2 { grid-column: 1; grid-row: 2; }
+        .cfg-card.c3 { grid-column: 2; grid-row: 1; }
+        .cfg-card.c4 { grid-column: 2; grid-row: 2; }
+
+        @media (max-width: 1080px) {
+            .cfg-grid { grid-template-columns: minmax(0, 1fr); }
+            .cfg-card.c1, .cfg-card.c2, .cfg-card.c3, .cfg-card.c4 {
+                grid-column: 1;
+                grid-row: auto;
+            }
+        }
+
+        /* 四张卡片各用一个主色区分：对象=蓝、区间=青、买入=红、卖出=绿 */
+        .cfg-card {
+            --accent: var(--primary);
+            --accent-soft: rgba(59, 124, 255, .14);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: linear-gradient(180deg, var(--accent-soft), rgba(0, 0, 0, 0) 90px), var(--bg-input);
+            border: 1px solid var(--border);
+            border-top: 2px solid var(--accent);
+            border-radius: 8px;
+            padding: 12px 14px 14px;
+        }
+
+        .cfg-card.c1 { --accent: #3b7cff; --accent-soft: rgba(59, 124, 255, .14); }
+        .cfg-card.c2 { --accent: #17a2a0; --accent-soft: rgba(23, 162, 160, .14); }
+        .cfg-card.c3 { --accent: #e5484d; --accent-soft: rgba(229, 72, 77, .14); }
+        .cfg-card.c4 { --accent: #2ea043; --accent-soft: rgba(46, 160, 67, .14); }
+
+        .cfg-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+            color: var(--accent);
+        }
+
+        .cfg-idx {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: none;
+        }
+
+        /* 卡片右上角的一句话说明，跟着主色走 */
+        .cfg-tag {
+            margin-left: auto;
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--accent);
+            background: var(--accent-soft);
+            border: 1px solid var(--accent-soft);
+            border-radius: 10px;
+            padding: 1px 8px;
+            white-space: nowrap;
+        }
+
+        .cfg-head .cfg-opt { margin-left: auto; font-weight: 400; }
+
+        .cfg-card .field { width: 100%; }
+        .cfg-card .field input,
+        .cfg-card .field select { width: 100%; min-width: 0; }
+        .cfg-card .sp { min-width: 0; width: 100%; }
+
+        .cfg-sub {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        /* 判断组件：整行不换行，宽度不够时控件自己收缩，删除按钮靠右 */
+        .cond-row {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+            padding: 8px 0;
+            border-bottom: 1px dashed #2b3145;
+            font-size: 12px;
+        }
+
+        .cond-row .idx { flex: none; color: var(--text-dim); }
+        .cond-row input[type=number] { width: 54px; min-width: 0; flex: 0 0 auto; }
+        .cond-row select { width: auto; min-width: 60px; max-width: 175px; flex: 0 0 auto; }
+        .cond-row .btn-ghost { padding: 2px 8px; font-size: 12px; margin-left: auto; flex: none; }
+
+        .cond-empty {
+            padding: 10px 0;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        /* ============ 结果区 ============ */
+        .chart-box { width: 100%; height: 420px; }
+        .chart-box.small { height: 300px; }
+
+        .chart-ctrl {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .chk {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            color: var(--text-dim);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .chk input { accent-color: var(--primary); cursor: pointer; }
+        .chk .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+        /* 明细入口：默认收起，点击弹窗查看 */
+        .tile-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+
+        .tile {
+            flex: 1 1 260px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+            cursor: pointer;
+            color: var(--text);
+            text-align: left;
+        }
+
+        .tile:hover { border-color: var(--primary); background: #16203a; }
+        .tile b { font-size: 14px; font-weight: 600; }
+        .tile .dim { font-size: 12px; }
+        .tile .arrow { margin-left: auto; color: var(--primary); font-size: 13px; }
+
+        .strategy { display: flex; flex-direction: column; gap: 8px; }
+
+        .strat-line {
+            display: flex;
+            gap: 8px;
+            font-size: 13px;
+            border-bottom: 1px dashed #232b3d;
+            padding-bottom: 6px;
+        }
+
+        /* 标签不换行：买入（且：全部满足才触发）这类要整段待在一行 */
+        .strat-line .k, .strat-rule .k {
+            flex: none;
+            min-width: 74px;
+            white-space: nowrap;
+            color: var(--text-dim);
+            font-size: 12px;
+        }
+
+        .strat-rule .k { padding-top: 1px; }
+
+        .strat-line .v { flex: 1; }
+
+        .strat-rule { display: flex; gap: 8px; font-size: 13px; }
+        .strat-rule ol { margin: 0; padding-left: 18px; flex: 1; }
+        .strat-rule li { margin-bottom: 2px; }
+
+        .table-scroll { overflow: auto; max-height: 66vh; }
+    </style>
+</head>
+<body data-page-node-id="NYO3uWlCPxAMnloGqZAlb8">
+<header class="topbar" data-page-node-id="rME8o8HCqjYfi3pFTabXFa">
+    <a class="brand" href="/" data-page-node-id="PYLJCVxxeZFZ7lOrig3FVP">金牛数据 <span class="sub" data-page-node-id="ASSJFHWZZqL5HzfN2RpDi4">回测</span></a>
+    <nav class="nav" id="nav" data-page-node-id="48h5lg2dPr3BGRvLEe7M9E"></nav>
+</header>
+
+<main class="container" data-page-node-id="1U2lQ7kUFitakFeeH7FOnJ">
+    <div id="msgBox" class="msg" data-page-node-id="KsfgevcLl5Cs2dGIarGxXg"></div>
+
+    <section class="panel" data-page-node-id="IX70WhLCeB4EjqKP1Spe9i">
+        <h2 data-page-node-id="HNfdqfbTWYPGby5u1ATtwn">回测配置</h2>
+        <div class="cfg-grid" data-page-node-id="t9dTy0TDLhPCTmXhVI6UTw">
+            <!-- 1 回测对象 -->
+            <div class="cfg-card c1" data-page-node-id="Cx7KYij46smKsERsTC27wR">
+                <div class="cfg-head" data-page-node-id="t3DCWGTw7xrbQB4tSM3L43"><span class="cfg-idx" data-page-node-id="AgE2HE8uSrOxFgljCWxHlK">1</span>回测对象<span class="cfg-tag">标的 · 账户</span></div>
+                <div class="field" data-page-node-id="vMxgmbNVZ4XHR4XFjeJ2zu">
+                    <label data-page-node-id="INQFlvly8U764M8dc88jim">股票 *</label>
+                    <div id="codePick" data-page-node-id="0nHvw0C2BF3FdCfhAftf8h"></div>
+                    <div class="sp-hint" data-page-node-id="tK0L6BGdxBrrvqQEe6MODP">输入代码或名称，从匹配结果里<b data-page-node-id="d41JjAWVO6hdgVNH4FZnQC">点选一只</b></div>
+                </div>
+                <div class="cfg-sub" data-page-node-id="CkPbMntQDEdDddrmxajn3u">账户</div>
+                <div class="field" data-page-node-id="uSBhqELuQG3U4omIISSrNB">
+                    <label data-page-node-id="qY9uzhB1nfXtxUQ5qeas8c">账户起始金额 *</label>
+                    <input type="number" id="fInit" value="100000" min="1" step="1000" data-page-node-id="2ZmVIYAkt9fA3X2pHQ46I1">
+                </div>
+                <div class="field" data-page-node-id="mgcQqbl0go0jl1Ci7ROsEm">
+                    <label data-page-node-id="ElCnXtSzjbv9dAuIRNOszs">手续费滑点 *</label>
+                    <input type="number" id="fFee" value="0.01" min="0" step="0.001" data-page-node-id="WUlMPZwUcyXgyB8jzryMqw">
+                    <div class="sp-hint" data-page-node-id="SBXfn9pKKoOikWBxcFhlpK">单位 %，0.01% = 万分之一</div>
+                </div>
+                <div class="cfg-sub">涨跌停成交</div>
+                <div class="field">
+                    <label>处理策略</label>
+                    <select id="fLimitStrategy" onchange="toggleLimitRatio()">
+                        <option value="1">1 无视（仍按信号日收盘价成交）</option>
+                        <option value="2">2 次日开盘非涨跌停立即成交</option>
+                        <option value="3">3 次日非涨跌停且涨跌幅达阈值才成交</option>
+                    </select>
+                    <div class="sp-hint">信号日收盘价封在涨跌停板上时不保证能成交，这里决定怎么处理</div>
+                </div>
+                <div class="field" id="fLimitRatioField" style="display:none">
+                    <label>涨跌幅阈值 n%</label>
+                    <div style="display:flex;gap:6px">
+                        <select id="fLimitOp" style="flex:0 0 92px">
+                            <option value="gt">涨幅 &gt;</option>
+                            <option value="lt">跌幅 &gt;</option>
+                        </select>
+                        <input type="number" id="fLimitRatio" value="3" min="0" step="0.1" style="flex:1">
+                    </div>
+                    <div class="sp-hint">相对信号日收盘价计算；买入遇次日涨停开盘、卖出遇次日跌停开盘一律作废</div>
+                </div>
+            </div>
+
+            <!-- 2 时间范围 -->
+            <div class="cfg-card c2" data-page-node-id="vZr0a06oURV6rUCUJo0RRp">
+                <div class="cfg-head" data-page-node-id="fpTE4AM7OvKFoeHHfLcaIQ"><span class="cfg-idx" data-page-node-id="11KMw0n3aCJspHCleckd3R">2</span>时间范围<span class="cfg-tag">起止 · 跨度</span></div>
+                <div class="field" data-page-node-id="XkLA6rDBmLCFhhTHncZRFE">
+                    <label data-page-node-id="Qx21QFyXhf7puJX0fy1tgz">开始日期 *</label>
+                    <input type="date" id="fStart" data-page-node-id="NR5ZGAbj0MaFsLbmQo6Y6V">
+                </div>
+                <div class="field" data-page-node-id="IA1XIl7GN32enKZhKfJXue">
+                    <label data-page-node-id="qLlZUfOF11ZrRykg7Eylph">结束日期 *</label>
+                    <input type="date" id="fEnd" data-page-node-id="m2LCeagucMvpq3O6aq8zrc">
+                </div>
+                <div class="cfg-sub" data-page-node-id="B2K5196cWG6nkuGNvH239C">快捷区间</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap" data-page-node-id="IRIbi0Mx7X2fX4sbIDRWRp">
+                    <button class="btn-ghost btn-sm" onclick="setRange(90)" data-page-node-id="4kwpV5zTFLnt9FaqBQdHzQ">近3月</button>
+                    <button class="btn-ghost btn-sm" onclick="setRange(365)" data-page-node-id="TNtfVVMZK23ivrBgiAxPyY">近1年</button>
+                    <button class="btn-ghost btn-sm" onclick="setRange(1095)" data-page-node-id="066LqbVocUQ084QMzehQyk">近3年</button>
+                </div>
+                <div class="sp-hint" id="spanHint" data-page-node-id="oNfm8aAQciEZ8fKHuZgxgH"></div>
+                <div class="sp-hint" data-page-node-id="q83yghwy70ktPAK4b6JCg3">
+                    区间之前的数据只用于计算均线/涨幅，不产生交易；起止两天缺数据时会先从供应商补一次。
+                </div>
+            </div>
+
+            <!-- 3 买入策略 -->
+            <div class="cfg-card c3" data-page-node-id="AkNGMLrYatXEcaY5DVYKFG">
+                <div class="cfg-head" data-page-node-id="JR6iqondq2nCHyazjsYvi7">
+                    <span class="cfg-idx" data-page-node-id="RpAdhKwFMduLCqUALDYe8a">3</span>买入策略<span class="cfg-tag">全仓买入</span>
+                </div>
+                <div class="field" data-page-node-id="PHqvYv5JppZguXTTbYBskq">
+                    <label data-page-node-id="C3Sf0OE0DPdDKMJtwXBi9H">组合关系</label>
+                    <select id="buyLogic" data-page-node-id="ChL9qzSYVY0PWv06Q17qTE">
+                        <option value="and" selected data-page-node-id="cy9R965D2BntFDIT1E57eI">且（全部满足才买入）</option>
+                        <option value="or" data-page-node-id="Sg7QFR8llEhlVXqpuz6zep">或（任一满足即买入）</option>
+                    </select>
+                </div>
+                <div id="buyConds" data-page-node-id="2W6tijdUhL6WPcqZc1xBQr"></div>
+                <button class="btn-ghost btn-sm" onclick="addCond('buy')" data-page-node-id="drbcsi3exbWXWX7PaeTN4d">+ 添加判断组件</button>
+            </div>
+
+            <!-- 4 卖出策略 -->
+            <div class="cfg-card c4" data-page-node-id="0JQgSRcJolcCnRIn62trrv">
+                <div class="cfg-head" data-page-node-id="YxaUW71gVKHDNKeDc1l40P">
+                    <span class="cfg-idx" data-page-node-id="AjFHAknwLBQ3iSXVQIATUD">4</span>卖出策略<span class="cfg-tag">全仓卖出</span>
+                </div>
+                <div class="field" data-page-node-id="nNnWCovjEEspjkCLkK1dkC">
+                    <label data-page-node-id="1ZHzeBITBTTFI3MKbXtp7y">组合关系</label>
+                    <select id="sellLogic" data-page-node-id="mzSmkGCkaQrdJLLkcex7HA">
+                        <option value="and" selected data-page-node-id="N6beKAx97gvKa8ydzIBzKA">且（全部满足才卖出）</option>
+                        <option value="or" data-page-node-id="RqFMVkhZggxoSFdzfb4j5r">或（任一满足即卖出）</option>
+                    </select>
+                </div>
+                <div id="sellConds" data-page-node-id="vmfXRi1uSWFxTs2XZuEpqS"></div>
+                <button class="btn-ghost btn-sm" onclick="addCond('sell')" data-page-node-id="LwSFIrsGPTQuN1SMAkDcBZ">+ 添加判断组件</button>
+            </div>
+        </div>
+
+        <div class="form-row" style="margin-top:14px" data-page-node-id="joELNXCrgui2GwcYZZeipL">
+            <button onclick="runBacktest()" id="btnRun" data-page-node-id="MsuqrNPCGKkX6P2stcq9EI">开始回测</button>
+            <button class="btn-ghost" onclick="exportConfig()" data-page-node-id="eORBQsbsH69XOjBWIcxAoK">导出配置</button>
+            <button class="btn-ghost" onclick="document.getElementById('fileImport').click()" data-page-node-id="g3qzkvGnrlYecpdAk749TH">导入配置</button>
+            <input type="file" id="fileImport" accept="application/json,.json" style="display:none"
+                   onchange="importConfig(this)" data-page-node-id="vyjX6L4jrpUukwYYBUM9xH">
+            <span class="dim" id="hint" data-page-node-id="fwMaaN1qxi2ajcLiwhcB05"></span>
+        </div>
+        <div id="progressBox" style="display:none;margin-top:10px" data-page-node-id="XHYr6GmmrPiJ0hVJj8D1IL">
+            <div style="display:flex;align-items:center;gap:10px" data-page-node-id="nYTDugvwVxSHwVlCtUaOSd">
+                <div style="flex:1;height:10px;background:#232b3d;border-radius:5px;overflow:hidden" data-page-node-id="URmmc1rYr6OXGzKmTxaq0T">
+                    <div id="progressBar" style="width:0%;height:100%;background:#4c8dff;transition:width .2s" data-page-node-id="LUjNqi8XCmR0OgHcZ6mhUe"></div>
+                </div>
+                <span class="dim" id="progressText" style="min-width:44px" data-page-node-id="HMMMYkaZXp38IKlNxzZylq">0%</span>
+            </div>
+            <div class="sp-hint" id="progressMsg" data-page-node-id="8vjjYBkZBjnVSIWmbTqOi0"></div>
+        </div>
+        <div class="sp-hint" data-page-node-id="L9ZOwiyJjhhYTSK47pDfVs">
+            每次交易都是<b>全仓</b>：买入用全部可用现金买入，卖出一次性清仓；
+            <b>最小交易单位 100 股</b>，买入股数按 100 股的整数倍向下取整。
+            信号在当日收盘确认，按当日收盘价成交。
+        </div>
+    </section>
+
+    <section class="panel" id="resultPanel" style="display:none" data-page-node-id="b9F4pRJQ9ju0n4JhK84u22">
+        <h2 data-page-node-id="WnnFAcqeTsUQp5Kirpybrp">回测结果</h2>
+        <div id="summary" data-page-node-id="gGV6hd9dBrJwq5w0do03i9"></div>
+
+        <h3 data-page-node-id="hIxGDE54BkAvAom2XesqEC">回测策略</h3>
+        <div id="strategy" class="strategy" data-page-node-id="BLMxsZR8WjFF7nfCk4gEO5"></div>
+
+        <h3 data-page-node-id="Q3nTIW6RnGDKEbBbFjUwdt">阶段K线（含买卖点）</h3>
+        <!-- 明细表格都收进弹窗，按钮统一放在 K 线图上方 -->
+        <div class="tile-row" data-page-node-id="H3TIxM1H4k87zwuK1V6CYB">
+            <button class="tile" onclick="openDaily()" data-page-node-id="iroWeAYCFF9w2Ibj40LCew">
+                <b data-page-node-id="T1twXiMlTSkILscvtMdn9k">每日账户</b>
+                <span class="dim" id="dailyCount" data-page-node-id="LgPd9Z2bqznzK7ImEs8CLD">0 行</span>
+                <span class="arrow" data-page-node-id="2KABLfEhHdnCdEIBNQMgjb">点击展开 ›</span>
+            </button>
+            <button class="tile" onclick="openTrades()" data-page-node-id="5nYYLK0gI5DzTPYwhYl77w">
+                <b data-page-node-id="q5mXutiWj4tPLQIwUnU5N2">买卖明细</b>
+                <span class="dim" id="tradeCount" data-page-node-id="BHxpsDYjab6Qr9FCXvGfDW">0 笔</span>
+                <span class="arrow" data-page-node-id="nYQ1RKeygWFhO79Ywh5PoH">点击展开 ›</span>
+            </button>
+        </div>
+        <div id="klineChart" class="chart-box" data-page-node-id="nWeHujVH7BmDI8dJs2S4K0"></div>
+
+        <h3 data-page-node-id="6auH2SdEMUFGS6g38US6Aq">盈亏走势</h3>
+        <div class="chart-ctrl" data-page-node-id="ODyr0FeHodYX60C3GhDcHD">
+            <span class="dim" data-page-node-id="UsMeVRAN2xdNBxrd91gAmw">选择展示曲线</span>
+            <label class="chk" data-page-node-id="oaqXO3iER9K4QIsAnD0VeN">
+                <input type="checkbox" id="sAmount" checked onchange="renderProfit()" data-page-node-id="Z2G8LUclnkk8i2KLyjw5EF">
+                <span class="dot" style="background:#e5a00d" data-page-node-id="1HA7X0O2Ry2VGFw2XVYcBw"></span>盈亏金额
+            </label>
+            <label class="chk" data-page-node-id="ZrGeEZG0WOCTNUtYMC5dUH">
+                <input type="checkbox" id="sRatio" checked onchange="renderProfit()" data-page-node-id="v9Sq8Pt30AUF7udxRXCFVA">
+                <span class="dot" style="background:#4c8dff" data-page-node-id="KtQXQXhjnddY8DWDpxhoQ8"></span>盈亏比例
+            </label>
+            <label class="chk" data-page-node-id="pY0iiIXCpn5ulB8asw91mJ">
+                <input type="checkbox" id="sPrincipal" onchange="renderProfit()" data-page-node-id="22eUNjc9gvHatElMmohHCn">
+                <span class="dot" style="background:#a371f7" data-page-node-id="ev0H0Y983qMjkj4UbTmMIB"></span>本金走势（账户总金额）
+            </label>
+        </div>
+        <div id="profitChart" class="chart-box small" data-page-node-id="cytfmjKaOLLlIRXAbKmnXy"></div>
+    </section>
+
+    <!-- 无数据库模式回测不落盘，没有历史可查，整块隐藏 -->
+    <section class="panel" id="histPanel" data-page-node-id="eRUwbVGpgxNqIiaHhnlFcK">
+        <h2 data-page-node-id="zE9mv0d5D7nLCof5XFGl2g">历史回测</h2>
+        <div style="overflow:auto" data-page-node-id="KzgsNe4TidMIHDzn6tMyvG">
+            <table class="grid" data-page-node-id="syBmLtGSS8qb1xoioPk7w3">
+                <thead data-page-node-id="LPVZVetonkPY1erEuIAH95">
+                <tr data-page-node-id="tw238zRPjkozNPIjypIGtY">
+                    <th data-page-node-id="84ikNe5ROeWpptF71dtvjS">股票</th>
+                    <th data-page-node-id="G2IWGNewUG0c7YkfcCO9Yn">区间</th>
+                    <th class="num" data-page-node-id="ZJpGGPT0zeUrX2ETp7mVgw">起始金额</th>
+                    <th class="num" data-page-node-id="1maGvO3AMdmHsgVVipgByH">期末金额</th>
+                    <th class="num" data-page-node-id="viFL3Ij9sLmyxHAKDPT75n">盈亏</th>
+                    <th class="num" data-page-node-id="unSJdQnWrOQRHco5bfoA1k">盈亏比例</th>
+                    <th class="num" data-page-node-id="hLqZTwfrxlrmiHKeyGMmbk">成交</th>
+                    <th data-page-node-id="slApfdkPglDYaONPD5tHUJ">回测时间</th>
+                    <th data-page-node-id="OOqyvRuLw2fEOYr0cgmjeq">操作</th>
+                </tr>
+                </thead>
+                <tbody id="histBody" data-page-node-id="hADjDvfizcbslc5r6h3v7V"></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<script src="/vendor/echarts.min.js"></script>
+<script src="/js/common.js?v=20260907f"></script>
+<script src="/js/date-picker.js"></script>
+<script src="/js/stock-picker.js"></script>
+<script>
+    const UP = '#e5484d';    // 涨/买入：红
+    const DOWN = '#2ea043';  // 跌/卖出：绿
+
+    /** 买入/卖出的判断组件（x 为页面百分数，提交时换算成小数） */
+    const conds = {
+        buy: [{type: 'CLOSE_MA', op: 'gt', n: 5, m: 20, x: 3, ratio: 1.5}],
+        sell: [{type: 'ABOVE_MA_DAYS', op: 'lt', n: 2, m: 20, x: 3, ratio: 1.5}]
+    };
+
+    /** 最近一次回测结果：弹窗与曲线勾选都要从它重新渲染 */
+    let lastResult = null;
+    /** 每日账户 / 买卖明细的缓存：表格收起后只在弹窗里分页展示 */
+    let lastDailies = [];
+    let lastTrades = [];
+
+    let codePicker;
+    let klineChart;
+    let profitChart;
+
+    document.getElementById('fStart').value = daysAgo(180);
+    document.getElementById('fEnd').value = today();
+
+    codePicker = createStockPicker(document.getElementById('codePick'), {});
+
+    function setRange(n) {
+        document.getElementById('fStart').value = daysAgo(n);
+        document.getElementById('fEnd').value = today();
+        renderSpanHint();
+    }
+
+    /** 时间跨度提示：无数据库模式有跨度上限，先在本地说清楚 */
+    function renderSpanHint() {
+        const s = document.getElementById('fStart').value;
+        const e = document.getElementById('fEnd').value;
+        const el = document.getElementById('spanHint');
+        const a = parseYmd(s);
+        const b = parseYmd(e);
+        if (!a || !b) {
+            el.textContent = '';
+            return;
+        }
+        const span = Math.round((b - a) / 86400000) + 1;
+        if (span <= 0) {
+            el.innerHTML = '<span class="up">开始日期不能晚于结束日期</span>';
+            return;
+        }
+        el.innerHTML = MODE.noDb
+            ? `跨度 ${span} 个自然日（无数据库模式上限 ${MODE.maxSpanDays} 天）`
+            : `跨度 ${span} 个自然日`;
+        if (MODE.noDb && span > MODE.maxSpanDays) {
+            el.innerHTML += ' · <span class="up">已超限，请缩短区间</span>';
+        }
+    }
+
+    // ============ 策略组件编辑 ============
+
+    function addCond(side) {
+        conds[side].push({type: 'CHANGE', op: 'gt', n: 5, m: 20, x: 3, ratio: 1.5});
+        renderConds(side);
+    }
+
+    function delCond(side, i) {
+        conds[side].splice(i, 1);
+        renderConds(side);
+    }
+
+    function updateCond(side, i, key, value) {
+        conds[side][i][key] = value;
+        renderConds(side);
+    }
+
+    function renderConds(side) {
+        const box = document.getElementById(side + 'Conds');
+        if (!conds[side].length) {
+            box.innerHTML = '<div class="cond-empty">还没有判断组件，点下方按钮新增</div>';
+            return;
+        }
+        box.innerHTML = conds[side].map((c, i) => condRow(side, i, c)).join('');
+    }
+
+    /** 单个组件一行，控件随类型变化 */
+    function condRow(side, i, c) {
+        const typeSel = `<select onchange="updateCond('${side}',${i},'type',this.value)">
+            <option value="CHANGE"${c.type === 'CHANGE' ? ' selected' : ''}>近N日涨幅</option>
+            <option value="ABOVE_MA_DAYS"${c.type === 'ABOVE_MA_DAYS' ? ' selected' : ''}>连续N日站上/跌破均线</option>
+            <option value="CLOSE_MA"${c.type === 'CLOSE_MA' ? ' selected' : ''}>收盘价与均线</option>
+            <option value="VOLUME_MA"${c.type === 'VOLUME_MA' ? ' selected' : ''}>成交量倍数</option>
+        </select>`;
+        const opSel = `<select onchange="updateCond('${side}',${i},'op',this.value)">
+            <option value="gt"${c.op === 'gt' ? ' selected' : ''}>大于</option>
+            <option value="lt"${c.op === 'lt' ? ' selected' : ''}>小于</option>
+        </select>`;
+        const num = (key, val, min) =>
+            `<input type="number" value="${val}" min="${min}" step="1"
+                onchange="updateCond('${side}',${i},'${key}',Number(this.value))">`;
+
+        let body;
+        if (c.type === 'CHANGE') {
+            body = `近 ${num('n', c.n, 1)} 日涨幅 ${opSel}
+                    <input type="number" value="${c.x}" step="0.1"
+                        onchange="updateCond('${side}',${i},'x',Number(this.value))"> %`;
+        } else if (c.type === 'ABOVE_MA_DAYS') {
+            body = `连续 ${num('n', c.n, 1)} 日收盘价 ${opSel} ${num('m', c.m, 1)} 日线`;
+        } else if (c.type === 'VOLUME_MA') {
+            body = `成交量 ${opSel} 前 ${num('n', c.n, 1)} 日均量
+                    <input type="number" value="${c.ratio}" min="0" step="0.1"
+                        onchange="updateCond('${side}',${i},'ratio',Number(this.value))"> 倍`;
+        } else {
+            body = `收盘价 ${opSel} ${num('n', c.n, 1)} 日线`;
+        }
+        return `<div class="cond-row"><span class="idx">${i + 1}.</span>${typeSel}${body}
+            <button class="btn-ghost" onclick="delCond('${side}',${i})">删除</button></div>`;
+    }
+
+    /** 组装策略组：页面百分数 → 小数 */
+    function buildRule(side) {
+        const list = conds[side].map(c => {
+            const o = {type: c.type, op: c.op};
+            if (c.type === 'CHANGE') {
+                o.n = Number(c.n);
+                o.x = Number(c.x) / 100;
+            } else if (c.type === 'ABOVE_MA_DAYS') {
+                o.n = Number(c.n);
+                o.m = Number(c.m);
+            } else if (c.type === 'VOLUME_MA') {
+                o.n = Number(c.n);
+                o.ratio = Number(c.ratio);
+            } else {
+                o.n = Number(c.n);
+            }
+            return o;
+        });
+        return {logic: document.getElementById(side + 'Logic').value, conditions: list};
+    }
+
+    // ============ 执行回测 ============
+
+    /** 策略 3 才需要填涨跌幅阈值，另外两个策略把输入框收起来 */
+    function toggleLimitRatio() {
+        const s = Number(document.getElementById('fLimitStrategy').value);
+        document.getElementById('fLimitRatioField').style.display = (s === 3) ? '' : 'none';
+    }
+
+    /** 读取页面上的涨跌停成交配置，提交给后端 */
+    function buildLimitCfg() {
+        const limitStrategy = Number(document.getElementById('fLimitStrategy').value);
+        const cfg = {
+            limitStrategy: limitStrategy,
+            limitOp: document.getElementById('fLimitOp').value
+        };
+        if (limitStrategy === 3) {
+            cfg.limitRatio = Number(document.getElementById('fLimitRatio').value) / 100;
+        }
+        return cfg;
+    }
+
+    async function runBacktest() {
+        if (!requireStock(codePicker, '一只股票')) return;
+        const code = codePicker.getCodes()[0];
+        const startDate = document.getElementById('fStart').value;
+        const endDate = document.getElementById('fEnd').value;
+        const initAmount = Number(document.getElementById('fInit').value);
+        const feePct = Number(document.getElementById('fFee').value);
+
+        if (!startDate || !endDate) {
+            return toast('请选择回测起止时间', 'err');
+        }
+        if (startDate > endDate) {
+            return toast('开始日期不能晚于结束日期', 'err');
+        }
+        // 无数据库模式每次查询都是真实请求，跨度先在本地卡住，别等后端报错
+        if (MODE.noDb) {
+            const span = (parseYmd(endDate) - parseYmd(startDate)) / 86400000 + 1;
+            if (span > MODE.maxSpanDays) {
+                return toast(`无数据库模式单次回测最多 ${MODE.maxSpanDays} 个自然日，当前 ${span} 天`, 'err');
+            }
+        }
+        if (!(initAmount > 0)) {
+            return toast('账户起始金额必须大于 0', 'err');
+        }
+        if (!(feePct >= 0)) {
+            return toast('手续费滑点不能小于 0', 'err');
+        }
+        if (!conds.buy.length || !conds.sell.length) {
+            return toast('买入和卖出策略都至少需要一个判断组件', 'err');
+        }
+        const limitCfg = buildLimitCfg();
+        if (limitCfg.limitStrategy === 3 && !(limitCfg.limitRatio >= 0)) {
+            return toast('涨跌停策略 3 需要填写不小于 0 的涨跌幅阈值', 'err');
+        }
+
+        const btn = document.getElementById('btnRun');
+        const hint = document.getElementById('hint');
+        btn.disabled = true;
+        hint.innerHTML = '<span class="spinner"></span> 回测中...';
+
+        // 回测是同步跑完才返回的：另开一个轮询跟进度，主请求回来就停
+        const taskId = 'bt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+        const timer = startProgressPolling(taskId);
+        try {
+            const r = await post('/api/backtest/run', {
+                taskId,
+                stockCode: code,
+                startDate,
+                endDate,
+                initAmount,
+                feeRate: feePct / 100,
+                buyRule: buildRule('buy'),
+                sellRule: buildRule('sell'),
+                ...limitCfg
+            });
+            if (r.success) {
+                render(r.data);
+                loadHistory();
+            }
+        } finally {
+            clearInterval(timer);
+            hideProgress();
+            btn.disabled = false;
+            hint.textContent = '';
+        }
+    }
+
+    // ============ 进度 ============
+
+    /** 用原生 fetch 查进度：不用 get()，否则接口返回 fail 时会反复弹 toast */
+    async function fetchProgress(taskId) {
+        try {
+            const res = await fetch('/api/backtest/progress/' + taskId);
+            const json = await res.json();
+            return json && json.success ? json.data : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function startProgressPolling(taskId) {
+        showProgress(0, '准备中...');
+        return setInterval(async () => {
+            const p = await fetchProgress(taskId);
+            if (!p) return;
+            if (p.stage === 'run') {
+                updateProgress(p.percent, `已处理 ${p.done}/${p.total} 日`);
+            } else if (p.stage === 'fetch') {
+                updateProgress(p.percent, p.message || '正在同步缺失的日K数据...');
+            } else if (p.stage === 'check') {
+                updateProgress(0, p.message || '校验数据完整性...');
+            } else if (p.stage === 'done') {
+                updateProgress(100, p.message || '回测完成');
+            } else if (p.stage === 'error') {
+                updateProgress(0, p.message || '回测失败');
+            }
+        }, 300);
+    }
+
+    function showProgress(percent, msg) {
+        document.getElementById('progressBox').style.display = '';
+        updateProgress(percent, msg);
+    }
+
+    function updateProgress(percent, msg) {
+        document.getElementById('progressBar').style.width = (percent || 0) + '%';
+        document.getElementById('progressText').textContent = (percent || 0) + '%';
+        if (msg) document.getElementById('progressMsg').textContent = msg;
+    }
+
+    function hideProgress() {
+        document.getElementById('progressBox').style.display = 'none';
+    }
+
+    // ============ 配置导入导出 ============
+
+    /** 导出：结构与回测接口请求体一致（费率 / 涨幅 / 倍数均为小数） */
+    function exportConfig() {
+        const codes = codePicker ? codePicker.getCodes() : [];
+        const cfg = {
+            stockCode: codes.length ? codes[0] : '',
+            startDate: document.getElementById('fStart').value,
+            endDate: document.getElementById('fEnd').value,
+            initAmount: Number(document.getElementById('fInit').value),
+            feeRate: Number(document.getElementById('fFee').value) / 100,
+            buyRule: buildRule('buy'),
+            sellRule: buildRule('sell'),
+            ...buildLimitCfg()
+        };
+        const blob = new Blob([JSON.stringify(cfg, null, 2)], {type: 'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'backtest-' + (cfg.stockCode || 'config') + '-' + today() + '.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    /** 导入：文件里的小数换算回页面显示值（费率 ×100、涨幅 ×100、倍数原样） */
+    async function importConfig(input) {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        try {
+            const cfg = JSON.parse(await file.text());
+            if (!cfg || typeof cfg !== 'object') {
+                throw new Error('文件内容不是有效的配置对象');
+            }
+            if (cfg.startDate) document.getElementById('fStart').value = cfg.startDate;
+            if (cfg.endDate) document.getElementById('fEnd').value = cfg.endDate;
+            if (cfg.initAmount != null) document.getElementById('fInit').value = cfg.initAmount;
+            if (cfg.feeRate != null) document.getElementById('fFee').value = Number(cfg.feeRate) * 100;
+            if (cfg.buyRule) applyRule('buy', cfg.buyRule);
+            if (cfg.sellRule) applyRule('sell', cfg.sellRule);
+            if (cfg.limitStrategy != null) document.getElementById('fLimitStrategy').value = cfg.limitStrategy;
+            if (cfg.limitOp) document.getElementById('fLimitOp').value = cfg.limitOp;
+            if (cfg.limitRatio != null) document.getElementById('fLimitRatio').value = Number(cfg.limitRatio) * 100;
+            toggleLimitRatio();
+            if (cfg.stockCode) {
+                codePicker.clear();
+                await codePicker.pickByCode(cfg.stockCode);
+            }
+            renderSpanHint();
+            toast('配置已导入', 'ok');
+        } catch (e) {
+            toast('配置导入失败: ' + e.message, 'err');
+        } finally {
+            // 清空 value，否则连续导入同一个文件不会再触发 change
+            input.value = '';
+        }
+    }
+
+    /** 把策略组还原到页面：小数 → 百分数 / 倍数 */
+    function applyRule(side, rule) {
+        if (rule.logic) document.getElementById(side + 'Logic').value = rule.logic;
+        conds[side] = (rule.conditions || []).map(c => ({
+            type: c.type || 'CHANGE',
+            op: c.op || 'gt',
+            n: c.n != null ? Number(c.n) : 5,
+            m: c.m != null ? Number(c.m) : 20,
+            x: c.x != null ? Number(c.x) * 100 : 3,
+            ratio: c.ratio != null ? Number(c.ratio) : 1.5
+        }));
+        renderConds(side);
+    }
+
+    // ============ 结果渲染 ============
+
+    function render(data) {
+        lastResult = data;
+        const bt = data.backtest;
+        document.getElementById('resultPanel').style.display = '';
+
+        const ratio = Number(bt.profitRatio || 0);
+        const ratioPct = (ratio * 100).toFixed(2) + '%';
+        const cls = ratio >= 0 ? 'up' : 'down';
+        document.getElementById('summary').innerHTML = `
+            <table class="kv">
+                <tr><th>股票</th><td>${esc(codeWithName(bt))}</td></tr>
+                <tr><th>回测区间</th><td>${esc(bt.startDate)} ~ ${esc(bt.endDate)}（${bt.tradeDays} 个交易日）</td></tr>
+                <tr><th>起始金额 / 费率</th><td>${fmtNum(bt.initAmount)} / ${(Number(bt.feeRate) * 100).toFixed(4)}%</td></tr>
+                <tr><th>期末账户总额</th><td><b>${fmtNum(bt.finalAmount)}</b></td></tr>
+                <tr><th>盈亏金额</th><td class="${cls}"><b>${fmtNum(bt.totalProfit)}</b></td></tr>
+                <tr><th>盈亏比例</th><td class="${cls}"><b>${ratioPct}</b></td></tr>
+                <tr><th>成交笔数</th><td>${bt.tradeCount}</td></tr>
+            </table>`;
+
+        renderStrategy(bt);
+        renderKline(data.klines || [], data.trades || []);
+        renderProfit();
+        renderDaily(data.dailies || []);
+        renderTrades(data.trades || []);
+    }
+
+    /** 「000001 平安银行」：后端回填了 stockName；老数据没有时退回用选择器里选中的名称 */
+    function codeWithName(bt) {
+        if (!bt) return '';
+        const name = bt.stockName
+            || (codePicker && codePicker.getFirst() ? codePicker.getFirst().name : '');
+        return bt.stockCode + (name ? ' ' + name : '');
+    }
+
+    /** 结果里说明「这次到底按什么规则跑的」：规则、账户、成交口径 */
+    function renderStrategy(bt) {
+        const buy = parseRule(bt.buyRule);
+        const sell = parseRule(bt.sellRule);
+        const feePct = (Number(bt.feeRate || 0) * 100).toFixed(4) + '%';
+        document.getElementById('strategy').innerHTML = `
+            <div class="strat-line"><span class="k">标的</span><span class="v">
+                ${esc(codeWithName(bt))}
+            </span></div>
+            <div class="strat-line"><span class="k">区间</span><span class="v">
+                ${esc(bt.startDate)} ~ ${esc(bt.endDate)}
+            </span></div>
+            <div class="strat-line"><span class="k">账户</span><span class="v">
+                起始 ${fmtNum(bt.initAmount)}，手续费滑点 ${feePct}（买卖各计一次）
+            </span></div>
+            <div class="strat-line"><span class="k">成交口径</span><span class="v">
+                每次交易全仓：买入用全部可用现金买满 100 股整数倍，卖出一次清仓；
+                最小交易单位 100 股；信号当日收盘确认、按收盘价成交
+            </span></div>
+            <div class="strat-rule"><span class="k">买入（${logicText(buy)}）</span>
+                ${ruleList(buy, '空仓且买入策略命中时买入')}</div>
+            <div class="strat-rule"><span class="k">卖出（${logicText(sell)}）</span>
+                ${ruleList(sell, '持仓且卖出策略命中时清仓')}</div>`;
+    }
+
+    /** 落库/回传的策略是 JSON 字符串，历史回看时也能直接读出规则 */
+    function parseRule(rule) {
+        if (!rule) return null;
+        if (typeof rule === 'object') return rule;
+        try {
+            return JSON.parse(rule);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function logicText(rule) {
+        if (!rule) return '未记录';
+        return rule.logic === 'or' ? '或：任一满足即触发' : '且：全部满足才触发';
+    }
+
+    function ruleList(rule, emptyText) {
+        const list = (rule && rule.conditions) || [];
+        if (!list.length) return `<ol><li class="dim">${esc(emptyText || '无条件')}</li></ol>`;
+        const joiner = rule.logic === 'or' ? '或' : '且';
+        return '<ol>' + list.map((c, i) =>
+            `<li>${esc(condText(c))}${i < list.length - 1 ? ' <span class="dim">' + joiner + '</span>' : ''}</li>`).join('') + '</ol>';
+    }
+
+    /** 单个判断组件 → 中文说明（与回测引擎的判断口径一一对应） */
+    function condText(c) {
+        const gt = c.op !== 'lt';
+        const op = gt ? '大于' : '小于';
+        switch (c.type) {
+            case 'CHANGE':
+                return `近 ${c.n} 个交易日涨幅 ${op} ${fmtNum(Number(c.x) * 100, 2)}%`;
+            case 'ABOVE_MA_DAYS':
+                return `连续 ${c.n} 个交易日收盘价 ${op} ${c.m} 日线`;
+            case 'CLOSE_MA':
+                return `收盘价 ${op} ${c.n} 日线`;
+            case 'VOLUME_MA':
+                return `成交量 ${op} 前 ${c.n} 日平均成交量的 ${c.ratio} 倍`;
+            default:
+                return c.type || '未知组件';
+        }
+    }
+
+    /** K线 + 买卖点：买点标在最低价下方（红），卖点标在最高价上方（绿） */
+    function renderKline(klines, trades) {
+        klineChart = klineChart || echarts.init(document.getElementById('klineChart'), 'dark');
+        const dates = klines.map(k => k.tradeDate);
+        const ohlc = klines.map(k =>
+            [Number(k.openPrice), Number(k.closePrice), Number(k.lowPrice), Number(k.highPrice)]);
+
+        const buyMap = new Map();
+        const sellMap = new Map();
+        trades.forEach(t => {
+            if (t.action === 'buy') buyMap.set(t.tradeDate, t);
+            else sellMap.set(t.tradeDate, t);
+        });
+
+        const marks = [];
+        klines.forEach((k, i) => {
+            if (buyMap.has(k.tradeDate)) {
+                marks.push({name: '买', coord: [i, Number(k.lowPrice)], value: 'B', itemStyle: {color: UP}});
+            }
+            if (sellMap.has(k.tradeDate)) {
+                marks.push({name: '卖', coord: [i, Number(k.highPrice)], value: 'S', itemStyle: {color: DOWN}});
+            }
+        });
+
+        klineChart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {trigger: 'axis', axisPointer: {type: 'cross'}},
+            grid: {left: 56, right: 24, top: 24, bottom: 56},
+            xAxis: {type: 'category', data: dates, axisLine: {lineStyle: {color: '#3a4256'}}},
+            yAxis: {scale: true, splitLine: {lineStyle: {color: '#232b3d'}}},
+            dataZoom: [
+                {type: 'inside', zoomOnMouseWheel: true, moveOnMouseMove: true},
+                {type: 'slider', height: 18, bottom: 12}
+            ],
+            series: [{
+                name: 'K线',
+                type: 'candlestick',
+                data: ohlc,
+                large: true,
+                largeThreshold: 80,
+                itemStyle: {color: UP, color0: DOWN, borderColor: UP, borderColor0: DOWN},
+                markPoint: {
+                    symbol: 'pin',
+                    symbolSize: 34,
+                    label: {color: '#fff', fontSize: 11, fontWeight: 'bold'},
+                    data: marks
+                }
+            }]
+        }, true);
+    }
+
+    /**
+     * 盈亏走势：金额类（盈亏金额 / 本金走势）共用左轴，比例单独右轴。
+     * 曲线由用户勾选决定，一条都不勾时给空图而不是报错。
+     */
+    function renderProfit() {
+        if (!lastResult) return;
+        const dailies = lastResult.dailies || [];
+        profitChart = profitChart || echarts.init(document.getElementById('profitChart'), 'dark');
+
+        const showAmount = document.getElementById('sAmount').checked;
+        const showRatio = document.getElementById('sRatio').checked;
+        const showPrincipal = document.getElementById('sPrincipal').checked;
+        const showMoney = showAmount || showPrincipal;
+
+        const dates = dailies.map(d => d.tradeDate);
+        const yAxis = [];
+        const series = [];
+        if (showMoney) {
+            yAxis.push({
+                type: 'value',
+                name: '金额',
+                scale: true,
+                splitLine: {lineStyle: {color: '#232b3d'}},
+                axisLabel: {formatter: v => fmtNum(v)}
+            });
+        }
+        if (showRatio) {
+            yAxis.push({
+                type: 'value',
+                name: '比例',
+                axisLabel: {formatter: '{value} %'},
+                splitLine: {show: false}
+            });
+        }
+        const moneyIdx = 0;
+        const ratioIdx = showMoney ? 1 : 0;
+
+        if (showAmount) {
+            series.push({
+                name: '盈亏金额',
+                type: 'line',
+                yAxisIndex: moneyIdx,
+                data: dailies.map(d => Number(d.profitAmount)),
+                showSymbol: false,
+                lineStyle: {color: '#e5a00d', width: 2},
+                itemStyle: {color: '#e5a00d'}
+            });
+        }
+        if (showPrincipal) {
+            series.push({
+                name: '本金走势',
+                type: 'line',
+                yAxisIndex: moneyIdx,
+                data: dailies.map(d => Number(d.totalAmount)),
+                showSymbol: false,
+                lineStyle: {color: '#a371f7', width: 2},
+                itemStyle: {color: '#a371f7'},
+                areaStyle: {color: 'rgba(163,113,247,.10)'}
+            });
+        }
+        if (showRatio) {
+            series.push({
+                name: '盈亏比例',
+                type: 'line',
+                yAxisIndex: ratioIdx,
+                data: dailies.map(d => Number(d.profitRatio) * 100),
+                showSymbol: false,
+                lineStyle: {color: '#4c8dff', width: 2},
+                itemStyle: {color: '#4c8dff'}
+            });
+        }
+
+        profitChart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {trigger: 'axis'},
+            legend: {data: series.map(s => s.name), textStyle: {color: '#9aa4bf'}},
+            grid: {left: 64, right: showRatio ? 64 : 28, top: 40, bottom: 40},
+            xAxis: {type: 'category', data: dates, axisLine: {lineStyle: {color: '#3a4256'}}},
+            yAxis: yAxis.length ? yAxis : [{type: 'value', show: false}],
+            series: series
+        }, true);
+    }
+
+    /**
+     * 明细不再平铺：只更新入口按钮上的行数，点开再分页渲染。
+     *
+     * <p>一次回测动辄几百个交易日，全渲染成行会把图表挤到很下面。
+     */
+    function renderDaily(dailies) {
+        lastDailies = dailies || [];
+        document.getElementById('dailyCount').textContent = lastDailies.length + ' 行';
+    }
+
+    function renderTrades(trades) {
+        lastTrades = trades || [];
+        document.getElementById('tradeCount').textContent = lastTrades.length + ' 笔';
+    }
+
+    function openDaily() {
+        if (!lastDailies.length) {
+            return toast('本次回测没有每日账户数据', 'err');
+        }
+        const bt = lastResult ? lastResult.backtest : null;
+        openTableModal({
+            title: '每日账户' + (bt ? ' - ' + codeWithName(bt) + ' ' + bt.startDate + ' ~ ' + bt.endDate : ''),
+            rows: lastDailies,
+            columns: [
+                {label: '交易日', render: d => esc(d.tradeDate)},
+                {label: '收盘价', cls: 'num', render: d => fmtNum(d.closePrice)},
+                {label: '账户总金额', cls: 'num', render: d => '<b>' + fmtNum(d.totalAmount) + '</b>'},
+                {label: '持仓金额', cls: 'num', render: d => fmtNum(d.positionValue)},
+                {label: '持仓股数', cls: 'num', render: d => d.positionShares},
+                {label: '现金', cls: 'num', render: d => fmtNum(d.cash)},
+                {label: '盈亏金额', cls: 'num', render: d => pct(Number(d.profitRatio || 0), fmtNum(d.profitAmount))},
+                {label: '盈亏比例', cls: 'num', render: d => pct(Number(d.profitRatio || 0), (Number(d.profitRatio || 0) * 100).toFixed(2) + '%')}
+            ]
+        });
+    }
+
+    function openTrades() {
+        if (!lastTrades.length) {
+            return toast('本次回测没有产生任何成交', 'err');
+        }
+        openTableModal({
+            title: '买卖明细',
+            rows: lastTrades,
+            columns: [
+                {label: '成交日', render: t => esc(t.tradeDate)},
+                {label: '方向', render: t => t.action === 'buy'
+                    ? '<span class="badge badge-ok">买入</span>'
+                    : '<span class="badge badge-err">卖出</span>'},
+                {label: '股数', cls: 'num', render: t => t.shares},
+                {label: '成交价', cls: 'num', render: t => fmtNum(t.price)},
+                {label: '成交额', cls: 'num', render: t => fmtNum(t.turnover)},
+                {label: '手续费', cls: 'num', render: t => fmtNum(t.fee)},
+                {label: '成交后现金', cls: 'num', render: t => fmtNum(t.cashAfter)}
+            ]
+        });
+    }
+
+    /** 盈亏列按正负着色 */
+    function pct(ratio, text) {
+        return '<span class="' + (ratio >= 0 ? 'up' : 'down') + '">' + text + '</span>';
+    }
+
+    // ============ 历史回测 ============
+
+    async function loadHistory() {
+        if (!MODE.backtestPersistent) {
+            // 无数据库模式：回测不落盘，列表恒为空，没必要发请求
+            document.getElementById('histBody').innerHTML =
+                '<tr><td colspan="9" class="empty">无数据库模式不保存回测历史</td></tr>';
+            return;
+        }
+        const r = await get('/api/backtest?limit=50');
+        const tbody = document.getElementById('histBody');
+        if (!r || !r.success || !r.data || !r.data.length) {
+            tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无回测记录</td></tr>';
+            return;
+        }
+        tbody.innerHTML = r.data.map(b => {
+            const ratio = Number(b.profitRatio || 0);
+            const cls = ratio >= 0 ? 'up' : 'down';
+            return `<tr>
+                <td><b>${esc(b.stockCode)}</b>${b.stockName ? ' ' + esc(b.stockName) : ''}</td>
+                <td>${esc(b.startDate)} ~ ${esc(b.endDate)}</td>
+                <td class="num">${fmtNum(b.initAmount)}</td>
+                <td class="num">${fmtNum(b.finalAmount)}</td>
+                <td class="num ${cls}">${fmtNum(b.totalProfit)}</td>
+                <td class="num ${cls}">${(ratio * 100).toFixed(2)}%</td>
+                <td class="num">${b.tradeCount}</td>
+                <td>${esc(b.createTime || '')}</td>
+                <td>
+                    <button class="btn-ghost" onclick="viewBt(${b.id})">查看</button>
+                    <button class="btn-ghost" onclick="delBt(${b.id})">删除</button>
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    async function viewBt(id) {
+        const r = await get('/api/backtest/' + id);
+        if (r && r.success) {
+            render(r.data);
+            document.getElementById('resultPanel').scrollIntoView({behavior: 'smooth'});
+        }
+    }
+
+    async function delBt(id) {
+        if (!confirm('确认删除该回测记录？')) return;
+        const r = await del('/api/backtest/' + id);
+        if (r && r.success) loadHistory();
+    }
+
+    renderConds('buy');
+    renderConds('sell');
+    document.getElementById('fStart').addEventListener('change', renderSpanHint);
+    document.getElementById('fEnd').addEventListener('change', renderSpanHint);
+
+    (async function init() {
+        await loadMode();
+        if (!MODE.backtestPersistent) {
+            document.getElementById('histPanel').style.display = 'none';
+        }
+        renderSpanHint();
+        toggleLimitRatio();
+        loadHistory();
+        // 从股票列表跳过来时带上 ?code=，直接预填标的
+        const q = new URLSearchParams(location.search);
+        const code = q.get('code');
+        if (code) {
+            codePicker.clear();
+            await codePicker.pickByCode(code);
+        }
+    })();
+</script>
+</body>
+</html>

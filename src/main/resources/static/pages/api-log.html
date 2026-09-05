@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>接口调用日志</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260907f">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据 <span class="sub">回测</span></a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <section class="panel">
+        <h2>查询条件</h2>
+        <div class="form-row">
+            <div class="field grow">
+                <label>股票（留空 = 全部）</label>
+                <div id="codePick"></div>
+                <div class="sp-hint">输入代码或名称，从匹配结果里点选一只</div>
+            </div>
+            <div class="field">
+                <label>调用场景</label>
+                <select id="fScene">
+                    <option value="">全部</option>
+                    <option value="dev">调试（接口调试页）</option>
+                    <option value="batch">批处理（更新落库）</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>日期参数-起</label>
+                <input type="date" id="fReqStart" title="按请求时传入的 startDate 参数筛选">
+            </div>
+            <div class="field">
+                <label>日期参数-止</label>
+                <input type="date" id="fReqEnd" title="按请求时传入的 endDate 参数筛选">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="field">
+                <label>请求时间-起</label>
+                <input type="datetime-local" id="fRtFrom" step="1">
+            </div>
+            <div class="field">
+                <label>请求时间-止</label>
+                <input type="datetime-local" id="fRtTo" step="1">
+            </div>
+            <div class="field">
+                <label>结果</label>
+                <select id="fSuccess">
+                    <option value="">全部</option>
+                    <option value="1">仅成功</option>
+                    <option value="0">仅失败</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>每页条数</label>
+                <select id="fSize">
+                    <option value="20">20</option>
+                    <option value="50" selected>50</option>
+                    <option value="200">200</option>
+                </select>
+            </div>
+            <button onclick="state.page=1;load()">查询</button>
+            <button class="btn-ghost" onclick="resetForm()">重置</button>
+        </div>
+        <div class="dim" style="font-size:12px;margin-top:6px">
+            日期参数按「请求时传入的区间与填写区间有交集」筛选；请求时间按调用发生的时刻筛选（只填日期则取整日）。
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>调用日志 <span class="dim" style="font-weight:400;font-size:12px">只记录状态码、耗时与返回行数，不记录返回内容</span></h2>
+        <div id="stat" class="dim" style="font-size:13px;margin-bottom:8px"></div>
+        <div style="overflow:auto;max-height:620px">
+            <table class="grid">
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>场景</th>
+                    <th>代码</th>
+                    <th>日期参数-起</th>
+                    <th>日期参数-止</th>
+                    <th>请求时间</th>
+                    <th class="num">状态码</th>
+                    <th class="num">耗时(ms)</th>
+                    <th class="num">返回行数</th>
+                    <th>结果</th>
+                    <th>失败原因</th>
+                </tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+            </table>
+        </div>
+        <div class="pager" id="pager"></div>
+    </section>
+</main>
+
+<script src="/js/common.js?v=20260907f"></script>
+<script src="/js/date-picker.js"></script>
+<script src="/js/stock-picker.js"></script>
+<script>
+    const state = {page: 1, size: 50};
+
+    const codePicker = createStockPicker(document.getElementById('codePick'), {});
+
+    function resetForm() {
+        codePicker.clear();
+        ['fReqStart', 'fReqEnd', 'fRtFrom', 'fRtTo'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('fScene').value = '';
+        document.getElementById('fSuccess').value = '';
+        state.page = 1;
+        load();
+    }
+
+    function buildQuery() {
+        const code = codePicker.getCodes()[0] || '';
+        const reqStart = document.getElementById('fReqStart').value;
+        const reqEnd = document.getElementById('fReqEnd').value;
+        const rtFrom = document.getElementById('fRtFrom').value;
+        const rtTo = document.getElementById('fRtTo').value;
+        const success = document.getElementById('fSuccess').value;
+        const scene = document.getElementById('fScene').value;
+        state.size = parseInt(document.getElementById('fSize').value, 10);
+        const q = [`page=${state.page}`, `size=${state.size}`];
+        if (code) q.push('code=' + encodeURIComponent(code));
+        if (scene) q.push('scene=' + encodeURIComponent(scene));
+        if (reqStart) q.push('reqStartDate=' + reqStart);
+        if (reqEnd) q.push('reqEndDate=' + reqEnd);
+        if (rtFrom) q.push('requestTimeFrom=' + encodeURIComponent(rtFrom));
+        if (rtTo) q.push('requestTimeTo=' + encodeURIComponent(rtTo));
+        if (success !== '') q.push('success=' + success);
+        return q.join('&');
+    }
+
+    async function loadSummary() {
+        const r = await get('/api/call-logs/summary');
+        if (!r.success) return;
+        const d = r.data;
+        let txt = `累计调用 <b>${d.total}</b> 次，成功 <b class="up">${d.success}</b>，失败 <b class="down">${d.failed}</b>`
+            + `，平均耗时 <b>${d.avgCostMs}</b> ms`;
+        const byScene = d.byScene || {};
+        const parts = [];
+        if (byScene.dev) parts.push(`调试 <b>${byScene.dev.count}</b> 次`);
+        if (byScene.batch) parts.push(`批处理 <b>${byScene.batch.count}</b> 次`);
+        if (parts.length) txt += '　｜　' + parts.join('，');
+        document.getElementById('stat').innerHTML = txt;
+    }
+
+    async function load() {
+        const r = await get('/api/call-logs?' + buildQuery());
+        if (!r.success) return;
+        const tbody = document.getElementById('tbody');
+        if (!r.data.rows.length) {
+            tbody.innerHTML = '<tr><td colspan="11" class="empty">暂无调用记录</td></tr>';
+        } else {
+            tbody.innerHTML = r.data.rows.map(x => {
+                const ok = x.success === 1;
+                const cls = ok ? 'up' : 'down';
+                const statusCls = (x.httpStatus >= 200 && x.httpStatus < 300) ? 'up' : 'down';
+                const isDev = x.scene === 'dev';
+                return `
+                <tr>
+                    <td>${x.id}</td>
+                    <td><span class="badge ${isDev ? 'badge-dev' : 'badge-batch'}">${isDev ? '调试' : '批处理'}</span></td>
+                    <td><b>${esc(x.stockCode)}</b></td>
+                    <td>${esc(x.reqStartDate || '')}</td>
+                    <td>${esc(x.reqEndDate || '')}</td>
+                    <td>${esc(x.requestTime || '')}</td>
+                    <td class="num ${statusCls}">${x.httpStatus}</td>
+                    <td class="num">${x.costMs}</td>
+                    <td class="num">${x.rowCount}</td>
+                    <td class="${cls}">${ok ? '成功' : '失败'}</td>
+                    <td class="dim">${esc(x.errorMsg || '')}</td>
+                </tr>`;
+            }).join('');
+        }
+        renderPager(document.getElementById('pager'), r.data.page, r.data.size, r.data.total, p => {
+            state.page = p;
+            load();
+        });
+    }
+
+    // 支持从其他页面带 code 跳转过来
+    (async function initFromQuery() {
+        const p = new URLSearchParams(location.search);
+        if (p.get('code')) {
+            await codePicker.pickByCode(p.get('code'));
+        }
+        loadSummary();
+        load();
+    })();
+</script>
+</body>
+</html>

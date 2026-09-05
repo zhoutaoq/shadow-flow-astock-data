@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>单只更新 - 金牛数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260907f">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据 <span class="sub">回测</span></a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <section class="panel">
+        <h2>更新参数</h2>
+        <div class="form-row">
+            <div class="field grow">
+                <label>股票 *</label>
+                <div id="codePick"></div>
+                <div class="sp-hint">输入代码或名称，从匹配结果里<b>点选一只</b>（只显示前 10 条，请输入更精确的关键字）</div>
+            </div>
+            <div class="field">
+                <label>开始日期 *</label>
+                <input type="date" id="fStart">
+            </div>
+            <div class="field">
+                <label>结束日期 *</label>
+                <input type="date" id="fEnd">
+            </div>
+            <button class="btn-ghost" onclick="setRange(30)">近30天</button>
+            <button class="btn-ghost" onclick="setRange(365)">近1年</button>
+        </div>
+        <div class="form-row">
+            <button class="btn-warn" onclick="run(true)" id="btnDry">预览：只请求并渲染，不入库</button>
+            <button onclick="run(false)" id="btnRun">更新并入库</button>
+            <span class="dim" id="hint"></span>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>执行结果</h2>
+        <div id="summary"></div>
+    </section>
+
+    <section class="panel">
+        <h2>接口返回明细</h2>
+        <div style="overflow:auto;max-height:460px">
+            <table class="grid">
+                <thead>
+                <tr>
+                    <th>代码</th>
+                    <th>交易日</th>
+                    <th class="num">开盘 o</th>
+                    <th class="num">收盘 c</th>
+                    <th class="num">最高 h</th>
+                    <th class="num">最低 l</th>
+                    <th class="num">涨跌</th>
+                    <th class="num">成交量 v</th>
+                    <th class="num">成交额 a</th>
+                    <th class="num">前收 pc</th>
+                </tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>原始响应</h2>
+        <pre class="json" id="raw">（执行后显示）</pre>
+    </section>
+</main>
+
+<script src="/js/common.js?v=20260907f"></script>
+<script src="/js/date-picker.js"></script>
+<script src="/js/stock-picker.js"></script>
+<script>
+    document.getElementById('fStart').value = daysAgo(30);
+    document.getElementById('fEnd').value = today();
+
+    const codePicker = createStockPicker(document.getElementById('codePick'), {});
+
+    function setRange(n) {
+        document.getElementById('fStart').value = daysAgo(n);
+        document.getElementById('fEnd').value = today();
+    }
+
+    async function run(dryRun) {
+        if (!requireStock(codePicker, '一只股票')) return;
+        const code = codePicker.getCodes()[0];
+        const startDate = document.getElementById('fStart').value;
+        const endDate = document.getElementById('fEnd').value;
+
+        document.getElementById('btnDry').disabled = true;
+        document.getElementById('btnRun').disabled = true;
+        document.getElementById('hint').innerHTML = '<span class="spinner"></span> 请求中...';
+
+        try {
+            const r = await post('/api/fetch', {
+                codes: [code], market: 'stock', startDate, endDate, dryRun
+            });
+            if (r.success) render(r.data);
+        } finally {
+            document.getElementById('btnDry').disabled = false;
+            document.getElementById('btnRun').disabled = false;
+            document.getElementById('hint').textContent = '';
+        }
+    }
+
+    function render(result) {
+        const d0 = result.details[0] || {};
+        const modeText = result.dryRun
+            ? '<span class="badge">预览模式（未入库）</span>'
+            : '<span class="badge badge-ok">已入库</span>';
+        document.getElementById('summary').innerHTML = `
+            <table class="kv">
+                <tr><th>执行模式</th><td>${modeText}</td></tr>
+                <tr><th>股票</th><td>${esc(d0.code)}</td></tr>
+                <tr><th>接口返回条数</th><td><b>${result.fetchedTotal}</b></td></tr>
+                <tr><th>入库条数</th><td><b>${result.persistedTotal}</b>${result.dryRun ? '（预览模式为 0）' : ''}</td></tr>
+                <tr><th>耗时</th><td>${result.costMs} ms</td></tr>
+                <tr><th>执行状态</th><td>${d0.success
+                    ? '<span class="badge badge-ok">成功</span>'
+                    : '<span class="badge badge-err">失败</span> ' + esc(d0.message || '')}</td></tr>
+                <tr><th>请求 URL</th><td style="word-break:break-all">${esc((d0.requestUrls || []).join('<br>'))}</td></tr>
+            </table>`;
+
+        const rows = d0.rows || [];
+        const tbody = document.getElementById('tbody');
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="10" class="empty">接口未返回数据（可能是非交易日区间）</td></tr>';
+        } else {
+            tbody.innerHTML = rows.map(x => {
+                const pc = x.preClose != null ? Number(x.preClose) : null;
+                const c = x.closePrice != null ? Number(x.closePrice) : null;
+                let chg = '-', cls = '';
+                if (pc && c != null) {
+                    const pct = (c - pc) / pc * 100;
+                    chg = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+                    cls = pct >= 0 ? 'up' : 'down';
+                }
+                return `<tr>
+                    <td><b>${esc(x.code)}</b></td>
+                    <td>${esc(x.tradeDate)}</td>
+                    <td class="num">${fmtNum(x.openPrice)}</td>
+                    <td class="num">${fmtNum(x.closePrice)}</td>
+                    <td class="num">${fmtNum(x.highPrice)}</td>
+                    <td class="num">${fmtNum(x.lowPrice)}</td>
+                    <td class="num ${cls}">${chg}</td>
+                    <td class="num">${fmtVol(x.volume)}</td>
+                    <td class="num">${fmtVol(x.amount)}</td>
+                    <td class="num">${fmtNum(x.preClose)}</td>
+                </tr>`;
+            }).join('');
+        }
+        renderJson(document.getElementById('raw'), result);
+    }
+
+    (async function initFromQuery() {
+        const p = new URLSearchParams(location.search);
+        if (p.get('code')) await codePicker.pickByCode(p.get('code'));
+    })();
+</script>
+</body>
+</html>

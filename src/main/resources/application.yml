@@ -1,0 +1,98 @@
+server:
+  port: 80
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+
+spring:
+  application:
+    name: stock-kline-data-crawler
+  autoconfigure:
+    # 数据源改由 DataSourceConfig 按 waizao.db.enabled 条件装配。
+    # 无数据库模式下这里必须排除，否则启动阶段就会去连库并失败。
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/mydb?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+    username: root
+    # 本地开发可用默认值，正式环境用环境变量覆盖：DB_PASSWORD=xxx
+    password: ${DB_PASSWORD:root123456}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 2
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+  jackson:
+    default-property-inclusion: non_null
+  mvc:
+    static-path-pattern: /**
+  # 开发期禁止浏览器缓存静态资源（HTML/JS/CSS），避免「软刷新仍吃旧页面」的缓存坑。
+  # 生产部署可删除这段，改回带 hash 的版本戳方案。
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          no-store: true
+
+waizao:
+  # 是否启用数据库
+  # false（默认）= 无数据库单机模式：不连库，数据从供应商现取现用，回测不落盘，
+  #              只保留K线查看与回测，必要参数由用户在浏览器填写后复用
+  # true        = 数据库模式：完整逻辑，数据落库、支持股票列表/数据更新/调用日志/配置表
+  db:
+    enabled: false
+  api:
+    base-url: http://api.waizaowang.com
+    # ⚠️ token 是频繁变动的凭据，统一维护在配置表（场景 waizao / 键 token），页面「系统配置」保存即生效。
+    # 系统内置默认令牌：无数据库模式以前端 common.js 的 DEFAULT_WAIZAO_TOKEN 为准（内容不支持查看）；
+    # 数据库模式下仅在「配置表为空、首次启动」时作为种子写入一次，之后一律以配置表为准。
+    token: "305c8974672f4bbe953e52a94a1f070c"
+    # 总开关：false 时抓取请求在发出前就被拦住（接口按次计费，停用必须真拦住）
+    enabled: true
+    connect-timeout-ms: 10000
+    read-timeout-ms: 20000
+    # 串行抓取时每只股票之间的间隔（毫秒）
+    batch-interval-ms: 200
+    # 批处理并发度：同时向供应商发起请求的线程数
+    fetch-concurrency: 8
+    # 并发抓取时每个工作线程处理完一只股票后的间隔（毫秒），用于限制 QPS
+    fetch-interval-ms: 100
+  # 无数据库模式下单次查询/回测允许的最大自然日跨度（数据每次都要现取，跨度先卡住再发请求）
+  max-span-days: 1200
+  stock-list-file: resources/stock-list.json
+
+# 实时盯盘提醒（与上面其它功能完全独立：行情取自新浪财经，不连库、不走 waizao、不落盘）
+watch:
+  # 总开关
+  enabled: true
+  # 盯盘名单：每行一个股票名称（也允许直接写 6 位代码，或「代码 名称」/「代码,名称」）；# 开头为注释
+  watch-list-file: resources/watch-list.txt
+  # 名称 → 代码 的索引来源（与 waizao.stock-list-file 同一份文件）
+  stock-list-file: resources/stock-list.json
+  # 轮询间隔（秒）：每次调度按这个间隔并发查一遍名单里所有标的
+  interval-seconds: 10
+  # 触发阈值（%）：与上一次成功查询的价格相比，涨/跌幅绝对值达到这个值就推钉钉
+  threshold-percent: 0.5
+  # 并发查询的线程池大小
+  thread-pool-size: 8
+  sina:
+    base-url: http://hq.sinajs.cn
+    connect-timeout-ms: 5000
+    read-timeout-ms: 5000
+  dingtalk:
+    # 机器人 Webhook（含 access_token）；留空则不推送、只打日志
+    webhook: "https://oapi.dingtalk.com/robot/send?access_token=ebcfa7713cec091fcbabaff738f68e3453365b47bf43d8e65894a9793fc33317"
+    # 机器人安全设置里的「加签」密钥；留空表示不加签
+    secret: ""
+
+logging:
+  level:
+    root: INFO
+    com.stock.kline: INFO

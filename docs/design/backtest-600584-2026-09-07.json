@@ -1,0 +1,30 @@
+{
+  "stockCode": "600584",
+  "market": "stock",
+  "startDate": "2024-01-11",
+  "endDate": "2026-09-07",
+  "initAmount": 100000,
+  "feeRate": 0.0002,
+  "buyRule": {
+    "logic": "and",
+    "conditions": [
+      {
+        "type": "ABOVE_MA_DAYS",
+        "op": "gt",
+        "n": 1,
+        "m": 5
+      }
+    ]
+  },
+  "sellRule": {
+    "logic": "and",
+    "conditions": [
+      {
+        "type": "ABOVE_MA_DAYS",
+        "op": "lt",
+        "n": 2,
+        "m": 20
+      }
+    ]
+  }
+}

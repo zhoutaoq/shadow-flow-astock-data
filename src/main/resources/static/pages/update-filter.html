@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>条件更新 - 金牛数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260907f">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据 <span class="sub">回测</span></a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <section class="panel">
+        <h2>1. 筛选条件（命中的股票全部纳入本次更新）</h2>
+        <div class="form-row">
+            <div class="field grow">
+                <label>关键字（代码 / 名称，模糊匹配）</label>
+                <input type="text" id="fKeyword" placeholder="留空=全部；如 600 或 银行">
+            </div>
+            <div class="field">
+                <label>启用状态</label>
+                <select id="fEnabled">
+                    <option value="">全部</option>
+                    <option value="1" selected>仅启用</option>
+                    <option value="0">仅停用</option>
+                </select>
+            </div>
+            <button class="btn-ghost" onclick="previewCount()">预览命中数量</button>
+        </div>
+        <div id="preview" class="dim"></div>
+    </section>
+
+    <section class="panel">
+        <h2>2. 更新参数</h2>
+        <div class="form-row">
+            <div class="field">
+                <label>开始日期 *</label>
+                <input type="date" id="fStart">
+            </div>
+            <div class="field">
+                <label>结束日期 *</label>
+                <input type="date" id="fEnd">
+            </div>
+            <button class="btn-ghost" onclick="setRange(7)">近7天</button>
+            <button class="btn-ghost" onclick="setRange(30)">近30天</button>
+            <button class="btn-ghost" onclick="setRange(365)">近1年</button>
+        </div>
+        <div class="form-row">
+            <div class="field">
+                <label>并发线程数</label>
+                <input type="number" id="fConc" value="8" min="1" max="64" style="width:90px">
+            </div>
+            <div class="field">
+                <label>最多更新只数（0=不限）</label>
+                <input type="number" id="fLimit" value="0" min="0" style="width:110px">
+            </div>
+            <button class="btn-warn" onclick="submitJob(true)" id="btnDry">预览：只请求不入库</button>
+            <button onclick="submitJob(false)" id="btnRun">提交批处理作业（入库）</button>
+            <button class="btn-ghost" onclick="cancelJob()" id="btnCancel" disabled>取消</button>
+        </div>
+        <div class="dim" style="font-size:12px">
+            每只股票在整个日期区间内<b>只发一次请求</b>；作业在后台多线程执行，页面轮询进度。<br>
+            ⚠️ 接口<b>按次计费</b>：预计调用次数 = 更新只数，作业提交后立即开始请求，超过
+            <b>20 只</b>会先弹二次确认（预览模式同样计费）。
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>3. 作业进度</h2>
+        <div id="jobBox">
+            <div class="empty">尚未提交作业</div>
+        </div>
+    </section>
+
+    <section class="panel" id="errPanel" style="display:none">
+        <h2>失败明细（最多显示 200 条）</h2>
+        <div style="overflow:auto;max-height:300px">
+            <table class="grid">
+                <thead><tr><th>股票代码</th><th>失败原因</th></tr></thead>
+                <tbody id="errBody"></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<script src="/js/common.js?v=20260907f"></script>
+<script src="/js/date-picker.js"></script>
+<script>
+    let jobId = null;
+    let timer = null;
+
+    document.getElementById('fStart').value = daysAgo(30);
+    document.getElementById('fEnd').value = today();
+
+    function setRange(n) {
+        document.getElementById('fStart').value = daysAgo(n);
+        document.getElementById('fEnd').value = today();
+    }
+
+    function filterParams() {
+        return {
+            keyword: document.getElementById('fKeyword').value.trim(),
+            market: 'stock',
+            enabled: document.getElementById('fEnabled').value === ''
+                ? null : parseInt(document.getElementById('fEnabled').value, 10)
+        };
+    }
+
+    function countQuery() {
+        const p = filterParams();
+        const q = [`market=${encodeURIComponent(p.market)}`];
+        if (p.keyword) q.push('keyword=' + encodeURIComponent(p.keyword));
+        if (p.enabled !== null) q.push('enabled=' + p.enabled);
+        return q.join('&');
+    }
+
+    async function previewCount() {
+        const r = await get('/api/stocks/count?' + countQuery());
+        if (!r.success) return;
+        const n = r.data.count;
+        const limit = parseInt(document.getElementById('fLimit').value, 10) || 0;
+        const actual = limit > 0 ? Math.min(n, limit) : n;
+        document.getElementById('preview').innerHTML =
+            `筛选命中 <b style="color:var(--text)">${n}</b> 只`
+            + (limit > 0 ? `，按上限截断后实际更新 <b style="color:var(--warn)">${actual}</b> 只` : '');
+    }
+
+    async function submitJob(dryRun) {
+        const startDate = document.getElementById('fStart').value;
+        const endDate = document.getElementById('fEnd').value;
+        if (!startDate || !endDate) {
+            toast('请填写开始日期和结束日期', 'err');
+            return;
+        }
+        const p = filterParams();
+        const limit = parseInt(document.getElementById('fLimit').value, 10) || 0;
+
+        // 接口按次计费：作业一提交就开始发请求，所以先算命中只数（=预计调用次数）再二次确认
+        const cnt = await get('/api/stocks/count?' + countQuery());
+        if (!cnt.success) return;
+        const matched = cnt.data.count;
+        const planned = limit > 0 ? Math.min(matched, limit) : matched;
+        if (planned <= 0) {
+            toast('筛选条件未命中任何股票', 'err');
+            return;
+        }
+        const extra = `筛选条件：关键字=${p.keyword || '全部'}`
+            + (limit > 0 ? `，上限 ${limit} 只` : '');
+        if (!confirmApiCost(planned, extra)) return;
+
+        const body = Object.assign(p, {
+            startDate, endDate, dryRun,
+            concurrency: parseInt(document.getElementById('fConc').value, 10) || 8,
+            limit: limit
+        });
+
+        document.getElementById('btnDry').disabled = true;
+        document.getElementById('btnRun').disabled = true;
+        try {
+            const r = await post('/api/fetch/jobs', body);
+            if (!r.success) return;
+            jobId = r.data.jobId;
+            toast(r.message, 'ok');
+            document.getElementById('btnCancel').disabled = false;
+            startPoll();
+        } finally {
+            document.getElementById('btnDry').disabled = false;
+            document.getElementById('btnRun').disabled = false;
+        }
+    }
+
+    async function cancelJob() {
+        if (!jobId) return;
+        if (!confirm('确认取消该作业？已在途的请求不会中断，剩余股票不再处理。')) return;
+        const r = await post('/api/fetch/jobs/' + jobId + '/cancel', {});
+        if (r.success) toast('已发送取消信号', 'info');
+    }
+
+    function startPoll() {
+        if (timer) clearInterval(timer);
+        timer = setInterval(poll, 800);
+        poll();
+    }
+
+    async function poll() {
+        if (!jobId) return;
+        const r = await get('/api/fetch/jobs/' + jobId);
+        if (!r.success) {
+            clearInterval(timer);
+            return;
+        }
+        render(r.data);
+        const s = r.data.status;
+        if (s === 'DONE' || s === 'CANCELLED' || s === 'FAILED') {
+            clearInterval(timer);
+            document.getElementById('btnCancel').disabled = true;
+            const tip = s === 'DONE' ? '作业完成' : s === 'CANCELLED' ? '作业已取消' : '作业失败';
+            toast(tip + '：成功 ' + r.data.successCount + ' 只，失败 ' + r.data.failedCount
+                + ' 只，返回 ' + r.data.fetchedTotal + ' 条，入库 ' + r.data.persistedTotal + ' 条',
+                s === 'DONE' ? 'ok' : 'info');
+        }
+    }
+
+    function render(j) {
+        const statusCls = j.status === 'DONE' ? 'badge-ok'
+            : (j.status === 'RUNNING' ? '' : 'badge-err');
+        const modeText = j.dryRun ? '<span class="badge">预览模式（未入库）</span>'
+            : '<span class="badge badge-ok">已入库</span>';
+        document.getElementById('jobBox').innerHTML = `
+            <table class="kv">
+                <tr><th>作业 ID</th><td>${esc(j.jobId)}</td></tr>
+                <tr><th>状态</th><td><span class="badge ${statusCls}">${esc(j.status)}</span>
+                    &nbsp;${j.status === 'RUNNING' ? '<span class="spinner"></span>' : ''}
+                    &nbsp;${modeText}</td></tr>
+                <tr><th>筛选条件</th><td>关键字=${esc(j.keyword || '全部')}，
+                    状态=${j.enabled === null ? '全部' : (j.enabled === 1 ? '仅启用' : '仅停用')}</td></tr>
+                <tr><th>日期区间</th><td>${esc(j.startDate)} ~ ${esc(j.endDate)}（每只股票一次请求）</td></tr>
+                <tr><th>并发线程</th><td>${j.concurrency}</td></tr>
+                <tr><th>进度</th><td>
+                    <div style="height:8px;background:#1b2233;border-radius:4px;overflow:hidden;margin:4px 0">
+                        <div style="height:100%;width:${j.progress}%;background:var(--primary);transition:width .3s"></div>
+                    </div>
+                    <b>${j.completed}</b> / ${j.total}（${j.progress}%）
+                    &nbsp;成功 <b class="up">${j.successCount}</b>
+                    &nbsp;失败 <b class="${j.failedCount ? 'down' : ''}">${j.failedCount}</b>
+                </td></tr>
+                <tr><th>接口返回条数</th><td><b>${j.fetchedTotal}</b></td></tr>
+                <tr><th>入库条数</th><td><b>${j.persistedTotal}</b></td></tr>
+                <tr><th>耗时</th><td>${(j.elapsedMs / 1000).toFixed(1)} s</td></tr>
+            </table>`;
+
+        const errBody = document.getElementById('errBody');
+        if (j.errors && j.errors.length) {
+            document.getElementById('errPanel').style.display = '';
+            errBody.innerHTML = j.errors.map(e =>
+                `<tr><td><b>${esc(e.code)}</b></td><td class="dim">${esc(e.message || '')}</td></tr>`).join('');
+        } else {
+            document.getElementById('errPanel').style.display = 'none';
+        }
+    }
+
+    document.getElementById('fLimit').addEventListener('change', previewCount);
+    previewCount();
+</script>
+</body>
+</html>

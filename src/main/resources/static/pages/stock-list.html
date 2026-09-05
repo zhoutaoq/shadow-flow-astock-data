@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>股票列表 - 金牛数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260907f">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据 <span class="sub">回测</span></a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <section class="panel">
+        <h2>查询条件 <span class="dim" style="font-weight:400;font-size:12px" id="modeTip"></span></h2>
+        <div class="form-row">
+            <div class="field grow">
+                <label>关键字（代码 / 名称）</label>
+                <input type="text" id="fKeyword" placeholder="如 000001 或 平安，回车即查">
+            </div>
+            <div class="field">
+                <label>每页条数</label>
+                <select id="fSize">
+                    <option value="20">20</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+            <button onclick="state.page=1;load()">查询</button>
+            <button class="btn-ghost" onclick="document.getElementById('fKeyword').value='';state.page=1;load()">重置</button>
+            <!-- 无数据库模式没有库表可写，整块写操作隐藏 -->
+            <span id="writeOps" style="display:none">
+                <button class="btn-warn" onclick="importJson()">从 stock-list.json 导入</button>
+                <button onclick="openEdit(null)">+ 新增股票</button>
+            </span>
+        </div>
+        <div id="stat" class="dim" style="font-size:12px"></div>
+    </section>
+
+    <section class="panel">
+        <h2>股票列表 <span class="dim" style="font-weight:400;font-size:12px">沪深A股 · 分析与回测的标的池</span></h2>
+        <div style="overflow:auto;max-height:620px">
+            <table class="grid">
+                <thead>
+                <tr id="thead"></tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+            </table>
+        </div>
+        <div class="pager" id="pager"></div>
+    </section>
+</main>
+
+<!-- 编辑弹窗：无数据库模式不会用到 -->
+<div class="mask" id="editMask">
+    <div class="modal">
+        <h3 id="editTitle">新增股票</h3>
+        <div class="field">
+            <label>股票代码 *</label>
+            <input type="text" id="eCode" placeholder="000001">
+        </div>
+        <div class="field">
+            <label>股票名称</label>
+            <input type="text" id="eName" placeholder="平安银行">
+        </div>
+        <div class="field">
+            <label>状态</label>
+            <select id="eEnabled">
+                <option value="1">启用</option>
+                <option value="0">停用</option>
+            </select>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-ghost" onclick="closeEdit()">取消</button>
+            <button onclick="submitEdit()">保存</button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/common.js?v=20260907f"></script>
+<script>
+    /**
+     * 两种模式共用一页，差别只在数据来源与写操作：
+     * 数据库模式翻 /api/stocks（可增删改），无数据库模式翻 /api/dir/stocks/page
+     * （服务启动时载入内存的 stock-list.json，只读）。
+     *
+     * <p>系统只关注沪深A股，页面上不再有「市场」这个维度。
+     */
+    const state = {page: 1, size: 50, editingId: null};
+
+    document.getElementById('fKeyword').addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            state.page = 1;
+            load();
+        }
+    });
+    document.getElementById('fSize').addEventListener('change', () => {
+        state.page = 1;
+        load();
+    });
+
+    /** 无数据库模式只有代码/名称两列，也没有编辑入口 */
+    function renderHead() {
+        const cols = MODE.noDb
+            ? ['股票代码', '股票名称', '操作']
+            : ['ID', '股票代码', '股票名称', '状态', '创建时间', '更新时间', '操作'];
+        document.getElementById('thead').innerHTML = cols.map(c => `<th>${c}</th>`).join('');
+    }
+
+    async function load() {
+        state.size = parseInt(document.getElementById('fSize').value, 10);
+        const kw = document.getElementById('fKeyword').value.trim();
+        const qs = `page=${state.page}&size=${state.size}`
+            + (kw ? '&keyword=' + encodeURIComponent(kw) : '');
+        const r = await get(MODE.noDb ? '/api/dir/stocks/page?' + qs : '/api/stocks?' + qs);
+        if (!r || !r.success) {
+            return;
+        }
+        const rows = r.data.rows || [];
+        const tbody = document.getElementById('tbody');
+        if (!rows.length) {
+            tbody.innerHTML = `<tr><td class="empty" colspan="${MODE.noDb ? 3 : 7}">没有匹配的股票</td></tr>`;
+        } else {
+            tbody.innerHTML = MODE.noDb ? rows.map(rowNoDb).join('') : rows.map(rowDb).join('');
+        }
+        const total = r.data.total || 0;
+        document.getElementById('stat').textContent =
+            `共 ${total} 条${kw ? '（已按关键字过滤）' : ''}`;
+        renderPager(document.getElementById('pager'), r.data.page || state.page,
+            r.data.size || state.size, total, p => {
+                state.page = p;
+                load();
+            });
+    }
+
+    function rowNoDb(x) {
+        return `<tr>
+            <td><b>${esc(x.code)}</b></td>
+            <td>${esc(x.name || '')}</td>
+            <td>
+                <button class="btn-sm btn-ghost" onclick="go('chart','${esc(x.code)}')">K线</button>
+                <button class="btn-sm btn-ghost" onclick="go('backtest','${esc(x.code)}')">回测</button>
+            </td>
+        </tr>`;
+    }
+
+    function rowDb(x) {
+        return `<tr>
+            <td>${x.id}</td>
+            <td><b>${esc(x.stockCode)}</b></td>
+            <td>${esc(x.stockName)}</td>
+            <td>${x.enabled === 1 ? '<span class="badge badge-ok">启用</span>'
+                : '<span class="badge">停用</span>'}</td>
+            <td class="dim">${esc(x.createTime || '')}</td>
+            <td class="dim">${esc(x.updateTime || '')}</td>
+            <td>
+                <button class="btn-sm btn-ghost" onclick='openEdit(${JSON.stringify(x)})'>编辑</button>
+                <button class="btn-sm btn-ghost" onclick="go('chart','${x.stockCode}')">分析</button>
+                <button class="btn-sm btn-ghost" onclick="go('backtest','${x.stockCode}')">回测</button>
+                <button class="btn-sm btn-danger" onclick="remove(${x.id})">删除</button>
+            </td>
+        </tr>`;
+    }
+
+    function go(page, code) {
+        location.href = `/pages/${page}.html?code=${encodeURIComponent(code)}`;
+    }
+
+    function openEdit(item) {
+        state.editingId = item ? item.id : null;
+        document.getElementById('editTitle').textContent = item ? '编辑股票' : '新增股票';
+        document.getElementById('eCode').value = item ? item.stockCode : '';
+        document.getElementById('eName').value = item ? item.stockName : '';
+        document.getElementById('eEnabled').value = item ? String(item.enabled) : '1';
+        document.getElementById('editMask').classList.add('show');
+    }
+
+    function closeEdit() {
+        document.getElementById('editMask').classList.remove('show');
+    }
+
+    async function submitEdit() {
+        const body = {
+            stockCode: document.getElementById('eCode').value.trim(),
+            stockName: document.getElementById('eName').value.trim(),
+            enabled: parseInt(document.getElementById('eEnabled').value, 10)
+        };
+        if (!body.stockCode) {
+            return toast('股票代码不能为空', 'err');
+        }
+        const r = state.editingId
+            ? await put('/api/stocks/' + state.editingId, body)
+            : await post('/api/stocks', body);
+        if (r && r.success) {
+            toast(r.message, 'ok');
+            closeEdit();
+            load();
+        }
+    }
+
+    async function remove(id) {
+        if (!confirm('确认删除 ID=' + id + ' 的股票记录？')) return;
+        const r = await del('/api/stocks/' + id);
+        if (r && r.success) {
+            toast(r.message, 'ok');
+            load();
+        }
+    }
+
+    async function importJson() {
+        if (!confirm('将从 resources/stock-list.json 导入沪深A股（同代码覆盖名称），确认继续？')) return;
+        toast('导入中，请稍候...', 'info');
+        const r = await post('/api/stocks/import', {});
+        if (r && r.success) {
+            toast(`导入完成：解析 ${r.data.parsed} 条，导入前 ${r.data.before} 条 → 导入后 ${r.data.after} 条`, 'ok');
+            load();
+        }
+    }
+
+    (async function init() {
+        await loadMode();
+        if (MODE.noDb) {
+            await whenTokenReady();   // 没有令牌时先弹填写框，别白跑一次请求
+            document.getElementById('modeTip').textContent = '无数据库模式 · 只读';
+        } else {
+            document.getElementById('writeOps').style.display = '';
+        }
+        renderHead();
+        load();
+    })();
+</script>
+</body>
+</html>

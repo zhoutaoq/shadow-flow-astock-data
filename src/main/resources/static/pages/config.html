@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>系统配置</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260907f">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据 <span class="sub">回测</span></a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <!-- 无数据库模式：没有配置表，整页就是一个令牌输入框 -->
+    <section class="panel" id="tokenPanel" style="display:none">
+        <h2>waizao 令牌 <span class="dim" style="font-weight:400;font-size:12px">存本机 cookie，后端不保存</span></h2>
+        <div class="msg msg-info" style="display:block">
+            当前是<b>无数据库模式</b>：后端不保存任何参数。系统已<b>内置默认令牌</b>，开箱即用，
+            <b>令牌内容不支持查看</b>；如需换用自己的令牌，在下方输入并保存即可覆盖
+            （写入本机浏览器 cookie，<b>30 天有效</b>），之后每个请求自动带上
+            <code>X-Waizao-Token</code> 请求头，点「恢复默认令牌」即回到内置令牌。
+        </div>
+        <div class="form-row">
+            <div class="field grow">
+                <label>新令牌（覆盖内置默认）</label>
+                <input type="password" id="fToken" autocomplete="off" spellcheck="false"
+                       placeholder="粘贴新的 waizao token（留空 = 使用当前令牌）">
+                <div class="sp-hint">令牌属按次计费的凭据，自定义令牌只写在本机，不会上传也不会写进日志。</div>
+            </div>
+            <button onclick="saveToken()" id="btnSave">保存并覆盖</button>
+            <button class="btn-ghost" onclick="resetToDefault()">恢复默认令牌</button>
+        </div>
+        <div class="sp-hint" id="tokenState"></div>
+    </section>
+
+    <section class="panel" id="tablePanel">
+        <h2>配置变量 <span class="dim" style="font-weight:400;font-size:12px">保存后立即生效，无需重启</span></h2>
+        <div class="msg msg-info" style="display:block">
+            这里只放运行期会变的变量，按「场景 + 键」维护。目前只有供应商的令牌（场景 <code>waizao</code> / 键 <code>token</code>）；
+            接口地址、超时、并发度、启用开关等稳定参数写在配置文件里，改了重启生效。
+        </div>
+        <div class="form-row">
+            <button onclick="openEdit(null)">新增配置</button>
+            <button class="btn-ghost" onclick="reload()" title="手工改了数据库时用它，从库里重新加载">从数据库重载</button>
+        </div>
+        <div style="overflow:auto;max-height:620px;margin-top:10px">
+            <table class="grid">
+                <thead>
+                <tr>
+                    <th style="width:60px">ID</th>
+                    <th style="width:140px">场景</th>
+                    <th style="width:160px">配置键</th>
+                    <th>配置值</th>
+                    <th style="width:200px">备注</th>
+                    <th style="width:150px">更新时间</th>
+                    <th style="width:130px">操作</th>
+                </tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel" id="docPanel">
+        <h2>说明</h2>
+        <table class="grid">
+            <thead><tr><th style="width:180px">项</th><th>说明</th></tr></thead>
+            <tbody>
+            <tr><td><b>场景</b></td><td>变量归属的场景/分组，如 <code>waizao</code>；同一场景下配置键不能重复</td></tr>
+            <tr><td><b>配置键</b></td><td>变量名，如 <code>token</code>。键名里含 token / password / secret / key 的值在列表里默认打码</td></tr>
+            <tr><td><b>生效方式</b></td><td>保存时同步刷新内存缓存，下一次请求即用新值；直接改数据库需点「从数据库重载」</td></tr>
+            <tr><td><b>令牌安全</b></td><td>令牌属按次计费凭据，页面默认遮蔽，点「显示」才展开；不要暴露到公网</td></tr>
+            </tbody>
+        </table>
+    </section>
+</main>
+
+<!-- 新增/编辑弹窗 -->
+<div class="mask" id="editMask">
+    <div class="modal">
+        <h3 id="editTitle">新增配置</h3>
+        <div class="field">
+            <label>场景 *</label>
+            <input type="text" id="eScene" placeholder="waizao">
+        </div>
+        <div class="field">
+            <label>配置键 *</label>
+            <input type="text" id="eKey" placeholder="token">
+        </div>
+        <div class="field">
+            <label>配置值</label>
+            <input type="text" id="eValue" autocomplete="off">
+            <div class="sp-hint" id="eValueHint"></div>
+        </div>
+        <div class="field">
+            <label>备注</label>
+            <input type="text" id="eRemark">
+        </div>
+        <div class="modal-actions">
+            <button class="btn-ghost" onclick="closeEdit()">取消</button>
+            <button onclick="submitEdit()">保存并生效</button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/common.js?v=20260907f"></script>
+<script src="/js/date-picker.js"></script>
+<script>
+    /** 需要遮蔽显示的键：值里是令牌/口令 */
+    function isSecretKey(key) {
+        const k = (key || '').toLowerCase();
+        return k.includes('token') || k.includes('secret') || k.includes('password')
+            || k.includes('passwd') || k.includes('pwd') || k.includes('key');
+    }
+
+    function maskValue(v) {
+        if (!v) return '';
+        return v.length <= 8 ? '****' : v.slice(0, 4) + '****' + v.slice(-4);
+    }
+
+    let rows = [];
+
+    async function load() {
+        const r = await get('/api/sys-config');
+        if (!r.success) return;
+        rows = r.data || [];
+        render();
+    }
+
+    function render() {
+        const tbody = document.getElementById('tbody');
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无配置</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(x => {
+            const secret = isSecretKey(x.configKey);
+            const shown = secret ? maskValue(x.configValue) : (x.configValue || '');
+            return `
+                <tr>
+                    <td class="dim">${x.id}</td>
+                    <td><b>${esc(x.configScene)}</b></td>
+                    <td>${esc(x.configKey)}</td>
+                    <td>${secret
+                        ? `<span data-masked="${esc(maskValue(x.configValue))}" data-real="${esc(x.configValue || '')}">${esc(maskValue(x.configValue))}</span>
+                           <button class="btn-sm btn-ghost" onclick="toggleValue(this)">显示</button>`
+                        : esc(x.configValue || '')}</td>
+                    <td class="dim">${esc(x.remark || '')}</td>
+                    <td class="dim">${esc(x.updateTime || '')}</td>
+                    <td>
+                        <button class="btn-sm btn-ghost" onclick="openEdit(${x.id})">编辑</button>
+                        <button class="btn-sm btn-ghost" onclick="removeCfg(${x.id})">删除</button>
+                    </td>
+                </tr>`;
+        }).join('');
+    }
+
+    function toggleValue(btn) {
+        const span = btn.previousElementSibling;
+        const showing = btn.textContent === '显示';
+        span.textContent = showing ? span.getAttribute('data-real') : span.getAttribute('data-masked');
+        btn.textContent = showing ? '隐藏' : '显示';
+    }
+
+    function openEdit(id) {
+        const item = id ? rows.find(x => x.id === id) : null;
+        document.getElementById('editTitle').textContent = item ? '编辑配置' : '新增配置';
+        document.getElementById('eScene').value = item ? item.configScene : 'waizao';
+        document.getElementById('eKey').value = item ? item.configKey : '';
+        document.getElementById('eValue').value = item ? (item.configValue || '') : '';
+        document.getElementById('eRemark').value = item ? (item.remark || '') : '';
+        // 编辑时场景与键是定位条件，改了等于新增另一条
+        document.getElementById('eScene').disabled = !!item;
+        document.getElementById('eKey').disabled = !!item;
+        document.getElementById('eValueHint').textContent = item
+            ? '留空表示清空该配置值'
+            : '';
+        document.getElementById('editMask').classList.add('show');
+    }
+
+    function closeEdit() {
+        document.getElementById('editMask').classList.remove('show');
+    }
+
+    async function submitEdit() {
+        const body = {
+            configScene: document.getElementById('eScene').value.trim(),
+            configKey: document.getElementById('eKey').value.trim(),
+            configValue: document.getElementById('eValue').value,
+            remark: document.getElementById('eRemark').value.trim()
+        };
+        if (!body.configScene || !body.configKey) {
+            toast('场景与配置键都不能为空', 'err');
+            return;
+        }
+        const r = await post('/api/sys-config', body);
+        if (!r.success) return;
+        toast(r.message, 'ok');
+        closeEdit();
+        await load();
+    }
+
+    async function removeCfg(id) {
+        const item = rows.find(x => x.id === id);
+        if (!confirm(`确认删除配置 ${item ? item.configScene + '/' + item.configKey : id} ？删除后相关功能会取不到值`)) {
+            return;
+        }
+        const r = await del('/api/sys-config/' + id);
+        if (!r.success) return;
+        toast(r.message, 'ok');
+        await load();
+    }
+
+    async function reload() {
+        const r = await post('/api/sys-config/reload', {});
+        if (!r.success) return;
+        rows = r.data || [];
+        render();
+        toast(r.message, 'ok');
+    }
+
+    document.getElementById('editMask').addEventListener('click', e => {
+        if (e.target.id === 'editMask') closeEdit();
+    });
+
+    // ============ 无数据库模式：默认令牌开箱即用，内容不支持查看 ============
+
+    function renderTokenState() {
+        document.getElementById('tokenState').innerHTML = hasCustomWaizaoToken()
+            ? '当前：<b>自定义令牌</b>（内容不可查看，30 天有效）；点「恢复默认令牌」可回到系统内置令牌。'
+            : '当前：<b>系统内置默认令牌</b>（内容不支持查看）；在上方输入新令牌并保存即可覆盖。';
+    }
+
+    function saveToken() {
+        const v = document.getElementById('fToken').value.trim();
+        if (!v) {
+            return toast('请先输入新的令牌', 'err');
+        }
+        setWaizaoToken(v);
+        document.getElementById('fToken').value = '';
+        renderTokenState();
+        toast('已覆盖为自定义令牌（30 天有效）', 'ok');
+    }
+
+    /** 清掉本机自定义值，立即回到内置默认令牌（默认令牌恒存在，不会再弹填写框） */
+    function resetToDefault() {
+        if (hasCustomWaizaoToken() && !confirm('恢复后将使用系统内置默认令牌，确认？')) return;
+        setWaizaoToken('');
+        document.getElementById('fToken').value = '';
+        renderTokenState();
+        toast('已恢复为系统内置默认令牌', 'ok');
+    }
+
+    (async function init() {
+        await loadMode();
+        if (MODE.noDb) {
+            // 配置表在这个模式下根本不存在，别去调接口也别显示表格
+            document.getElementById('tablePanel').style.display = 'none';
+            document.getElementById('docPanel').style.display = 'none';
+            document.getElementById('tokenPanel').style.display = '';
+            renderTokenState();
+            return;
+        }
+        load();
+    })();
+</script>
+</body>
+</html>

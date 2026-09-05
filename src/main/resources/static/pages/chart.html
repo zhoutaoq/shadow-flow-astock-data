@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>K线分析 - 金牛数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260907f">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据 <span class="sub">回测</span></a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <section class="panel">
+        <h2>K线分析</h2>
+        <div class="form-row">
+            <div class="field grow">
+                <label>股票 *</label>
+                <div id="codePick"></div>
+                <div class="sp-hint">点选一只股票后默认展示近三个月；图上拖拽平移、滚轮缩放，靠近边缘会按需加载更多历史</div>
+            </div>
+            <button onclick="loadStock()" id="btnLoad">分析</button>
+        </div>
+        <!-- 无数据库模式：本地没有"已入库跨度"可查，起止日期由用户直接给 -->
+        <div class="form-row" id="rangeRow" style="display:none">
+            <div class="field">
+                <label>开始日期 *</label>
+                <input type="date" id="fStart">
+            </div>
+            <div class="field">
+                <label>结束日期 *</label>
+                <input type="date" id="fEnd">
+            </div>
+            <span class="sp-hint" id="rangeHint"></span>
+        </div>
+        <div class="form-row">
+            <span class="dim">均线：</span>
+            <label class="dim"><input type="checkbox" class="ma" value="5" checked> MA5</label>
+            <label class="dim"><input type="checkbox" class="ma" value="10" checked> MA10</label>
+            <label class="dim"><input type="checkbox" class="ma" value="20"> MA20</label>
+            <label class="dim"><input type="checkbox" class="ma" value="60"> MA60</label>
+            <span class="dim" style="margin-left:12px">滚轮缩放 · 按住拖动平移</span>
+        </div>
+        <div id="stat" class="dim"></div>
+    </section>
+
+    <section class="panel">
+        <h2 id="chartTitle">K线图</h2>
+        <div class="form-row">
+            <button class="btn-ghost" onclick="openDetail()" id="btnDetail">当前视窗明细</button>
+            <span class="sp-hint">仅统计图上可见区间，分页展示</span>
+        </div>
+        <div id="chart" style="width:100%;height:560px"></div>
+    </section>
+</main>
+
+<script src="/vendor/echarts.min.js"></script>
+<script src="/js/common.js?v=20260907f"></script>
+<script src="/js/date-picker.js"></script>
+<script src="/js/stock-picker.js"></script>
+<script>
+    const VIEW_DAYS = 92;
+    const CHUNK_DAYS = 180;
+    const EDGE = 0.08;
+
+    let chart = echarts.init(document.getElementById('chart'), 'dark');
+    const state = {
+        code: '',
+        name: '',
+        minDate: null,
+        maxDate: null,
+        total: 0,
+        rows: [],
+        visRows: [],
+        fetching: false,
+        zoom: {start: 0, end: 100}
+    };
+
+    const codePicker = createStockPicker(document.getElementById('codePick'), {
+        onEnter: () => loadStock()
+    });
+
+    function resetChart() {
+        state.rows = [];
+        state.code = '';
+        chart.clear();
+        setVisRows([]);
+        document.getElementById('stat').textContent = '';
+        document.getElementById('chartTitle').textContent = 'K线图';
+    }
+
+    function maPeriods() {
+        return Array.from(document.querySelectorAll('.ma:checked')).map(x => parseInt(x.value, 10));
+    }
+
+    function calcMa(values, period) {
+        const res = [];
+        let sum = 0;
+        for (let i = 0; i < values.length; i++) {
+            sum += values[i];
+            if (i >= period) sum -= values[i - period];
+            res.push(i >= period - 1 ? +(sum / period).toFixed(3) : '-');
+        }
+        return res;
+    }
+
+    function mergeRows(extra) {
+        if (!extra || !extra.length) {
+            return 0;
+        }
+        const map = new Map();
+        state.rows.forEach(r => map.set(r.tradeDate, r));
+        let added = 0;
+        extra.forEach(r => {
+            if (!map.has(r.tradeDate)) {
+                added++;
+            }
+            map.set(r.tradeDate, r);
+        });
+        state.rows = Array.from(map.values()).sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
+        return added;
+    }
+
+    function loadedSpan() {
+        if (!state.rows.length) {
+            return {start: null, end: null};
+        }
+        return {start: state.rows[0].tradeDate, end: state.rows[state.rows.length - 1].tradeDate};
+    }
+
+    function clampYmd(a, b, mode) {
+        if (!a) return b;
+        if (!b) return a;
+        if (mode === 'max') return a > b ? a : b;
+        return a < b ? a : b;
+    }
+
+    async function fetchRange(startDate, endDate) {
+        if (!startDate || !endDate || startDate > endDate) {
+            return [];
+        }
+        const r = await get(`/api/kline/chart?code=${encodeURIComponent(state.code)}`
+            + `&startDate=${startDate}&endDate=${endDate}`);
+        if (!r.success) {
+            return [];
+        }
+        return r.data.rows || [];
+    }
+
+    /** 无数据库模式：直接用页面上的起止日期取一次，本地没有更多历史可懒加载 */
+    async function loadByRange() {
+        const s = document.getElementById('fStart').value;
+        const e = document.getElementById('fEnd').value;
+        if (!s || !e) {
+            toast('请选择起止日期', 'err');
+            return;
+        }
+        if (s > e) {
+            toast('开始日期不能晚于结束日期', 'err');
+            return;
+        }
+        const span = (parseYmd(e) - parseYmd(s)) / 86400000 + 1;
+        if (span > MODE.maxSpanDays) {
+            toast(`无数据库模式单次最多查询 ${MODE.maxSpanDays} 个自然日，当前 ${span} 天`, 'err');
+            return;
+        }
+        state.minDate = s;
+        state.maxDate = e;
+        state.rows = [];
+        state.zoom = {start: 0, end: 100};
+        mergeRows(await fetchRange(s, e));
+        state.total = state.rows.length;
+        if (!state.total) {
+            chart.clear();
+            document.getElementById('stat').textContent = '';
+            document.getElementById('chartTitle').textContent = `K线图 - ${state.code}`;
+            return;
+        }
+        paint(true);
+    }
+
+    async function loadStock() {
+        if (!requireStock(codePicker, '一只股票')) return;
+        const picked = codePicker.getFirst();
+        state.code = picked.code;
+        state.name = picked.name || '';
+        state.rows = [];
+        state.zoom = {start: 0, end: 100};
+
+        if (MODE.noDb) {
+            await loadByRange();
+            return;
+        }
+
+        const span = await get(`/api/kline/span?code=${encodeURIComponent(state.code)}`);
+        if (!span.success) return;
+        state.minDate = span.data.minDate;
+        state.maxDate = span.data.maxDate;
+        state.total = span.data.count || 0;
+        if (!state.total) {
+            chart.clear();
+            document.getElementById('stat').textContent = '';
+            document.getElementById('chartTitle').textContent = `K线图 - ${state.code}`;
+            return;
+        }
+
+        const viewEnd = state.maxDate;
+        const viewStart = clampYmd(addDays(viewEnd, -VIEW_DAYS), state.minDate, 'max');
+        const fetchStart = clampYmd(addDays(viewStart, -60), state.minDate, 'max');
+        mergeRows(await fetchRange(fetchStart, viewEnd));
+        paint(true);
+    }
+
+    function visibleIndexRange() {
+        const n = state.rows.length;
+        if (!n) {
+            return {from: 0, to: 0};
+        }
+        const from = Math.max(0, Math.floor(n * state.zoom.start / 100));
+        const to = Math.min(n, Math.ceil(n * state.zoom.end / 100));
+        return {from, to: Math.max(from + 1, to)};
+    }
+
+    function paint(fitThreeMonths) {
+        const rows = state.rows;
+        if (!rows.length) {
+            chart.clear();
+            return;
+        }
+        const dates = rows.map(x => x.tradeDate);
+        const ohlc = rows.map(x => [
+            Number(x.openPrice), Number(x.closePrice), Number(x.lowPrice), Number(x.highPrice)
+        ]);
+        const closeVals = rows.map(x => Number(x.closePrice));
+        const volumes = rows.map(x => ({
+            value: Number(x.volume || 0),
+            itemStyle: {
+                color: Number(x.closePrice) >= Number(x.openPrice) ? '#e5484d' : '#2ea043'
+            }
+        }));
+        const mas = maPeriods().map(p => ({
+            name: 'MA' + p,
+            type: 'line',
+            data: calcMa(closeVals, p),
+            smooth: true,
+            symbol: 'none',
+            lineStyle: {width: 1},
+            large: true
+        }));
+
+        if (fitThreeMonths) {
+            const end = rows[rows.length - 1].tradeDate;
+            const startWant = addDays(end, -VIEW_DAYS);
+            let idx = 0;
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i].tradeDate >= startWant) {
+                    idx = i;
+                    break;
+                }
+            }
+            state.zoom.start = rows.length <= 1 ? 0 : +(idx / (rows.length - 1) * 100).toFixed(2);
+            state.zoom.end = 100;
+        }
+
+        chart.setOption({
+            backgroundColor: 'transparent',
+            animation: false,
+            legend: {data: ['K线'].concat(mas.map(m => m.name)), top: 0},
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {type: 'cross'},
+                formatter: function (ps) {
+                    const k = ps.find(p => p.seriesName === 'K线');
+                    if (!k) return '';
+                    const v = k.value;
+                    let html = `<b>${k.axisValue}</b><br>开 ${v[1]}<br>收 ${v[2]}<br>低 ${v[3]}<br>高 ${v[4]}`;
+                    ps.forEach(p => {
+                        if (p.seriesName !== 'K线' && p.seriesName !== '成交量') {
+                            html += `<br>${p.seriesName} ${p.value}`;
+                        }
+                    });
+                    return html;
+                }
+            },
+            axisPointer: {link: [{xAxisIndex: 'all'}]},
+            grid: [
+                {left: 60, right: 40, top: 40, height: 320},
+                {left: 60, right: 40, top: 400, height: 100}
+            ],
+            xAxis: [
+                {type: 'category', data: dates, boundaryGap: false, axisLine: {lineStyle: {color: '#3a4256'}}},
+                {
+                    type: 'category', gridIndex: 1, data: dates, boundaryGap: false,
+                    axisLine: {lineStyle: {color: '#3a4256'}}, axisLabel: {show: false}
+                }
+            ],
+            yAxis: [
+                {scale: true, splitLine: {lineStyle: {color: '#232b3d'}}},
+                {gridIndex: 1, splitNumber: 2, splitLine: {show: false}, axisLabel: {show: false}}
+            ],
+            dataZoom: [
+                {
+                    type: 'inside',
+                    xAxisIndex: [0, 1],
+                    start: state.zoom.start,
+                    end: state.zoom.end,
+                    zoomOnMouseWheel: true,
+                    moveOnMouseMove: true,
+                    moveOnMouseWheel: false,
+                    preventDefaultMouseMove: true
+                },
+                {type: 'slider', xAxisIndex: [0, 1], top: 510, height: 18, start: state.zoom.start, end: state.zoom.end}
+            ],
+            series: [{
+                name: 'K线',
+                type: 'candlestick',
+                data: ohlc,
+                large: true,
+                largeThreshold: 80,
+                itemStyle: {color: '#e5484d', color0: '#2ea043', borderColor: '#e5484d', borderColor0: '#2ea043'}
+            }].concat(mas).concat([{
+                name: '成交量',
+                type: 'bar',
+                xAxisIndex: 1,
+                yAxisIndex: 1,
+                large: true,
+                data: volumes
+            }])
+        }, true);
+
+        const vis = visibleIndexRange();
+        const visRows = rows.slice(vis.from, vis.to);
+        document.getElementById('chartTitle').textContent =
+            `K线图 - ${state.code}${state.name ? ' ' + state.name : ''}（已加载 ${rows.length} / ${state.total} 个交易日）`;
+        setVisRows(visRows);
+        renderStat(visRows);
+    }
+
+    function renderStat(visRows) {
+        if (!visRows.length) {
+            document.getElementById('stat').textContent = '';
+            return;
+        }
+        const first = visRows[0], last = visRows[visRows.length - 1];
+        const pc = Number(first.preClose || first.openPrice);
+        const chg = (Number(last.closePrice) - pc) / pc * 100;
+        const span = loadedSpan();
+        document.getElementById('stat').innerHTML =
+            `视窗 ${visRows[0].tradeDate} ~ ${visRows[visRows.length - 1].tradeDate}`
+            + ` · 涨跌 <b class="${chg >= 0 ? 'up' : 'down'}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</b>`
+            + ` · 已加载 ${span.start} ~ ${span.end}`
+            + (state.minDate && span.start > state.minDate ? ' · 继续向左拖可加载更早行情' : '');
+    }
+
+    /** 视窗明细不再平铺在页面上：只记住当前可见区间，点按钮才弹窗分页展示 */
+    function setVisRows(rows) {
+        state.visRows = rows || [];
+        document.getElementById('btnDetail').textContent = `当前视窗明细（${state.visRows.length} 条）`;
+        document.getElementById('btnDetail').disabled = !state.visRows.length;
+    }
+
+    function openDetail() {
+        if (!state.visRows.length) {
+            return toast('当前视窗没有明细数据', 'err');
+        }
+        const rows = state.visRows.slice().reverse();
+        openTableModal({
+            title: `当前视窗明细 - ${state.code}${state.name ? ' ' + state.name : ''}`,
+            rows,
+            columns: [
+                {label: '交易日', render: r => esc(r.tradeDate)},
+                {label: '开盘', cls: 'num', render: r => fmtNum(r.openPrice)},
+                {label: '收盘', cls: 'num', render: r => fmtNum(r.closePrice)},
+                {label: '最高', cls: 'num', render: r => fmtNum(r.highPrice)},
+                {label: '最低', cls: 'num', render: r => fmtNum(r.lowPrice)},
+                {label: '涨跌', cls: 'num', render: r => {
+                    const p = r.preClose != null ? Number(r.preClose) : null;
+                    if (!p) return '-';
+                    const pct = (Number(r.closePrice) - p) / p * 100;
+                    return `<span class="${pct >= 0 ? 'up' : 'down'}">`
+                        + `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>`;
+                }},
+                {label: '成交量', cls: 'num', render: r => fmtVol(r.volume)},
+                {label: '成交额', cls: 'num', render: r => fmtVol(r.amount)}
+            ]
+        });
+    }
+
+    async function maybePrefetch() {
+        if (state.fetching || !state.code || !state.rows.length) {
+            return;
+        }
+        const n = state.rows.length;
+        const startIdx = Math.floor(n * state.zoom.start / 100);
+        const endIdx = Math.ceil(n * state.zoom.end / 100);
+        const span = loadedSpan();
+        let need = null;
+
+        if (state.zoom.start < EDGE * 100 && span.start > state.minDate) {
+            const from = clampYmd(addDays(span.start, -CHUNK_DAYS), state.minDate, 'max');
+            const to = addDays(span.start, -1);
+            need = {from, to, keepDate: state.rows[startIdx] ? state.rows[startIdx].tradeDate : span.start};
+        } else if (state.zoom.end > (1 - EDGE) * 100 && span.end < state.maxDate) {
+            const from = addDays(span.end, 1);
+            const to = clampYmd(addDays(span.end, CHUNK_DAYS), state.maxDate, 'min');
+            need = {from, to, keepDate: state.rows[Math.max(0, endIdx - 1)] ? state.rows[endIdx - 1].tradeDate : span.end};
+        }
+        if (!need || !need.from || !need.to || need.from > need.to) {
+            return;
+        }
+        state.fetching = true;
+        try {
+            const extra = await fetchRange(need.from, need.to);
+            const added = mergeRows(extra);
+            if (added) {
+                const keep = need.keepDate;
+                const idx = state.rows.findIndex(r => r.tradeDate === keep);
+                const visLen = Math.max(1, endIdx - startIdx);
+                if (idx >= 0 && state.rows.length > 1) {
+                    state.zoom.start = +(idx / (state.rows.length - 1) * 100).toFixed(2);
+                    const endI = Math.min(state.rows.length - 1, idx + visLen);
+                    state.zoom.end = +(endI / (state.rows.length - 1) * 100).toFixed(2);
+                }
+                paint(false);
+            }
+        } finally {
+            state.fetching = false;
+        }
+    }
+
+    chart.on('datazoom', function (e) {
+        const batch = e.batch ? e.batch[0] : e;
+        if (batch && batch.start != null) {
+            state.zoom.start = batch.start;
+            state.zoom.end = batch.end;
+        } else {
+            const opt = chart.getOption();
+            const z = opt.dataZoom && opt.dataZoom[0];
+            if (z) {
+                state.zoom.start = z.start;
+                state.zoom.end = z.end;
+            }
+        }
+        const vis = visibleIndexRange();
+        const visRows = state.rows.slice(vis.from, vis.to);
+        setVisRows(visRows);
+        renderStat(visRows);
+        maybePrefetch();
+    });
+
+    window.addEventListener('resize', () => chart.resize());
+    document.querySelectorAll('.ma').forEach(x => x.onchange = () => {
+        if (state.rows.length) paint(false);
+    });
+
+    /** 无数据库模式：起止日期由用户给，隐藏"继续向左拖加载更多历史"这类依赖入库范围的交互 */
+    function onModeReady(m) {
+        if (!m.noDb) return;
+        const row = document.getElementById('rangeRow');
+        row.style.display = '';
+        document.getElementById('fStart').value = daysAgo(92);
+        document.getElementById('fEnd').value = today();
+        document.getElementById('rangeHint').textContent =
+            `无数据库模式：数据每次向供应商现取，单次最多 ${m.maxSpanDays} 个自然日`;
+        initDatePickers(row);
+    }
+
+    (async function initFromQuery() {
+        await loadMode();
+        await whenTokenReady();   // 首进页面要先填令牌，别先发出一批没令牌的请求
+        onModeReady(MODE);
+        const p = new URLSearchParams(location.search);
+        if (p.get('code')) {
+            const ok = await codePicker.pickByCode(p.get('code'));
+            if (!ok) toast(`代码 ${p.get('code')} 不在股票列表中，请从下拉里重新点选`, 'err');
+        }
+        if (codePicker.getCodes().length) loadStock();
+    })();
+</script>
+</body>
+</html>
