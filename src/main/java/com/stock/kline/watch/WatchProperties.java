@@ -16,8 +16,19 @@ public class WatchProperties {
     /** 总开关 */
     private boolean enabled = true;
 
-    /** 盯盘名单文件（每行一个股票名称） */
+    /** 盯盘名单文件（每行一个股票名称）；只在首次启动、还没有落盘配置时用来迁移名单 */
     private String watchListFile = "resources/watch-list.txt";
+
+    /**
+     * 落盘配置文件：页面保存的开关 / 间隔 / 阈值 / 股票集合都写在这里。
+     *
+     * <p>解析顺序是「工作目录下的 watch-config.json → 这里配置的绝对路径」，
+     * 所以服务器部署时两个通常指向同一个文件。
+     */
+    private String configFile = "/home/stock-backtesting/watch-config.json";
+
+    /** 盯盘页面的进入密码：只在这里维护，后端校验，不下发给前端 */
+    private String password = "1";
 
     /** 名称 → 代码 索引的数据文件 */
     private String stockListFile = "resources/stock-list.json";
@@ -49,6 +60,22 @@ public class WatchProperties {
 
     public void setWatchListFile(String watchListFile) {
         this.watchListFile = watchListFile;
+    }
+
+    public String getConfigFile() {
+        return configFile;
+    }
+
+    public void setConfigFile(String configFile) {
+        this.configFile = configFile;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
     }
 
     public String getStockListFile() {
@@ -124,10 +151,13 @@ public class WatchProperties {
 
     /** 钉钉机器人 */
     public static class DingTalk {
-        /** Webhook 地址（含 access_token）；为空则不推送 */
+        /**
+         * Webhook 地址（含 access_token）；为空则不推送。
+         *
+         * <p>v1.4 起钉钉机器人只用"自定义关键词"模式（消息必须含特定关键词才会被服务端放行），
+         * 不再支持「加签」，所以本类不再暴露 secret 字段。
+         */
         private String webhook = "";
-        /** 加签密钥；为空表示不加签 */
-        private String secret = "";
 
         public String getWebhook() {
             return webhook;
@@ -135,14 +165,6 @@ public class WatchProperties {
 
         public void setWebhook(String webhook) {
             this.webhook = webhook;
-        }
-
-        public String getSecret() {
-            return secret;
-        }
-
-        public void setSecret(String secret) {
-            this.secret = secret;
         }
 
         public boolean configured() {

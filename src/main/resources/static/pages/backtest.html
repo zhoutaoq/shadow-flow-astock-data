@@ -3,7 +3,7 @@
 <head data-page-node-id="GWIRAaz2rSmyf6Pir8tVg7">
     <meta charset="UTF-8" data-page-node-id="IFxfZLByN82ba2Ena2A7YQ">
     <title>策略回测 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260907f" data-page-node-id="IblNgYhVsHPlrioFhjaH2B">
+    <link rel="stylesheet" href="/css/common.css?v=20260908c" data-page-node-id="IblNgYhVsHPlrioFhjaH2B">
     <style>
         /* ============ 参数区：2×2，右侧买入/卖出更宽，保证判断组件一行放得下 ============ */
         .cfg-grid {
@@ -27,43 +27,116 @@
             }
         }
 
-        /* 四张卡片各用一个主色区分：对象=蓝、区间=青、买入=红、卖出=绿 */
-        .cfg-card {
-            --accent: var(--primary);
-            --accent-soft: rgba(59, 124, 255, .14);
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            background: linear-gradient(180deg, var(--accent-soft), rgba(0, 0, 0, 0) 90px), var(--bg-input);
-            border: 1px solid var(--border);
-            border-top: 2px solid var(--accent);
-            border-radius: 8px;
-            padding: 12px 14px 14px;
+        /* ============ 四张配置卡片：卡片化 + 微动效（深色底不变） ============
+           每张卡一个主色：对象=蓝、区间=青、买入=红、卖出=绿。
+           悬停时抬升并扫过一道高光，聚焦/悬停都有反馈，不再是四块死板的方框。 */
+        @keyframes cardIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: none; }
         }
 
-        .cfg-card.c1 { --accent: #3b7cff; --accent-soft: rgba(59, 124, 255, .14); }
-        .cfg-card.c2 { --accent: #17a2a0; --accent-soft: rgba(23, 162, 160, .14); }
-        .cfg-card.c3 { --accent: #e5484d; --accent-soft: rgba(229, 72, 77, .14); }
-        .cfg-card.c4 { --accent: #2ea043; --accent-soft: rgba(46, 160, 67, .14); }
+        .cfg-card {
+            --accent: #3b7cff;
+            --accent-soft: rgba(59, 124, 255, .14);
+            --accent-glow: rgba(59, 124, 255, .35);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 16px 18px 18px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            /* 左上角透出一点主色，右下保持面板本色，暗底上也有层次 */
+            background:
+                radial-gradient(120% 140% at 0% 0%, var(--accent-soft), rgba(0, 0, 0, 0) 62%),
+                linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, 0) 120px),
+                var(--bg-panel);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .04);
+            overflow: hidden;
+            transition: transform .22s cubic-bezier(.2, .8, .2, 1), box-shadow .22s, border-color .22s;
+            /* backwards：动画结束回到基础样式，hover 的位移才不会被动画锁住 */
+            animation: cardIn .5s cubic-bezier(.2, .8, .2, 1) backwards;
+        }
+
+        /* 顶部主色高亮条 */
+        .cfg-card::before {
+            content: '';
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), rgba(255, 255, 255, 0) 88%);
+        }
+
+        /* 悬停时从左侧扫过的一道高光 */
+        .cfg-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -60%;
+            width: 45%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .055), transparent);
+            transform: skewX(-18deg);
+            pointer-events: none;
+            transition: left .65s cubic-bezier(.2, .8, .2, 1);
+        }
+
+        .cfg-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--accent-glow);
+            box-shadow: 0 14px 32px rgba(0, 0, 0, .45), 0 0 0 1px var(--accent-soft);
+        }
+
+        .cfg-card:hover::after { left: 115%; }
+
+        .cfg-card.c1 {
+            --accent: #3b7cff;
+            --accent-soft: rgba(59, 124, 255, .14);
+            --accent-glow: rgba(59, 124, 255, .35);
+            animation-delay: 0s;
+        }
+
+        .cfg-card.c2 {
+            --accent: #17a2a0;
+            --accent-soft: rgba(23, 162, 160, .14);
+            --accent-glow: rgba(23, 162, 160, .35);
+            animation-delay: .06s;
+        }
+
+        .cfg-card.c3 {
+            --accent: #e5484d;
+            --accent-soft: rgba(229, 72, 77, .14);
+            --accent-glow: rgba(229, 72, 77, .35);
+            animation-delay: .12s;
+        }
+
+        .cfg-card.c4 {
+            --accent: #2ea043;
+            --accent-soft: rgba(46, 160, 67, .14);
+            --accent-glow: rgba(46, 160, 67, .35);
+            animation-delay: .18s;
+        }
 
         .cfg-head {
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 13px;
+            gap: 10px;
+            font-size: 13.5px;
             font-weight: 600;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border);
+            letter-spacing: .2px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, .06);
             color: var(--accent);
         }
 
         .cfg-idx {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: var(--accent);
+            width: 22px;
+            height: 22px;
+            border-radius: 7px;
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .28));
+            box-shadow: 0 2px 8px var(--accent-glow);
             color: #fff;
-            font-size: 11px;
+            font-size: 11.5px;
             font-weight: 600;
             display: inline-flex;
             align-items: center;
@@ -78,10 +151,17 @@
             font-weight: 400;
             color: var(--accent);
             background: var(--accent-soft);
-            border: 1px solid var(--accent-soft);
-            border-radius: 10px;
-            padding: 1px 8px;
+            border: 1px solid var(--accent-glow);
+            border-radius: 999px;
+            padding: 2px 10px;
             white-space: nowrap;
+        }
+
+        /* 卡片内的输入控件跟随主色发光，视觉上属于同一张卡 */
+        .cfg-card input:focus,
+        .cfg-card select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
         }
 
         .cfg-head .cfg-opt { margin-left: auto; font-weight: 400; }
@@ -97,6 +177,26 @@
             margin-top: 2px;
         }
 
+        /* 快捷区间：胶囊按钮，选中的那一段填充主色 */
+        .quick-range .btn-ghost {
+            border-radius: 999px;
+            transition: transform .16s cubic-bezier(.2, .8, .2, 1), background .18s,
+                        border-color .18s, box-shadow .18s, color .18s;
+        }
+
+        .quick-range .btn-ghost:hover {
+            transform: translateY(-1px);
+            border-color: var(--primary);
+            color: #fff;
+        }
+
+        .quick-range .btn-ghost.active {
+            background: linear-gradient(135deg, var(--primary), #7aa2ff);
+            border-color: transparent;
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(59, 124, 255, .35);
+        }
+
         /* 判断组件：整行不换行，宽度不够时控件自己收缩，删除按钮靠右 */
         .cond-row {
             display: flex;
@@ -104,9 +204,21 @@
             gap: 5px;
             flex-wrap: nowrap;
             white-space: nowrap;
-            padding: 8px 0;
+            padding: 8px 6px;
+            margin: 0 -6px;
             border-bottom: 1px dashed #2b3145;
+            border-radius: 6px;
             font-size: 12px;
+            /* 新增一行时淡入，悬停给一点底色，方便对焦到这一行 */
+            animation: condIn .28s cubic-bezier(.2, .8, .2, 1) backwards;
+            transition: background .18s;
+        }
+
+        .cond-row:hover { background: rgba(255, 255, 255, .03); }
+
+        @keyframes condIn {
+            from { opacity: 0; transform: translateX(-6px); }
+            to { opacity: 1; transform: none; }
         }
 
         .cond-row .idx { flex: none; color: var(--text-dim); }
@@ -155,17 +267,34 @@
             gap: 10px;
             background: var(--bg-input);
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 14px 16px;
             cursor: pointer;
             color: var(--text);
             text-align: left;
+            transition: transform .2s cubic-bezier(.2, .8, .2, 1), box-shadow .2s,
+                        border-color .2s, background .2s;
         }
 
-        .tile:hover { border-color: var(--primary); background: #16203a; }
+        /* 悬停：抬升 + 箭头右移，暗示「点进去看明细」 */
+        .tile:hover {
+            transform: translateY(-3px);
+            border-color: var(--primary);
+            background: #16203a;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, .38);
+        }
+
+        .tile:active { transform: translateY(-1px); }
         .tile b { font-size: 14px; font-weight: 600; }
         .tile .dim { font-size: 12px; }
-        .tile .arrow { margin-left: auto; color: var(--primary); font-size: 13px; }
+        .tile .arrow {
+            margin-left: auto;
+            color: var(--primary);
+            font-size: 13px;
+            transition: transform .2s cubic-bezier(.2, .8, .2, 1);
+        }
+
+        .tile:hover .arrow { transform: translateX(4px); }
 
         .strategy { display: flex; flex-direction: column; gap: 8px; }
 
@@ -199,7 +328,7 @@
 </head>
 <body data-page-node-id="NYO3uWlCPxAMnloGqZAlb8">
 <header class="topbar" data-page-node-id="rME8o8HCqjYfi3pFTabXFa">
-    <a class="brand" href="/" data-page-node-id="PYLJCVxxeZFZ7lOrig3FVP">金牛数据 <span class="sub" data-page-node-id="ASSJFHWZZqL5HzfN2RpDi4">回测</span></a>
+    <a class="brand" href="/" data-page-node-id="PYLJCVxxeZFZ7lOrig3FVP">金牛数据</a>
     <nav class="nav" id="nav" data-page-node-id="48h5lg2dPr3BGRvLEe7M9E"></nav>
 </header>
 
@@ -207,7 +336,16 @@
     <div id="msgBox" class="msg" data-page-node-id="KsfgevcLl5Cs2dGIarGxXg"></div>
 
     <section class="panel" data-page-node-id="IX70WhLCeB4EjqKP1Spe9i">
-        <h2 data-page-node-id="HNfdqfbTWYPGby5u1ATtwn">回测配置</h2>
+        <div class="cfg-panel-head" data-page-node-id="HNfdqfbTWYPGby5u1ATtwn">
+            <h2 style="margin:0" data-page-node-id="HNfdqfbTWYPGby5u1ATtwn">回测配置</h2>
+            <div class="cfg-panel-actions" data-page-node-id="joELNXCrgui2GwcYZZeipL">
+                <button onclick="runBacktest()" id="btnRun" data-page-node-id="MsuqrNPCGKkX6P2stcq9EI">开始回测</button>
+                <button class="btn-ghost" onclick="exportConfig()" data-page-node-id="eORBQsbsH69XOjBWIcxAoK">导出配置</button>
+                <button class="btn-ghost" onclick="document.getElementById('fileImport').click()" data-page-node-id="g3qzkvGnrlYecpdAk749TH">导入配置</button>
+                <input type="file" id="fileImport" accept="application/json,.json" style="display:none"
+                       onchange="importConfig(this)" data-page-node-id="vyjX6L4jrpUukwYYBUM9xH">
+            </div>
+        </div>
         <div class="cfg-grid" data-page-node-id="t9dTy0TDLhPCTmXhVI6UTw">
             <!-- 1 回测对象 -->
             <div class="cfg-card c1" data-page-node-id="Cx7KYij46smKsERsTC27wR">
@@ -262,10 +400,13 @@
                     <input type="date" id="fEnd" data-page-node-id="m2LCeagucMvpq3O6aq8zrc">
                 </div>
                 <div class="cfg-sub" data-page-node-id="B2K5196cWG6nkuGNvH239C">快捷区间</div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap" data-page-node-id="IRIbi0Mx7X2fX4sbIDRWRp">
-                    <button class="btn-ghost btn-sm" onclick="setRange(90)" data-page-node-id="4kwpV5zTFLnt9FaqBQdHzQ">近3月</button>
-                    <button class="btn-ghost btn-sm" onclick="setRange(365)" data-page-node-id="TNtfVVMZK23ivrBgiAxPyY">近1年</button>
-                    <button class="btn-ghost btn-sm" onclick="setRange(1095)" data-page-node-id="066LqbVocUQ084QMzehQyk">近3年</button>
+                <div class="quick-range" style="display:flex;gap:6px;flex-wrap:wrap" data-page-node-id="IRIbi0Mx7X2fX4sbIDRWRp">
+                    <button class="btn-ghost btn-sm" data-days="90" onclick="setRange(90)" data-page-node-id="4kwpV5zTFLnt9FaqBQdHzQ">近3月</button>
+                    <button class="btn-ghost btn-sm" data-days="180" onclick="setRange(180)">近半年</button>
+                    <button class="btn-ghost btn-sm" data-days="365" onclick="setRange(365)" data-page-node-id="TNtfVVMZK23ivrBgiAxPyY">近1年</button>
+                    <button class="btn-ghost btn-sm" data-days="1095" onclick="setRange(1095)" data-page-node-id="066LqbVocUQ084QMzehQyk">近3年</button>
+                    <button class="btn-ghost btn-sm" data-days="1825" onclick="setRange(1825)">近5年</button>
+                    <button class="btn-ghost btn-sm" data-days="3650" onclick="setRange(3650)">近10年</button>
                 </div>
                 <div class="sp-hint" id="spanHint" data-page-node-id="oNfm8aAQciEZ8fKHuZgxgH"></div>
                 <div class="sp-hint" data-page-node-id="q83yghwy70ktPAK4b6JCg3">
@@ -306,12 +447,7 @@
             </div>
         </div>
 
-        <div class="form-row" style="margin-top:14px" data-page-node-id="joELNXCrgui2GwcYZZeipL">
-            <button onclick="runBacktest()" id="btnRun" data-page-node-id="MsuqrNPCGKkX6P2stcq9EI">开始回测</button>
-            <button class="btn-ghost" onclick="exportConfig()" data-page-node-id="eORBQsbsH69XOjBWIcxAoK">导出配置</button>
-            <button class="btn-ghost" onclick="document.getElementById('fileImport').click()" data-page-node-id="g3qzkvGnrlYecpdAk749TH">导入配置</button>
-            <input type="file" id="fileImport" accept="application/json,.json" style="display:none"
-                   onchange="importConfig(this)" data-page-node-id="vyjX6L4jrpUukwYYBUM9xH">
+        <div class="form-row" style="margin-top:14px" data-page-node-id="XHYr6GmmrPiJ0hVJj8D1IL">
             <span class="dim" id="hint" data-page-node-id="fwMaaN1qxi2ajcLiwhcB05"></span>
         </div>
         <div id="progressBox" style="display:none;margin-top:10px" data-page-node-id="XHYr6GmmrPiJ0hVJj8D1IL">
@@ -397,7 +533,7 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260907f"></script>
+<script src="/js/common.js?v=20260908c"></script>
 <script src="/js/date-picker.js"></script>
 <script src="/js/stock-picker.js"></script>
 <script>
@@ -431,8 +567,23 @@
         renderSpanHint();
     }
 
+    /** 快捷区间的选中态：当前跨度与按钮一致、且结束日是今天时高亮 */
+    function markRange() {
+        const end = document.getElementById('fEnd').value;
+        const a = parseYmd(document.getElementById('fStart').value);
+        const b = parseYmd(end);
+        const span = (a && b) ? Math.round((b - a) / 86400000) + 1 : 0;
+        const btns = document.querySelectorAll('.quick-range button');
+        for (let i = 0; i < btns.length; i++) {
+            const d = parseInt(btns[i].getAttribute('data-days'), 10);
+            const hit = span > 0 && d === span && end === today();
+            btns[i].classList.toggle('active', !!hit);
+        }
+    }
+
     /** 时间跨度提示：无数据库模式有跨度上限，先在本地说清楚 */
     function renderSpanHint() {
+        markRange();
         const s = document.getElementById('fStart').value;
         const e = document.getElementById('fEnd').value;
         const el = document.getElementById('spanHint');
@@ -756,11 +907,18 @@
                 <tr><th>股票</th><td>${esc(codeWithName(bt))}</td></tr>
                 <tr><th>回测区间</th><td>${esc(bt.startDate)} ~ ${esc(bt.endDate)}（${bt.tradeDays} 个交易日）</td></tr>
                 <tr><th>起始金额 / 费率</th><td>${fmtNum(bt.initAmount)} / ${(Number(bt.feeRate) * 100).toFixed(4)}%</td></tr>
-                <tr><th>期末账户总额</th><td><b>${fmtNum(bt.finalAmount)}</b></td></tr>
-                <tr><th>盈亏金额</th><td class="${cls}"><b>${fmtNum(bt.totalProfit)}</b></td></tr>
-                <tr><th>盈亏比例</th><td class="${cls}"><b>${ratioPct}</b></td></tr>
-                <tr><th>成交笔数</th><td>${bt.tradeCount}</td></tr>
+                <tr><th>期末账户总额</th><td><b id="sumFinal">0</b></td></tr>
+                <tr><th>盈亏金额</th><td class="${cls}"><b id="sumProfit">0</b></td></tr>
+                <tr><th>盈亏比例</th><td class="${cls}"><b id="sumRatio">0%</b></td></tr>
+                <tr><th>成交笔数</th><td id="sumTrades">0</td></tr>
             </table>`;
+
+        // 关键数字滚动到位：结果不是冷冰冰地跳出来
+        const money = v => fmtNum(v);
+        rollNumber(document.getElementById('sumFinal'), bt.finalAmount, {fmt: money});
+        rollNumber(document.getElementById('sumProfit'), bt.totalProfit, {fmt: money});
+        rollNumber(document.getElementById('sumRatio'), ratio * 100, {fmt: v => v.toFixed(2) + '%'});
+        rollNumber(document.getElementById('sumTrades'), bt.tradeCount, {fmt: v => String(Math.round(v))});
 
         renderStrategy(bt);
         renderKline(data.klines || [], data.trades || []);

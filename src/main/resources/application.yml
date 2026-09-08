@@ -65,15 +65,23 @@ waizao:
     # 并发抓取时每个工作线程处理完一只股票后的间隔（毫秒），用于限制 QPS
     fetch-interval-ms: 100
   # 无数据库模式下单次查询/回测允许的最大自然日跨度（数据每次都要现取，跨度先卡住再发请求）
-  max-span-days: 1200
+  # v1.1：1200 → 4000，支持近十年回测
+  max-span-days: 4000
   stock-list-file: resources/stock-list.json
 
 # 实时盯盘提醒（与上面其它功能完全独立：行情取自新浪财经，不连库、不走 waizao、不落盘）
 watch:
-  # 总开关
+  # 总开关：false 时整个盯盘模块不装配（不查行情、不推送，配置接口仍可用）
   enabled: true
   # 盯盘名单：每行一个股票名称（也允许直接写 6 位代码，或「代码 名称」/「代码,名称」）；# 开头为注释
+  # v1.1 起名单改由页面维护并落盘到下面的 config-file；这里只在「首次启动、还没有落盘文件」时
+  # 用来迁移老名单，之后一律以落盘配置为准。
   watch-list-file: resources/watch-list.txt
+  # 落盘配置文件（开关 / 轮询间隔 / 阈值 / 盯盘股票集合）。
+  # 解析顺序：先工作目录下的 watch-config.json，找不到再用这里的绝对路径。
+  config-file: /home/stock-backtesting/watch-config.json
+  # 进入盯盘页面的密码（后端校验，不下发给前端）
+  password: "1"
   # 名称 → 代码 的索引来源（与 waizao.stock-list-file 同一份文件）
   stock-list-file: resources/stock-list.json
   # 轮询间隔（秒）：每次调度按这个间隔并发查一遍名单里所有标的
@@ -88,9 +96,9 @@ watch:
     read-timeout-ms: 5000
   dingtalk:
     # 机器人 Webhook（含 access_token）；留空则不推送、只打日志
+    # v1.4 起钉钉机器人只支持"自定义关键词"模式（消息文本必须含后台配置的关键词），
+    # 不再支持「加签」，所以也不需要 secret 字段。
     webhook: "https://oapi.dingtalk.com/robot/send?access_token=ebcfa7713cec091fcbabaff738f68e3453365b47bf43d8e65894a9793fc33317"
-    # 机器人安全设置里的「加签」密钥；留空表示不加签
-    secret: ""
 
 logging:
   level:

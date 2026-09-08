@@ -109,6 +109,22 @@ a.nav-item { color: var(--text-dim); }
     margin: 0 auto;
 }
 
+/* ============ 通用 panel 头部：h2 在左，动作按钮组在右（回测/盯盘等页面共用） ============ */
+.cfg-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.cfg-panel-head h2 { margin: 0; }
+.cfg-panel-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.cfg-panel-actions button { padding: 6px 14px; }
+
 .panel {
     background: var(--bg-panel);
     border: 1px solid var(--border);
@@ -334,6 +350,38 @@ pre.json {
     cursor: text;
 }
 .sp-box:focus-within { border-color: var(--primary); }
+
+/* grid 模式：sp-box 自身就是 N 列网格，已选 chip 和未选输入框都落入同一个网格，
+   输入框永远跟着上一个 chip 后面的下一个空格子，超过 N 个 chip 就自动换行。
+   顶部右侧的 × 清除浮动在网格右上角，不占格。 */
+.sp-box.sp-box-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px 8px;
+    padding: 6px 28px 6px 8px;
+    min-height: 38px;
+    position: relative;
+}
+.sp-box.sp-box-grid > .sp-chips { display: contents; }
+.sp-box.sp-box-grid > .sp-input {
+    grid-column: auto;
+    min-width: 0;
+    background: rgba(255, 255, 255, .02);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    margin: 0;
+    height: 28px;
+}
+.sp-box.sp-box-grid > .sp-input:focus { border-style: solid; }
+.sp-box.sp-box-grid > .sp-clear {
+    position: absolute;
+    top: 5px;
+    right: 8px;
+    z-index: 2;
+    background: transparent;
+}
+
 .sp-chips { display: contents; }
 .sp-chip {
     display: inline-flex;
@@ -341,12 +389,23 @@ pre.json {
     gap: 4px;
     background: #1f2b45;
     border: 1px solid #33436b;
-    border-radius: 4px;
-    padding: 1px 2px 1px 6px;
+    border-radius: 6px;
+    padding: 2px 4px 2px 8px;
     font-size: 12px;
     white-space: nowrap;
+    min-width: 0;
+    height: 28px;
 }
-.sp-chip i { font-style: normal; color: var(--text-dim); cursor: pointer; padding: 0 3px; }
+.sp-chip b { font-weight: 600; flex: 0 0 auto; }
+.sp-chip span {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    color: var(--text-dim);
+}
+.sp-chip i { font-style: normal; color: var(--text-dim); cursor: pointer; padding: 0 3px; flex: 0 0 auto; }
 .sp-chip i:hover { color: var(--danger); }
 input.sp-input {
     flex: 1 1 100px;
@@ -511,3 +570,98 @@ input.sp-input {
     font-size: 12px;
 }
 .dp-link:hover { color: var(--primary-hover); background: transparent; }
+
+/* =========================================================================
+ * 动效与现代化细节（v1.1）
+ *
+ * 深色底不变，只把「死板」的地方补上反馈：鼠标悬停有抬升与光晕、
+ * 聚焦有光圈、切换有过渡、加载有骨架屏、数字变化有滚动。
+ * 一律用 CSS 过渡 / 关键帧实现，不引第三方库，也不改原有配色语义。
+ * ========================================================================= */
+
+@keyframes pageIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes shimmer {
+    from { background-position: -400px 0; }
+    to { background-position: 400px 0; }
+}
+
+/* 页面整体淡入：换页时不再硬切 */
+main.container { animation: pageIn .32s cubic-bezier(.2, .8, .2, 1); }
+
+/* 顶部消息条滑入 */
+#msgBox { animation: toastIn .26s cubic-bezier(.2, .8, .2, 1); }
+
+/* 面板：圆角与阴影更现代一点 */
+.panel {
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+}
+
+/* 导航：hover / 高亮时下划线从中间展开 */
+.nav-item { position: relative; }
+.nav-item::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    right: 50%;
+    bottom: 2px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--primary);
+    transition: left .22s cubic-bezier(.2, .8, .2, 1), right .22s cubic-bezier(.2, .8, .2, 1);
+}
+.nav-item:hover::after { left: 8px; right: 8px; }
+.nav a.nav-item.active::after,
+.nav-group.active > .nav-item::after { left: 8px; right: 8px; background: #7aa2ff; }
+
+/* 卡片 / 快捷入口：悬停抬升 + 高亮描边 */
+.card, .quick-item {
+    transition: transform .2s cubic-bezier(.2, .8, .2, 1), box-shadow .2s, border-color .2s, background .2s;
+}
+.card:hover, .quick-item:hover {
+    transform: translateY(-3px);
+    border-color: var(--primary);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, .38);
+}
+.quick-item:hover { background: #16203a; }
+
+/* 输入控件：聚焦光圈 */
+input[type=text], input[type=number], input[type=date], input[type=password], select, textarea {
+    transition: border-color .18s, box-shadow .18s;
+}
+input[type=text]:focus, input[type=number]:focus, input[type=date]:focus,
+input[type=password]:focus, select:focus, textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(59, 124, 255, .18);
+}
+
+/* 按钮：悬停投影、按下回弹 */
+button, .btn {
+    transition: background .18s, transform .12s, box-shadow .18s, border-color .18s;
+}
+button:hover:not(:disabled), .btn:hover {
+    box-shadow: 0 4px 14px rgba(59, 124, 255, .28);
+}
+button:active:not(:disabled), .btn:active { transform: scale(.97); }
+.btn-ghost:hover { border-color: var(--primary); color: #fff; }
+
+/* 表格行：悬停过渡，不再生硬跳色 */
+table.grid tbody tr { transition: background .15s; }
+
+/* 加载骨架屏：数据没来之前占位，避免页面空白跳动 */
+.skeleton {
+    display: block;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #1b2233 25%, #232c40 37%, #1b2233 63%);
+    background-size: 800px 100%;
+    animation: shimmer 1.4s linear infinite;
+}

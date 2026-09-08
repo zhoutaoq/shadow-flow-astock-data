@@ -4,7 +4,7 @@ const vm = require('vm');
 // 模拟浏览器真实时序：common.js 注册 DOMContentLoaded -> 内联脚本先跑(发起 loadMode fetch)
 // -> DOMContentLoaded 触发(此时 fetch 可能还没回来) -> renderNav
 async function scenario(noDb) {
-  const src = fs.readFileSync('target/classes/static/js/common.js', 'utf8');
+  const src = fs.readFileSync('src/main/resources/static/js/common.js', 'utf8');
   const html = fs.readFileSync('src/main/resources/static/index.html', 'utf8');
   const inline = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
@@ -58,7 +58,7 @@ async function scenario(noDb) {
 (async () => {
   console.log('== 场景A：无数据库模式（真实事件时序，含竞态窗口）==');
   const a = await scenario(true);
-  const okA = a.navTexts.length === 5 && !a.group && a.quickTexts.length === 5;
+  const okA = a.navTexts.length === 6 && !a.group && a.quickTexts.length === 5 && a.navTexts.includes('盯盘');
   console.log('导航栏: ' + JSON.stringify(a.navTexts) + ' | 有分组=' + (a.group ? '是' : '否'));
   console.log('快速入口: ' + JSON.stringify(a.quickTexts));
   console.log(okA ? 'PASS' : 'FAIL');

@@ -288,7 +288,9 @@ function padYmd(y, mo, d) {
  * <p>两种模式共用同一套页面：<code>db: true</code> 的项只在数据库模式显示
  * （「数据更新」整组依赖库表，「调用日志」「接口调试」也只记在库里）；
  * 一级菜单下所有子项都被隐藏时，一级菜单本身也不显示，
- * 所以无数据库模式下只会剩下 概览 / 分析回测（3 项）/ 系统配置。
+ * 所以数据库模式下是 概览 / 分析回测（3 项）/ 系统（系统配置）。
+ *
+ * <p>无数据库模式不走这套过滤，直接用下面的 {@link NAV_NO_DB} 铺平 6 个一级菜单。
  */
 const NAV = [
     {text: '概览', href: '/'},
@@ -320,6 +322,21 @@ function navVisible(item) {
     return !item.db || MODE.dbEnabled;
 }
 
+/**
+ * 无数据库模式的一级菜单：全部平级、不分组。
+ *
+ * <p>这套模式下没有库表，能用的一共就这 6 个入口，
+ * 再按「分析回测 / 系统」分组只会多点一次鼠标、还容易被误读成还有别的隐藏功能。
+ */
+const NAV_NO_DB = [
+    {text: '概览', href: '/'},
+    {text: '股票列表', href: '/pages/stock-list.html'},
+    {text: 'K线查看', href: '/pages/chart.html'},
+    {text: '策略回测', href: '/pages/backtest.html'},
+    {text: '盯盘', href: '/pages/watch.html'},
+    {text: 'token配置', href: '/pages/config.html'}
+];
+
 /** 渲染导航并高亮当前页面（命中二级时一级也点亮） */
 function renderNav() {
     const nav = document.getElementById('nav');
@@ -327,6 +344,11 @@ function renderNav() {
         return;
     }
     const path = location.pathname === '/index.html' ? '/' : location.pathname;
+    // 无数据库模式直接铺平这 6 个一级菜单，不套分组
+    if (MODE.noDb) {
+        nav.innerHTML = NAV_NO_DB.map(item => navLink(item, path)).join('');
+        return;
+    }
     nav.innerHTML = NAV.filter(navVisible).map(item => {
         if (!item.children) {
             return navLink(item, path);
@@ -443,7 +465,7 @@ function whenTokenReady() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260907f（内置默认令牌版）');
+    console.info('[金牛数据] 前端版本 20260908c（v1.1：盯盘配置 / 6 个一级菜单 / 名录本地缓存）');
     await loadMode();
     ensureTokenDialog();
     renderNav();
@@ -456,6 +478,50 @@ document.addEventListener('DOMContentLoaded', async function () {
         onModeReady(MODE);
     }
 });
+
+/**
+ * 数字滚动：把元素里的数字从当前值动画到目标值。
+ *
+ * <p>结果区的金额、收益率这类关键数字原本是「啪」地一下换个值，
+ * 加个 0.6 秒的滚动既能看清变化过程，也让页面显得有生气。
+ *
+ * @param {HTMLElement} el  目标元素
+ * @param {number}      to  目标值
+ * @param {object}      opt {fmt(v) 格式化函数, duration 毫秒}
+ */
+function rollNumber(el, to, opt) {
+    if (!el) {
+        return;
+    }
+    const o = opt || {};
+    const fmt = o.fmt || function (v) {
+        return String(v);
+    };
+    const duration = o.duration || 600;
+    const target = Number(to);
+    if (isNaN(target)) {
+        el.textContent = fmt(to);
+        return;
+    }
+    const from = parseFloat(String(el.textContent || '').replace(/[^0-9.\-]/g, ''));
+    const begin = isNaN(from) ? 0 : from;
+    const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
+    if (el._rollTimer) {
+        cancelAnimationFrame(el._rollTimer);
+    }
+
+    function step(now) {
+        const t = Math.min(1, (now - t0) / duration);
+        // easeOutCubic：开头快、结尾稳，读数不会飘
+        const e = 1 - Math.pow(1 - t, 3);
+        el.textContent = fmt(begin + (target - begin) * e);
+        if (t < 1) {
+            el._rollTimer = requestAnimationFrame(step);
+        }
+    }
+
+    el._rollTimer = requestAnimationFrame(step);
+}
 
 /** 简易分页渲染 */
 function renderPager(el, page, size, total, onPage) {

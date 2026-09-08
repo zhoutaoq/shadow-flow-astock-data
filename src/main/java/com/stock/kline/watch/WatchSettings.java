@@ -1,0 +1,178 @@
+package com.stock.kline.watch;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 盯盘的一份完整配置（页面提交与落盘都用它）。
+ *
+ * <p>页面改完配置后：先更新内存里的这一份，再整体落盘成 JSON；
+ * 进程启动时如果落盘文件不存在，就用 yml 里的值作为默认值，
+ * 并且尝试把老的 watch-list.txt 名单迁移过来，避免升级后名单丢失。
+ *
+ * <p><b>v1.3</b>：阈值改成多条规则（过去时长 + 偏离百分比），每条独立触发；
+ * 钉钉 webhook 也放进这份配置（落盘里就是明文，靠密码门 + 部署账号可见性兜底）。
+ * 时间长度按"轮询间隔的倍数"计量，把"轮询间隔 60s、过去 3 个周期 = 180 秒"这种语义化，
+ * 页面上就不用再独立维护一个时长字段。
+ */
+public class WatchSettings {
+
+    /** 盯盘总开关：关掉后调度直接停，不再查行情 */
+    private boolean enabled = true;
+
+    /** 轮询间隔（秒）：每轮跑完再计下一轮 */
+    private long intervalSeconds = 30;
+
+    /**
+     * 多条告警规则：每条形如 <code>{intervals: 3, percent: 0.5}</code>，含义是
+     * "在过去 N 个轮询周期内的最大涨幅达 M% 即触发"。多条规则之间是"任一触发即推"，
+     * 同一轮里多条规则同时命中会合并成一条推送。
+     */
+    private List<Rule> rules = new ArrayList<>();
+
+    /** 钉钉机器人配置（落盘字段） */
+    private DingTalkCfg dingtalk = new DingTalkCfg();
+
+    /** 盯盘股票集合 */
+    private List<StockRef> stocks = new ArrayList<>();
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public long getIntervalSeconds() {
+        return intervalSeconds;
+    }
+
+    public void setIntervalSeconds(long intervalSeconds) {
+        this.intervalSeconds = intervalSeconds;
+    }
+
+    public List<Rule> getRules() {
+        return rules;
+    }
+
+    public void setRules(List<Rule> rules) {
+        this.rules = rules == null ? new ArrayList<>() : rules;
+    }
+
+    public DingTalkCfg getDingtalk() {
+        return dingtalk;
+    }
+
+    public void setDingtalk(DingTalkCfg dingtalk) {
+        this.dingtalk = dingtalk == null ? new DingTalkCfg() : dingtalk;
+    }
+
+    public List<StockRef> getStocks() {
+        return stocks;
+    }
+
+    public void setStocks(List<StockRef> stocks) {
+        this.stocks = stocks == null ? new ArrayList<>() : stocks;
+    }
+
+    /** 单条告警规则 */
+    public static class Rule {
+        /**
+         * 过去时长（按上方轮询间隔的倍数）：与 N×intervalSeconds 秒前最近一次采样价比较。
+         * 例：轮询间隔 60s、intervals=3 → 比较"180s 前的采样"。
+         */
+        private int intervals;
+        /** 偏离百分比（绝对值）：涨跌幅达到此值就触发 */
+        private double percent;
+
+        public Rule() {
+        }
+
+        public Rule(int intervals, double percent) {
+            this.intervals = intervals;
+            this.percent = percent;
+        }
+
+        public int getIntervals() {
+            return intervals;
+        }
+
+        public void setIntervals(int intervals) {
+            this.intervals = intervals;
+        }
+
+        public double getPercent() {
+            return percent;
+        }
+
+        public void setPercent(double percent) {
+            this.percent = percent;
+        }
+
+        /** 兼容老落盘文件：老字段叫 seconds（绝对秒数），读不到 intervals 时用它回填 */
+        public long getSeconds() {
+            return intervals;
+        }
+
+        public void setSeconds(long seconds) {
+            // 老数据：把"过去多少秒"换算成"多少个轮询周期"——只取整数倍，余数丢弃。
+            // 这里没法拿到 intervalSeconds，所以只在反序列化时尽量保真。
+            this.intervals = (int) Math.max(1, seconds);
+        }
+    }
+
+    /**
+     * 钉钉配置（落盘字段）。
+     *
+     * <p>页面提交时覆盖式保存：清空就表示使用 yml 默认值（启动时把 yml 的值灌进来），
+     * 重新填就把 yml 默认值替换掉。
+     *
+     * <p>v1.4 起钉钉机器人只用"自定义关键词"模式（即服务端强制消息必须含特定关键词），
+     * 不再支持「加签」——所以 secret 字段已删除。已存在的老落盘文件若带 secret 字段，
+     * Jackson 会忽略它；下次保存后 watch-config.json 里也不再带 secret。
+     */
+    public static class DingTalkCfg {
+        /** Webhook 地址（含 access_token）；为空则用 yml 默认值 */
+        private String webhook = "";
+
+        public String getWebhook() {
+            return webhook;
+        }
+
+        public void setWebhook(String webhook) {
+            this.webhook = webhook;
+        }
+    }
+
+    /** 盯盘名单里的一只股票：代码必填，名称只是展示用（缺了按名录补） */
+    public static class StockRef {
+
+        private String code;
+        private String name;
+
+        public StockRef() {
+        }
+
+        public StockRef(String code, String name) {
+            this.code = code;
+            this.name = name;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public void setCode(String code) {
+            this.code = code;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+}

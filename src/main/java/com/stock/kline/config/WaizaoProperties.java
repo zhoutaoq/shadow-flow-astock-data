@@ -17,9 +17,10 @@ public class WaizaoProperties {
      * 单次查询允许的最大自然日跨度。
      *
      * <p>无数据库模式下每次查询都要真的向供应商发一次请求，跨度越大响应越慢、
-     * 一次性返回的数据越多，这里设一个硬上限避免误填一个十年区间。
+     * 一次性返回的数据越多，这里设一个硬上限避免误填一个二十年区间。
+     * v1.1 起放宽到 4000 天（近十年）。
      */
-    private int maxSpanDays = 1200;
+    private int maxSpanDays = 4000;
 
     public Api getApi() {
         return api;

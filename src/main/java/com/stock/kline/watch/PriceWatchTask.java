@@ -4,24 +4,30 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 盯盘主流程：定时调度 → 线程池并发取现价 → 与上一次查询的价格比对 → 超阈值推钉钉。
+ * 盯盘主流程：定时调度 → 线程池并发取现价 → 与历史价格比对 → 多规则任一触发推钉钉。
  *
- * <p>状态只放在内存里（code → 上次价格 / 上次时间），不落库；进程重启后重新建立基线，
- * 所以第一轮只记录、不推送。
+ * <p>v1.2 改造：
+ * <ul>
+ *   <li>每个标的的 State 改为按时间保存价格采样（覆盖所有规则的"过去 N 秒"），不再只记上一次</li>
+ *   <li>告警条件变成多规则（过去时长 + 偏离%），任一条命中即触发</li>
+ *   <li>同一轮里多条规则同时触发合并为一条推送，列出所有触发条件</li>
+ *   <li>推送内容含拉升成交量、成交额，并按涨幅分档措辞（上涨 / 快速上涨 / 急速拉升）</li>
+ * </ul>
  */
 @Component
 @ConditionalOnProperty(name = "watch.enabled", havingValue = "true", matchIfMissing = true)
@@ -41,50 +47,66 @@ public class PriceWatchTask {
     private static final BigDecimal TH_GROW = new BigDecimal("19.5");
     private static final BigDecimal TH_MAIN = new BigDecimal("9.5");
 
-    private final WatchProperties props;
-    private final WatchListLoader loader;
+    private final WatchConfigStore store;
     private final SinaQuoteClient quoteClient;
     private final DingTalkNotifier notifier;
     private final ExecutorService executor;
 
-    /** code → 上一次成功查询的价格与时刻 */
+    /** code → 历史价格采样（按时间升序） */
     private final Map<String, State> states = new ConcurrentHashMap<>();
 
-    public PriceWatchTask(WatchProperties props,
-                          WatchListLoader loader,
+    public PriceWatchTask(WatchConfigStore store,
                           SinaQuoteClient quoteClient,
                           DingTalkNotifier notifier,
                           @Qualifier("watchExecutor") ExecutorService watchExecutor) {
-        this.props = props;
-        this.loader = loader;
+        this.store = store;
         this.quoteClient = quoteClient;
         this.notifier = notifier;
         this.executor = watchExecutor;
     }
 
-    /** 上一次查询的快照 */
-    private static class State {
-        private BigDecimal price;
-        private long timeMs;
-        /** 上次的封板状态：1 涨停 / 0 未涨跌停 / -1 跌停 */
-        private int limitState = LIMIT_NONE;
+    /** 页面改了名单后清掉已移除标的的状态，避免重新加回来时还留着很旧的基线 */
+    public synchronized void pruneStates(List<WatchTarget> targets) {
+        Set<String> keep = new HashSet<>();
+        for (WatchTarget t : targets) {
+            keep.add(t.getCode());
+        }
+        states.keySet().removeIf(code -> !keep.contains(code));
     }
 
     /**
-     * 一轮轮询。间隔由 <code>watch.interval-seconds</code> 决定，用 fixedDelay 保证
-     * 上一轮跑完才开始计时，慢的时候不会叠加。
+     * 一个标的的运行时状态。
+     *
+     * <p>采样按时间升序存放，每条 {毫秒时间戳, 价格}。轮询拿到新价就 append，
+     * 超过最长规则时长的旧采样 trim 掉。成交额、成交量的上一次值也保留，
+     * 用来在告警消息里算"拉升成交量/成交额"。
      */
-    @Scheduled(
-            initialDelayString = "#{${watch.interval-seconds:30} * 1000}",
-            fixedDelayString = "#{${watch.interval-seconds:30} * 1000}")
-    public void runOnce() {
-        List<WatchTarget> targets;
-        try {
-            targets = loader.load();
-        } catch (Exception e) {
-            log.warn("[watch] 读取盯盘名单异常: {}", e.getMessage());
-            return;
+    private static class State {
+        /** (时间, 价格) 历史采样 */
+        final List<Sample> history = new ArrayList<>();
+        /** 上一次记录里的累计成交量/成交额，用来算差值 */
+        BigDecimal lastVolume;
+        BigDecimal lastAmount;
+        /** 上次的封板状态：1 涨停 / 0 未涨跌停 / -1 跌停 */
+        int limitState = LIMIT_NONE;
+    }
+
+    private static class Sample {
+        final long timeMs;
+        final BigDecimal price;
+
+        Sample(long timeMs, BigDecimal price) {
+            this.timeMs = timeMs;
+            this.price = price;
         }
+    }
+
+    /**
+     * 一轮轮询：名单 / 规则 / 钉钉都取自 {@link WatchConfigStore}，调度由 {@link WatchScheduler} 负责。
+     */
+    public void runOnce() {
+        List<WatchTarget> targets = store.targets();
+        pruneStates(targets);
         if (targets.isEmpty()) {
             return;
         }
@@ -93,11 +115,11 @@ public class PriceWatchTask {
         boolean open = isTradingTime();
 
         // 未开盘就不调接口；但首次（该标的还没有基线）必须调一次，否则永远建不出基线。
-        // queried 与 futures 一一对应，跳过的不进列表，避免下标错位。
         List<Future<Quote>> futures = new ArrayList<>(targets.size());
         List<WatchTarget> queried = new ArrayList<>(targets.size());
         for (WatchTarget t : targets) {
-            if (!open && states.containsKey(t.getCode())) {
+            State st = states.get(t.getCode());
+            if (!open && st != null && !st.history.isEmpty()) {
                 continue;
             }
             queried.add(t);
@@ -113,7 +135,7 @@ public class PriceWatchTask {
             WatchTarget t = queried.get(i);
             Quote q;
             try {
-                q = futures.get(i).get(Math.max(1, props.getIntervalSeconds()), TimeUnit.SECONDS);
+                q = futures.get(i).get(Math.max(1, store.getIntervalSeconds()), TimeUnit.SECONDS);
             } catch (Exception e) {
                 log.warn("[watch] 查询超时或失败 {} {}", t, e.getMessage());
                 continue;
@@ -144,59 +166,253 @@ public class PriceWatchTask {
     }
 
     /**
-     * 与上次价格比对并决定是否推送。
+     * 与历史价格比对并决定是否推送。
      *
      * @return 是否触发了推送
      */
     private boolean check(WatchTarget t, Quote q) {
-        State prev = states.get(q.getCode());
+        State st = states.computeIfAbsent(q.getCode(), k -> new State());
         int limitState = limitStateOf(q);
 
-        State cur = new State();
-        cur.price = q.getPrice();
-        cur.timeMs = q.getQuoteTime();
-        cur.limitState = limitState;
-        states.put(q.getCode(), cur);
-
-        if (prev == null) {
-            log.info("[watch] {} 建立基线：现价 {}（首轮不推送）", q.getName(), q.getPrice());
-            return false;
+        // 写新采样 + trim 旧采样（保留所有规则都够用的窗口）
+        long maxWindowSec = maxRuleSeconds();
+        long cutoff = q.getQuoteTime() - maxWindowSec * 1000L;
+        st.history.add(new Sample(q.getQuoteTime(), q.getPrice()));
+        // 采样按时间升序；trim 头部比 trim 全表扫描更便宜
+        int drop = 0;
+        while (drop < st.history.size() && st.history.get(drop).timeMs < cutoff) {
+            drop++;
+        }
+        if (drop > 0) {
+            st.history.subList(0, drop).clear();
         }
 
         boolean pushed = false;
 
         // 封板 / 开板通知：状态变了才推，连续封着或一直没封都不重复刷屏
-        if (limitState != prev.limitState) {
-            // 开板：上一轮还封着，这一轮没封（或封到反向去了）
-            if (prev.limitState == LIMIT_UP) {
+        if (limitState != st.limitState) {
+            int prev = st.limitState;
+            if (prev == LIMIT_UP) {
                 sendLimitAlert(q, LIMIT_UP, false);
                 pushed = true;
-            } else if (prev.limitState == LIMIT_DOWN) {
+            } else if (prev == LIMIT_DOWN) {
                 sendLimitAlert(q, LIMIT_DOWN, false);
                 pushed = true;
             }
-            // 新封板
             if (limitState == LIMIT_UP || limitState == LIMIT_DOWN) {
                 sendLimitAlert(q, limitState, true);
                 pushed = true;
             }
+            st.limitState = limitState;
         }
 
-        long seconds = Math.max(1, (q.getQuoteTime() - prev.timeMs) / 1000);
-        BigDecimal delta = q.getPrice().subtract(prev.price)
-                .multiply(HUNDRED)
-                .divide(prev.price, 2, BigDecimal.ROUND_HALF_UP);
-        if (delta.abs().compareTo(BigDecimal.valueOf(props.getThresholdPercent())) >= 0) {
-            String msg = format(q.getName(), seconds, delta, q.getPrice(), q.changePercent());
+        // 首轮不推送：让采样历史先有 1 个点，下一轮才能算偏离
+        if (st.history.size() < 2) {
+            st.lastVolume = q.getVolume();
+            st.lastAmount = q.getAmount();
+            log.info("[watch] {} 建立基线：现价 {}（首轮不推送）", q.getName(), q.getPrice());
+            return false;
+        }
+
+        // 多规则扫描：每条规则的"过去时长"= 该规则 intervals 倍 × 轮询间隔秒数
+        List<WatchSettings.Rule> rules = store.rules();
+        long intervalSec = store.getIntervalSeconds();
+        List<Hit> hits = new ArrayList<>();
+        for (WatchSettings.Rule r : rules) {
+            long spanMs = (long) r.getIntervals() * intervalSec * 1000L;
+            Sample base = findSampleBefore(st.history, q.getQuoteTime() - spanMs);
+            if (base == null) {
+                // 历史还不够长（刚加进来的标的还在攒采样），跳过这条规则
+                continue;
+            }
+            BigDecimal delta = q.getPrice().subtract(base.price)
+                    .multiply(HUNDRED)
+                    .divide(base.price, 2, BigDecimal.ROUND_HALF_UP);
+            if (delta.abs().compareTo(BigDecimal.valueOf(r.getPercent())) >= 0) {
+                hits.add(new Hit(r, base, delta));
+            }
+        }
+
+        if (!hits.isEmpty()) {
+            String msg = buildAlert(q, hits);
             if (notifier.send(msg)) {
                 log.info("[watch] 已推送：{}", msg);
             } else {
-                // webhook 没配或推送失败：把内容打进日志，保证不丢信息
                 log.warn("[watch] 钉钉未推送（webhook 未配置或调用失败），内容：{}", msg);
             }
             pushed = true;
         }
+
+        st.lastVolume = q.getVolume();
+        st.lastAmount = q.getAmount();
         return pushed;
+    }
+
+    /** 找出时间戳 <= cutoff 的最近一次采样；没找到返回 null */
+    private static Sample findSampleBefore(List<Sample> history, long cutoffMs) {
+        Sample hit = null;
+        for (Sample s : history) {
+            if (s.timeMs > cutoffMs) {
+                break;
+            }
+            hit = s;
+        }
+        return hit;
+    }
+
+    /** 当前所有规则里最长的过去时长，按秒计（= maxIntervals × 当前轮询间隔秒） */
+    private long maxRuleSeconds() {
+        int max = 0;
+        for (WatchSettings.Rule r : store.rules()) {
+            if (r.getIntervals() > max) {
+                max = r.getIntervals();
+            }
+        }
+        if (max <= 0) {
+            max = 1;
+        }
+        return (long) max * store.getIntervalSeconds();
+    }
+
+    /** 一条规则命中：保留规则 + 命中的基准采样 + 计算出的偏离 */
+    private static class Hit {
+        final WatchSettings.Rule rule;
+        final Sample base;
+        final BigDecimal delta;
+
+        Hit(WatchSettings.Rule rule, Sample base, BigDecimal delta) {
+            this.rule = rule;
+            this.base = base;
+            this.delta = delta;
+        }
+    }
+
+    /**
+     * 拼钉钉消息：把同一轮里所有命中的规则合并成一条，按涨幅取最大的一档作为主措辞。
+     *
+     * <p>措辞分档（绝对值，涨 / 跌对称）：
+     * <ul>
+     *   <li>&lt; 1.5%  上涨 / 下跌</li>
+     *   <li>1.5% ~ 3% 短线快速拉升 / 短线快速下挫</li>
+     *   <li>≥ 3%   急速拉升 / 急速下挫</li>
+     * </ul>
+     * 多个命中时长同时列出，例如 "过去 1 个轮询周期 +0.5%、过去 5 个轮询周期 +2.1%"。
+     */
+    String buildAlert(Quote q, List<Hit> hits) {
+        BigDecimal maxDelta = BigDecimal.ZERO;
+        for (Hit h : hits) {
+            if (h.delta.abs().compareTo(maxDelta.abs()) > 0) {
+                maxDelta = h.delta;
+            }
+        }
+        boolean up = maxDelta.signum() >= 0;
+        BigDecimal absPct = maxDelta.abs();
+        String action = phraseFor(absPct, up);
+        String cond = conditionsLine(hits, up);
+        // 命中的第一条规则 intervals 就是这次推送的主要时间范围
+        int mainIntervals = hits.get(0).rule.getIntervals();
+
+        BigDecimal volDelta = volumeDelta(q);
+        BigDecimal amtDelta = amountDelta(q);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(q.getName()).append(' ').append(action);
+        sb.append("，在过去 ").append(mainIntervals)
+                .append(mainIntervals == 1 ? " 个轮询周期内" : " 个轮询周期内");
+        sb.append(up ? "累计涨幅 " : "累计跌幅 ")
+                .append(absPct.toPlainString()).append('%');
+        sb.append("，现价 ").append(q.getPrice().toPlainString()).append(" 元");
+        BigDecimal todayPct = q.changePercent();
+        sb.append("，今日累计").append(up ? "涨" : "跌").append("幅 ")
+                .append(todayPct == null ? "—" : todayPct.toPlainString()).append('%');
+        sb.append("。\n触发条件：").append(cond);
+        if (volDelta != null) {
+            sb.append("\n拉升成交量：").append(formatVolume(volDelta));
+        }
+        if (amtDelta != null) {
+            sb.append("，拉升成交额：").append(formatAmount(amtDelta));
+        }
+        sb.append('。');
+        return sb.toString();
+    }
+
+    /**
+     * 措辞分档：阈值跟用户口头说的口径对齐（<1.5 / 2-3 / >3）。
+     * 1.5~2% 区间并入"快速"档；其余按原口径。
+     */
+    static String phraseFor(BigDecimal absPct, boolean up) {
+        // absPct 一定 ≥ 0；按口径分档
+        if (up) {
+            if (absPct.compareTo(new BigDecimal("1.5")) < 0) return "上涨了";
+            if (absPct.compareTo(new BigDecimal("3")) < 0) return "短线快速拉升";
+            return "急速拉升";
+        } else {
+            if (absPct.compareTo(new BigDecimal("1.5")) < 0) return "下跌了";
+            if (absPct.compareTo(new BigDecimal("3")) < 0) return "短线快速下挫";
+            return "急速下挫";
+        }
+    }
+
+    /** 把命中的所有规则拼成一行：过去 1 个轮询周期 +0.5%、过去 5 个轮询周期 +2.1% */
+    private static String conditionsLine(List<Hit> hits, boolean up) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < hits.size(); i++) {
+            Hit h = hits.get(i);
+            if (i > 0) sb.append("；");
+            sb.append("过去 ").append(h.rule.getIntervals())
+                    .append(h.rule.getIntervals() == 1 ? " 个轮询周期" : " 个轮询周期")
+                    .append(up ? " +" : " ")
+                    .append(h.delta.toPlainString()).append('%');
+        }
+        return sb.toString();
+    }
+
+    /** 拉升成交量 = 上一轮累计成交量到本轮累计成交量的差值（可能为负：缩量就显示 0） */
+    private BigDecimal volumeDelta(Quote q) {
+        if (q.getVolume() == null) {
+            return null;
+        }
+        State st = states.get(q.getCode());
+        if (st == null || st.lastVolume == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal diff = q.getVolume().subtract(st.lastVolume);
+        return diff.signum() < 0 ? BigDecimal.ZERO : diff;
+    }
+
+    /** 拉升成交额：同上 */
+    private BigDecimal amountDelta(Quote q) {
+        if (q.getAmount() == null) {
+            return null;
+        }
+        State st = states.get(q.getCode());
+        if (st == null || st.lastAmount == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal diff = q.getAmount().subtract(st.lastAmount);
+        return diff.signum() < 0 ? BigDecimal.ZERO : diff;
+    }
+
+    /** 成交量按"万手"显示：1234 → 12.34 万手；超过 1 亿手 → 1.23 亿手 */
+    static String formatVolume(BigDecimal v) {
+        if (v == null) return "—";
+        // v 单位是"股"
+        BigDecimal wan = v.divide(BigDecimal.valueOf(10000L * 100), 2, BigDecimal.ROUND_HALF_UP);
+        if (wan.compareTo(BigDecimal.valueOf(10000)) >= 0) {
+            return wan.divide(BigDecimal.valueOf(10000), 2, BigDecimal.ROUND_HALF_UP).toPlainString() + " 亿手";
+        }
+        return wan.toPlainString() + " 万手";
+    }
+
+    /** 成交额按"万元"显示 */
+    static String formatAmount(BigDecimal v) {
+        if (v == null) return "—";
+        // v 单位是"元"
+        BigDecimal wan = v.divide(BigDecimal.valueOf(10000L), 2, BigDecimal.ROUND_HALF_UP);
+        if (wan.compareTo(BigDecimal.valueOf(10000)) >= 0) {
+            return wan.divide(BigDecimal.valueOf(10000), 2, BigDecimal.ROUND_HALF_UP).toPlainString() + " 亿元";
+        }
+        return wan.toPlainString() + " 万元";
     }
 
     // ============ 涨跌停 ============
@@ -259,18 +475,5 @@ public class PriceWatchTask {
         } else {
             log.warn("[watch] 钉钉未推送（webhook 未配置或调用失败），内容：{}", msg);
         }
-    }
-
-    /**
-     * 拼消息正文，格式固定为：
-     * <pre>xxx 在近 x s 内涨/跌幅达到 xx%，现价 x 元，涨跌幅为 x。</pre>
-     */
-    static String format(String name, long seconds, BigDecimal delta,
-                         BigDecimal price, BigDecimal changePercent) {
-        String dir = delta.signum() >= 0 ? "涨" : "跌";
-        String pctText = changePercent == null ? "—" : changePercent.toPlainString() + "%";
-        return name + " 在近 " + seconds + " s 内" + dir + "幅达到 "
-                + delta.abs().toPlainString() + "%，现价 " + price.toPlainString()
-                + " 元，涨跌幅为 " + pctText + "。";
     }
 }

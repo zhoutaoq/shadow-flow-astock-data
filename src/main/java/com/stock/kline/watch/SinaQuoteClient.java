@@ -24,12 +24,16 @@ public class SinaQuoteClient {
 
     private static final Charset GBK = Charset.forName("GBK");
 
-    /** 字段下标 */
+    /** 字段下标（按新浪 hq.sinajs.cn 返回体顺序，0-based） */
     private static final int F_NAME = 0;
     private static final int F_PRE_CLOSE = 2;
     private static final int F_PRICE = 3;
     private static final int F_HIGH = 4;
     private static final int F_LOW = 5;
+    /** 累计成交量（股），与上一轮差值即"拉升成交量" */
+    private static final int F_VOLUME = 8;
+    /** 累计成交额（元），与上一轮差值即"拉升成交额" */
+    private static final int F_AMOUNT = 9;
 
     private final WatchProperties props;
 
@@ -101,6 +105,7 @@ public class SinaQuoteClient {
         String timeText = (f[30] + " " + f[31]).trim();
         return new Quote(target.getCode(), name, price, preClose,
                 decimal(f[F_HIGH]), decimal(f[F_LOW]),
+                decimal(f[F_VOLUME]), decimal(f[F_AMOUNT]),
                 System.currentTimeMillis(), timeText);
     }
 

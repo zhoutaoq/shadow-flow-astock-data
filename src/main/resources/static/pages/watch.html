@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>盯盘</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260908c">
+    <style>
+        /* ============ 多规则编辑：每条一行，× 号靠右 ============ */
+        .rule-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+        }
+        /* 周期倍数输入框固定宽度，避免被 % 拉变形 */
+        .rule-row .rule-n {
+            flex: 0 0 80px;
+        }
+        .rule-row .rule-pct {
+            flex: 0 0 96px;
+        }
+        .rule-row .rule-del {
+            margin-left: auto;
+            color: var(--text-dim, #8a93a6);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 2px 6px;
+        }
+        .rule-row .rule-del:hover { color: #e5484d; }
+
+        /* ============ 钉钉区：单字段全宽，与告警规则行视觉一致 ============ */
+    </style>
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据</a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <!-- 进入前先过密码：密码只在服务端配置里维护，不随页面下发 -->
+    <section class="panel" id="gatePanel" style="display:none">
+        <h2>盯盘配置 <span class="dim" style="font-weight:400;font-size:12px">需密码</span></h2>
+        <div class="msg msg-info" style="display:block">
+            盯盘会按固定间隔去查实时行情、超阈值时推钉钉机器人，属于要花钱、会打扰人的功能，
+            所以进入配置前先校验一次密码（维护在服务端 <code>watch.password</code>，不下发给浏览器）。
+        </div>
+        <div class="form-row">
+            <div class="field grow">
+                <label>进入密码</label>
+                <input type="password" id="fPwd" autocomplete="off" placeholder="输入盯盘密码">
+                <div class="sp-hint">验证通过后本机本次会话内不再重复输入；关掉浏览器或令牌到期需要重新输入。</div>
+            </div>
+            <button onclick="unlock()">进入</button>
+        </div>
+    </section>
+
+    <!-- 配置区：改完点保存，先写内存再落盘，调度间隔立刻生效 -->
+    <section class="panel" id="cfgPanel" style="display:none">
+        <div class="cfg-panel-head">
+            <h2 style="margin:0">盯盘配置 <span class="dim" style="font-weight:400;font-size:12px">保存后先写内存再落盘，无需重启</span></h2>
+            <div class="cfg-panel-actions">
+                <button onclick="save()" id="btnSave">保存</button>
+                <button class="btn-ghost" onclick="reload()">重新载入</button>
+                <button class="btn-ghost" onclick="lock()">锁定页面</button>
+            </div>
+        </div>
+        <div class="msg msg-info" style="display:block">
+            行情取自新浪财经，触发时按钉钉机器人推送。<b>改完记得点「保存」</b>：
+            配置会先更新到内存（盯盘立刻按新参数跑），再落盘到下面的文件，重启后依旧有效。
+        </div>
+
+        <div class="form-row">
+            <div class="field">
+                <label>盯盘开关</label>
+                <div class="sp-hint" style="margin-top:2px">
+                    <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400">
+                        <input type="checkbox" id="fEnabled"> 启用定时盯盘
+                    </label>
+                </div>
+                <div class="sp-hint">关掉后调度直接停止，不再查行情、不再推送。</div>
+            </div>
+            <div class="field">
+                <label>轮询间隔（秒）</label>
+                <input type="number" id="fInterval" min="5" max="3600" step="1">
+                <div class="sp-hint">每轮跑完再计下一轮；范围 5 ~ 3600 秒。</div>
+            </div>
+        </div>
+
+        <div class="form-row" style="align-items:flex-start">
+            <div class="field grow">
+                <label>告警规则 <span class="dim" style="font-weight:400;font-size:12px">时间单位 = 上方轮询间隔；任一规则满足即推送；同一轮多条规则同时触发会合并为一条</span></label>
+                <div id="ruleBox"></div>
+                <button class="btn-ghost btn-sm" onclick="addRule()" style="margin-top:4px">+ 添加规则</button>
+                <div class="sp-hint" style="margin-top:6px">每条形如「过去 N 个轮询周期内累计涨/跌幅达 M%」（比如上方轮询间隔 60s、规则填 5，就是过去 300s）；涨跌幅分档：&lt;1.5% 上涨 · 1.5%~3% 快速上涨 · ≥3% 急速拉升（下跌对称）。</div>
+            </div>
+        </div>
+
+        <div class="form-row" style="align-items:flex-start">
+            <div class="field grow">
+                <label>盯盘股票集合 <span class="dim" style="font-weight:400;font-size:12px">最多 200 只，每行展示 5 个</span></label>
+                <div id="stockPicker"></div>
+                <div class="sp-hint">输入代码或名称后从下拉里点选，点标签上的 × 移除。<span id="stockCount" class="dim"></span></div>
+            </div>
+        </div>
+
+        <div class="form-row" style="align-items:flex-start">
+            <div class="field grow">
+                <label>钉钉机器人 <span class="dim" style="font-weight:400;font-size:12px">留空表示关闭推送（告警仍会写日志）</span></label>
+                <input type="text" id="fWebhook" autocomplete="off" spellcheck="false"
+                       placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+                <div class="sp-hint">包含 access_token；钉钉机器人"自定义关键词"需配 <b>现价</b>，否则消息会被钉钉服务端拒收</div>
+            </div>
+        </div>
+
+        <div class="sp-hint" id="stateHint"></div>
+    </section>
+
+    <section class="panel">
+        <h2>说明</h2>
+        <table class="grid">
+            <thead>
+            <tr>
+                <th style="width:180px">项</th>
+                <th>说明</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <th>落盘文件</th>
+                <td><code id="cfgFile">-</code>（解析顺序：工作目录下的 watch-config.json → 服务端配置的绝对路径）</td>
+            </tr>
+            <tr>
+                <th>生效方式</th>
+                <td>保存即生效：内存里的配置立刻更新，定时调度按新间隔重新排，不需要重启进程</td>
+            </tr>
+            <tr>
+                <th>告警内容</th>
+                <td>多条规则任一命中即推；同一轮多条规则同时触发会合并为一条推送；涨跌幅超阈值、封板（涨停/跌停）、开板三类都会发；未配置钉钉 webhook 时只写日志</td>
+            </tr>
+            <tr>
+                <th>交易时段</th>
+                <td>只在周一至周五 9:30-11:30 / 13:00-15:00 查询；非交易时段不调接口，避免无谓消耗</td>
+            </tr>
+            </tbody>
+        </table>
+    </section>
+</main>
+
+<script src="/js/common.js?v=20260908c"></script>
+<script src="/js/stock-picker.js"></script>
+<script>
+    /** 解锁令牌：只存在内存与本次会话里，刷新后需要重新输密码 */
+    let TOKEN = sessionStorage.getItem('watch_token') || '';
+    let picker = null;
+    let cfg = null;
+
+    function watchHeaders() {
+        return {'X-Watch-Token': TOKEN};
+    }
+
+    function showGate() {
+        TOKEN = '';
+        sessionStorage.removeItem('watch_token');
+        document.getElementById('gatePanel').style.display = '';
+        document.getElementById('cfgPanel').style.display = 'none';
+        document.getElementById('fPwd').focus();
+    }
+
+    async function unlock() {
+        const pwd = document.getElementById('fPwd').value.trim();
+        if (!pwd) {
+            return toast('请输入密码', 'err');
+        }
+        const r = await post('/api/watch/unlock', {password: pwd});
+        if (!r || !r.success) {
+            return;
+        }
+        TOKEN = r.data.token;
+        sessionStorage.setItem('watch_token', TOKEN);
+        document.getElementById('fPwd').value = '';
+        await reload();
+    }
+
+    function lock() {
+        showGate();
+        toast('已锁定，下次配置需要重新输入密码', 'ok');
+    }
+
+    async function reload() {
+        const r = await api('/api/watch/config', {method: 'GET', headers: watchHeaders()});
+        if (!r || !r.success) {
+            // 令牌失效或还没解锁：回到密码页
+            showGate();
+            return;
+        }
+        cfg = r.data;
+        document.getElementById('gatePanel').style.display = 'none';
+        document.getElementById('cfgPanel').style.display = '';
+        render();
+    }
+
+    function render() {
+        document.getElementById('fEnabled').checked = !!cfg.enabled;
+        document.getElementById('fInterval').value = cfg.intervalSeconds;
+        document.getElementById('cfgFile').textContent = cfg.configFile || '-';
+
+        renderRules();
+        renderDingtalk();
+
+        if (!picker) {
+            picker = createStockPicker(document.getElementById('stockPicker'), {
+                multiple: true,
+                gridColumns: 5,
+                onChange: syncCount
+            });
+        }
+        picker.setItems(cfg.stocks || []);
+        syncCount();
+    }
+
+    function renderDingtalk() {
+        const dt = cfg.dingtalk || {};
+        document.getElementById('fWebhook').value = dt.webhook || '';
+    }
+
+    function renderRules() {
+        const box = document.getElementById('ruleBox');
+        const rules = (cfg.rules && cfg.rules.length) ? cfg.rules : [];
+        box.innerHTML = '';
+        if (!rules.length) {
+            addRuleRow(1, 1.0);
+        } else {
+            for (const r of rules) {
+                // 兼容老字段 seconds（绝对秒数），新字段 intervals（轮询间隔倍数）
+                const intervals = (typeof r.intervals === 'number')
+                        ? r.intervals
+                        : Math.max(1, Math.round((r.seconds || 0) / (cfg.intervalSeconds || 30)));
+                addRuleRow(intervals, r.percent);
+            }
+        }
+    }
+
+    function addRule() {
+        addRuleRow(1, 0.5);
+    }
+
+    function addRuleRow(intervals, percent) {
+        const box = document.getElementById('ruleBox');
+        const limits = (cfg && cfg.limits) || {};
+        const minN = limits.minRuleIntervals || 1;
+        const maxN = limits.maxRuleIntervals || 60;
+        const minP = limits.minThreshold || 0.01;
+        const maxP = limits.maxThreshold || 20;
+        const maxR = limits.maxRules || 8;
+        if (box.children.length >= maxR) {
+            return toast('最多 ' + maxR + ' 条规则', 'err');
+        }
+        const row = document.createElement('div');
+        row.className = 'rule-row';
+        row.innerHTML =
+            '<span class="dim">过去</span>'
+            + '<input type="number" class="rule-n" min="' + minN + '" max="' + maxN + '" step="1" value="' + intervals + '">'
+            + '<span class="dim">个轮询周期内涨/跌幅</span>'
+            + '<input type="number" class="rule-pct" min="' + minP + '" max="' + maxP + '" step="0.01" value="' + percent + '">'
+            + '<span class="dim">%</span>'
+            + '<i class="rule-del" title="删除该规则">×</i>';
+        row.querySelector('.rule-del').addEventListener('click', () => {
+            row.remove();
+        });
+        box.appendChild(row);
+    }
+
+    function collectRules() {
+        const rows = document.querySelectorAll('#ruleBox .rule-row');
+        const out = [];
+        for (const row of rows) {
+            const n = parseInt(row.querySelector('.rule-n').value, 10);
+            const p = parseFloat(row.querySelector('.rule-pct').value);
+            if (!n || isNaN(p)) {
+                continue;
+            }
+            out.push({intervals: n, percent: p});
+        }
+        return out;
+    }
+
+    function syncCount() {
+        const n = picker ? picker.getItems().length : 0;
+        const max = (cfg && cfg.limits && cfg.limits.maxStocks) || 200;
+        document.getElementById('stockCount').textContent = '已选 ' + n + ' / ' + max + ' 只';
+    }
+
+    async function save() {
+        const interval = parseInt(document.getElementById('fInterval').value, 10);
+        const limits = (cfg && cfg.limits) || {};
+        if (!interval || interval < (limits.minInterval || 5) || interval > (limits.maxInterval || 3600)) {
+            return toast('轮询间隔需要在 ' + (limits.minInterval || 5) + ' ~ ' + (limits.maxInterval || 3600) + ' 秒之间', 'err');
+        }
+        const rules = collectRules();
+        if (!rules.length) {
+            return toast('至少添加 1 条告警规则', 'err');
+        }
+        for (const r of rules) {
+            if (r.intervals < (limits.minRuleIntervals || 1) || r.intervals > (limits.maxRuleIntervals || 60)) {
+                return toast('规则的「过去时长」需要是 ' + limits.minRuleIntervals + ' ~ ' + limits.maxRuleIntervals + ' 个轮询周期', 'err');
+            }
+            if (r.percent < (limits.minThreshold || 0.01) || r.percent > (limits.maxThreshold || 20)) {
+                return toast('规则的「偏离百分比」需要在 ' + limits.minThreshold + ' ~ ' + limits.maxThreshold + ' % 之间', 'err');
+            }
+        }
+        const stocks = picker.getItems();
+        if (!stocks.length) {
+            return toast('至少选择 1 只盯盘股票', 'err');
+        }
+        const r = await api('/api/watch/config', {
+            method: 'PUT',
+            headers: watchHeaders(),
+            body: JSON.stringify({
+                enabled: document.getElementById('fEnabled').checked,
+                intervalSeconds: interval,
+                rules: rules,
+                dingtalk: {
+                    webhook: document.getElementById('fWebhook').value.trim()
+                },
+                stocks: stocks
+            })
+        });
+        if (!r || !r.success) {
+            return;
+        }
+        cfg = r.data;
+        render();
+        toast('已保存并生效：' + stocks.length + ' 只标的，' + rules.length + ' 条规则，每 ' + cfg.intervalSeconds + ' 秒一轮', 'ok');
+    }
+
+    (async function init() {
+        await loadMode();
+        if (MODE.noDb) {
+            if (TOKEN) {
+                await reload();
+            } else {
+                showGate();
+            }
+        } else {
+            showGate();
+        }
+        document.getElementById('fPwd').addEventListener('keydown', e => {
+            if (e.key === 'Enter') unlock();
+        });
+    })();
+</script>
+</body>
+</html>

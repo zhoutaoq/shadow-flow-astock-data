@@ -2,7 +2,11 @@ package com.stock.kline.watch;
 
 import java.math.BigDecimal;
 
-/** 一次行情查询的结果快照 */
+/**
+ * 一次行情查询的结果快照。
+ *
+ * <p>字段顺序对应新浪 hq.sinajs.cn 返回体（GBK 编码），从响应里按固定下标取。
+ */
 public class Quote {
 
     private final String code;
@@ -15,19 +19,26 @@ public class Quote {
     private final BigDecimal high;
     /** 当日最低价（元）：现价等于它才可能封在跌停板上 */
     private final BigDecimal low;
+    /** 累计成交量（股）：与上一轮的差值就是「拉升成交量」 */
+    private final BigDecimal volume;
+    /** 累计成交额（元）：与上一轮的差值就是「拉升成交额」 */
+    private final BigDecimal amount;
     /** 数据时间（毫秒），新浪返回的是行情快照时间 */
     private final long quoteTime;
     /** 接口返回的原始行情时间文本，如 2026-09-08 15:00:00 */
     private final String timeText;
 
     public Quote(String code, String name, BigDecimal price, BigDecimal preClose,
-                 BigDecimal high, BigDecimal low, long quoteTime, String timeText) {
+                 BigDecimal high, BigDecimal low, BigDecimal volume, BigDecimal amount,
+                 long quoteTime, String timeText) {
         this.code = code;
         this.name = name;
         this.price = price;
         this.preClose = preClose;
         this.high = high;
         this.low = low;
+        this.volume = volume;
+        this.amount = amount;
         this.quoteTime = quoteTime;
         this.timeText = timeText;
     }
@@ -66,6 +77,14 @@ public class Quote {
 
     public BigDecimal getLow() {
         return low;
+    }
+
+    public BigDecimal getVolume() {
+        return volume;
+    }
+
+    public BigDecimal getAmount() {
+        return amount;
     }
 
     public long getQuoteTime() {

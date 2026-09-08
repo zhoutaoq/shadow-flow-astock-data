@@ -3,21 +3,20 @@ package com.stock.kline.watch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 
 /**
  * 钉钉群机器人推送（文本消息）。
  *
- * <p>安全设置用「加签」时：把 <code>timestamp + "\n" + secret</code> 用secret 做
- * HmacSHA256，再 Base64 + URL 编码，作为 <code>sign</code> 参数拼到 webhook 上。
+ * <p>v1.4 起只支持「自定义关键词」模式：消息文本必须含钉钉机器人后台配置的关键词，
+ * 才会被服务端放行；不再支持「加签」（后者要求服务端按 secret 算 sign 拼到 URL 上）。
+ *
+ * <p>实际推送仍是 POST 一段 JSON 到 webhook，body 形如
+ * <code>{"msgtype":"text","text":{"content":"..."}}</code>。
  */
 public class DingTalkNotifier {
 
@@ -31,7 +30,6 @@ public class DingTalkNotifier {
 
     /**
      * 运行时覆盖 webhook（测试用它指到假机器人，避免连真实钉钉）。
-     * <p>不影响 secret —— 加签所需的 secret 仍从 Spring 配置里来。
      */
     void setWebhook(String webhook) {
         props.getDingtalk().setWebhook(webhook);
@@ -48,7 +46,7 @@ public class DingTalkNotifier {
             return false;
         }
         try {
-            String url = buildUrl(dt);
+            String url = dt.getWebhook().trim();
             String body = "{\"msgtype\":\"text\",\"text\":{\"content\":" + json(content) + "}}";
             String resp = post(url, body);
             log.info("[watch] 钉钉推送返回 {}", resp);
@@ -57,28 +55,6 @@ public class DingTalkNotifier {
             log.error("[watch] 钉钉推送失败: {}", e.getMessage());
             return false;
         }
-    }
-
-    /** 拼 webhook：带上加签所需的 timestamp 与 sign */
-    private String buildUrl(WatchProperties.DingTalk dt) throws Exception {
-        String webhook = dt.getWebhook().trim();
-        String secret = dt.getSecret() == null ? "" : dt.getSecret().trim();
-        if (secret.isEmpty()) {
-            return webhook;
-        }
-        long timestamp = System.currentTimeMillis();
-        String sign = sign(timestamp, secret);
-        return webhook + (webhook.contains("?") ? "&" : "?")
-                + "timestamp=" + timestamp + "&sign=" + sign;
-    }
-
-    /** 加签：HmacSHA256(secret, timestamp + "\n" + secret) → Base64 → URL 编码 */
-    static String sign(long timestamp, String secret) throws Exception {
-        String toSign = timestamp + "\n" + secret;
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        byte[] data = mac.doFinal(toSign.getBytes(StandardCharsets.UTF_8));
-        return URLEncoder.encode(Base64.getEncoder().encodeToString(data), "UTF-8");
     }
 
     private String post(String urlStr, String body) throws IOException {

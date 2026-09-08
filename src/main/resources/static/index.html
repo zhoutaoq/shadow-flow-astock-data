@@ -3,11 +3,11 @@
 <head data-page-node-id="eeyg1PLc7vsHz3uxInuqF3">
     <meta charset="UTF-8" data-page-node-id="1RA6CEOctAJYAu2DUvnOkz">
     <title>金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260907f" data-page-node-id="EcS08gimNVTlUTkbAFWWVJ">
+    <link rel="stylesheet" href="/css/common.css?v=20260908c" data-page-node-id="EcS08gimNVTlUTkbAFWWVJ">
 </head>
 <body data-page-node-id="tDbjlR3jJt8MORImcTShlg">
 <header class="topbar" data-page-node-id="kRjQrQy4rDjCHaic7NuJ8x">
-    <a class="brand" href="/" data-page-node-id="3sXl0lW6k6BgqNrG7w1AVg">金牛数据 <span class="sub" data-page-node-id="qwTPvRTP9xYuAywuS2SXSy">回测</span></a>
+    <a class="brand" href="/" data-page-node-id="3sXl0lW6k6BgqNrG7w1AVg">金牛数据</a>
     <nav class="nav" id="nav" data-page-node-id="lptYTPlcQMaddsWKY38Scy"></nav>
 </header>
 
@@ -80,13 +80,13 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260907f"></script>
+<script src="/js/common.js?v=20260908c"></script>
 <script src="/js/date-picker.js"></script>
 <script>
     function renderModeDesc() {
         document.getElementById('modeDesc').innerHTML =
             '后端没有连数据库：日K每次向供应商现取，回测跑完只返回结果、不留存历史。'
-            + '可用功能：<b>概览</b> / <b>股票列表</b> / <b>K线查看</b> / <b>策略回测</b> / <b>token配置</b>；'
+            + '可用功能：<b>概览</b> / <b>股票列表</b> / <b>K线查看</b> / <b>策略回测</b> / <b>盯盘</b> / <b>token配置</b>；'
             + '单次查询跨度上限 <b>' + MODE.maxSpanDays + '</b> 个自然日。'
             + (hasCustomWaizaoToken()
                 ? '已使用自定义令牌（内容不可查看，30 天有效）。'
@@ -100,11 +100,13 @@
             document.getElementById('statCards').style.display = 'none';
             const quick = document.querySelector('.quick');
             if (quick) {
+                // 与顶部导航保持同一套：6 个一级入口，不多不少
                 quick.innerHTML = [
                     ['股票列表', '/pages/stock-list.html', '内存名录（沪深A股），分页 + 模糊匹配'],
-                    ['K线分析', '/pages/chart.html', '单只日K，指定区间一次取回'],
+                    ['K线查看', '/pages/chart.html', '单只日K，指定区间一次取回'],
                     ['策略回测', '/pages/backtest.html', '按买卖策略跑历史，看盈亏曲线与明细'],
-                    ['系统配置', '/pages/config.html', '维护 waizao 令牌']
+                    ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值（需密码）'],
+                    ['token配置', '/pages/config.html', '维护 waizao 令牌（内容不支持查看）']
                 ].map(([b, href, span]) =>
                     '<a class="quick-item" href="' + href + '"><b>' + b + '</b><span>' + span + '</span></a>'
                 ).join('');
