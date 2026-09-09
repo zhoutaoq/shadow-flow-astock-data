@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
 @SpringBootTest
 class DingTalkNotifierTest {
 
@@ -11,7 +14,7 @@ class DingTalkNotifierTest {
     private DingTalkNotifier notifier;
 
     @Test
-    void send() {
-        notifier.send("单元测试推送，现价29");
+    void send() throws UnknownHostException {
+        notifier.send(String.format("ip:" + InetAddress.getLocalHost()));
     }
 }

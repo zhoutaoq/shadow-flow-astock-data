@@ -41,6 +41,7 @@ public class DingTalkNotifier {
      * @return 是否推送成功（webhook 未配置时返回 false，由调用方决定是否记日志）
      */
     public boolean send(String content) {
+        content = "[智能盯盘] " + content;
         WatchProperties.DingTalk dt = props.getDingtalk();
         if (!dt.configured()) {
             return false;
@@ -82,7 +83,9 @@ public class DingTalkNotifier {
         }
     }
 
-    /** 文本内容转 JSON 字符串（JSON 里没有转义工具，手动处理几个关键字符） */
+    /**
+     * 文本内容转 JSON 字符串（JSON 里没有转义工具，手动处理几个关键字符）
+     */
     static String json(String s) {
         if (s == null) {
             return "\"\"";
