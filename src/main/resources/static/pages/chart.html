@@ -21,7 +21,7 @@
             <div class="field grow">
                 <label>股票 *</label>
                 <div id="codePick"></div>
-                <div class="sp-hint" id="pickHint">点选一只股票后立即渲染近三个月；图上向左拖动，每次自动往前补一年</div>
+                <div class="sp-hint" id="pickHint">点选一只股票后立即渲染近三个月；在图内按住左右拖动，拖到最左侧每次自动往前补一年</div>
             </div>
         </div>
         <div class="form-row">
@@ -304,8 +304,8 @@
             },
             axisPointer: {link: [{xAxisIndex: 'all'}]},
             grid: [
-                {left: 60, right: 40, top: 40, height: 320},
-                {left: 60, right: 40, top: 400, height: 100}
+                {left: 60, right: 40, top: 40, height: 340},
+                {left: 60, right: 40, top: 420, height: 110}
             ],
             xAxis: [
                 {type: 'category', data: dates, boundaryGap: false, axisLine: {lineStyle: {color: '#3a4256'}}},
@@ -318,6 +318,7 @@
                 {scale: true, splitLine: {lineStyle: {color: '#232b3d'}}},
                 {gridIndex: 1, splitNumber: 2, splitLine: {show: false}, axisLabel: {show: false}}
             ],
+            // 只在图内操作：按住拖动平移、滚轮缩放，不再给底部滚动条
             dataZoom: [
                 {
                     type: 'inside',
@@ -328,8 +329,7 @@
                     moveOnMouseMove: true,
                     moveOnMouseWheel: false,
                     preventDefaultMouseMove: true
-                },
-                {type: 'slider', xAxisIndex: [0, 1], top: 510, height: 18, start: state.zoom.start, end: state.zoom.end}
+                }
             ],
             series: [{
                 name: 'K线',
@@ -387,8 +387,8 @@
             + ` · 均价 ${avg} 元`
             + ` · 已加载 ${span.start} ~ ${span.end}`
             + (MODE.noDb
-                ? (state.exhausted ? ' · 已到最早可查行情' : ' · 继续向左拖可加载更早一年')
-                : (state.minDate && span.start > state.minDate ? ' · 继续向左拖可加载更早行情' : ''));
+                ? (state.exhausted ? ' · 已到最早可查行情' : ' · 继续向左滑动可加载更早一年')
+                : (state.minDate && span.start > state.minDate ? ' · 继续向左滑动可加载更早行情' : ''));
     }
 
     /** 视窗明细不再平铺在页面上：只记住当前可见区间，点按钮才弹窗分页展示 */
@@ -544,7 +544,7 @@
     function onModeReady(m) {
         if (!m.noDb) return;
         document.getElementById('pickHint').textContent =
-            '点选一只股票后立即渲染近三个月；向左拖到图的最左侧，每次自动往前补一年';
+            '点选一只股票后立即渲染近三个月；在图内按住左右拖动，拖到最左侧每次自动往前补一年';
     }
 
     (async function initFromQuery() {

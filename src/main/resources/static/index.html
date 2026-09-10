@@ -2,10 +2,11 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>金牛数据</title>
     <link rel="stylesheet" href="/css/common.css?v=20260910b">
-    <link rel="stylesheet" href="/css/home.css?v=20260910c">
+    <link rel="stylesheet" href="/css/home.css?v=20260910d">
 </head>
 <body>
 <header class="topbar">
@@ -14,8 +15,9 @@
 </header>
 
 <main class="container">
-    <!-- 品牌带 -->
+    <!-- 品牌带：背景是实时生成的 K 线行情动画 -->
     <section class="hero">
+        <canvas class="hero-canvas" id="heroCanvas" aria-hidden="true"></canvas>
         <div class="hero-main">
             <div>
                 <h1>金牛数据</h1>
@@ -32,6 +34,155 @@
                 <span class="dot"></span>
                 <span>行情在线</span>
                 <span class="hero-time" id="tapeTime">--:--:--</span>
+            </div>
+        </div>
+        <div class="hero-src">背景行情　长电科技 600584 · 2026.03.02–06.30 · <b>+121.4%</b></div>
+    </section>
+
+    <!-- 核心能力轮播：每屏一张示意图，自动播放 -->
+    <section class="showcase" id="showcase" aria-roledescription="carousel" aria-label="核心能力">
+        <div class="sc-track" id="scTrack">
+
+            <!-- 1 · 日K线分析 -->
+            <article class="sc-slide" role="group" aria-label="1 / 3 日K线分析">
+                <div class="sc-copy">
+                    <span class="sc-eyebrow">行情数据</span>
+                    <h2 class="sc-title">日K线分析</h2>
+                    <p class="sc-desc">蜡烛图配成交量，均线、缩放、区间回看一体。选中标的后直接看它自己的走势，不用再翻行情软件。</p>
+                    <ul class="sc-points">
+                        <li>开盘 / 收盘 / 最高 / 最低 / 成交量 / 成交额 / 前收盘</li>
+                        <li>拖拽缩放，任意区间回放历史走势</li>
+                        <li>成交量与价格同屏对照</li>
+                    </ul>
+                    <a class="sc-cta" href="/pages/chart.html">进入 K 线分析<span class="sc-arrow-r">&rsaquo;</span></a>
+                </div>
+                <div class="sc-figure">
+                    <svg class="sc-art" viewBox="0 0 560 320" role="img" aria-label="日K线蜡烛图与成交量示意图">
+                        <g class="sc-grid">
+                            <path d="M40 20H540M40 70H540M40 120H540M40 170H540M40 220H540"/>
+                            <path d="M40 20V292M540 20V292"/>
+                        </g>
+                        <polyline class="sc-ma sc-draw" points="61,175 95,172 129,165 163,155 197,148 231,138 265,130 299,120 333,112 367,100 401,92 435,80 469,68 503,52"/>
+                        <g class="sc-candles">
+                            <g class="sc-c sc-up"><path d="M61 150V190"/><rect x="50" y="160" width="22" height="20"/></g>
+                            <g class="sc-c sc-down"><path d="M95 145V175"/><rect x="84" y="160" width="22" height="10"/></g>
+                            <g class="sc-c sc-up"><path d="M129 130V175"/><rect x="118" y="140" width="22" height="30"/></g>
+                            <g class="sc-c sc-down"><path d="M163 135V160"/><rect x="152" y="140" width="22" height="10"/></g>
+                            <g class="sc-c sc-up"><path d="M197 110V155"/><rect x="186" y="120" width="22" height="30"/></g>
+                            <g class="sc-c sc-down"><path d="M231 115V135"/><rect x="220" y="120" width="22" height="10"/></g>
+                            <g class="sc-c sc-up"><path d="M265 90V135"/><rect x="254" y="100" width="22" height="30"/></g>
+                            <g class="sc-c sc-down"><path d="M299 80V120"/><rect x="288" y="100" width="22" height="10"/></g>
+                            <g class="sc-c sc-up"><path d="M333 70V115"/><rect x="322" y="80" width="22" height="30"/></g>
+                            <g class="sc-c sc-down"><path d="M367 60V95"/><rect x="356" y="80" width="22" height="10"/></g>
+                            <g class="sc-c sc-up"><path d="M401 50V100"/><rect x="390" y="60" width="22" height="30"/></g>
+                            <g class="sc-c sc-down"><path d="M435 45V80"/><rect x="424" y="60" width="22" height="15"/></g>
+                            <g class="sc-c sc-up"><path d="M469 40V85"/><rect x="458" y="50" width="22" height="25"/></g>
+                            <g class="sc-c sc-up"><path d="M503 20V60"/><rect x="492" y="30" width="22" height="20"/></g>
+                        </g>
+                        <g class="sc-vol">
+                            <rect class="sc-v sc-vup" x="50" y="264" width="22" height="26"/>
+                            <rect class="sc-v sc-vdown" x="84" y="272" width="22" height="18"/>
+                            <rect class="sc-v sc-vup" x="118" y="256" width="22" height="34"/>
+                            <rect class="sc-v sc-vdown" x="152" y="270" width="22" height="20"/>
+                            <rect class="sc-v sc-vup" x="186" y="250" width="22" height="40"/>
+                            <rect class="sc-v sc-vdown" x="220" y="268" width="22" height="22"/>
+                            <rect class="sc-v sc-vup" x="254" y="252" width="22" height="38"/>
+                            <rect class="sc-v sc-vdown" x="288" y="266" width="22" height="24"/>
+                            <rect class="sc-v sc-vup" x="322" y="246" width="22" height="44"/>
+                            <rect class="sc-v sc-vdown" x="356" y="264" width="22" height="26"/>
+                            <rect class="sc-v sc-vup" x="390" y="248" width="22" height="42"/>
+                            <rect class="sc-v sc-vdown" x="424" y="266" width="22" height="24"/>
+                            <rect class="sc-v sc-vup" x="458" y="244" width="22" height="46"/>
+                            <rect class="sc-v sc-vup" x="492" y="238" width="22" height="52"/>
+                        </g>
+                        <g class="sc-legend">
+                            <rect x="452" y="12" width="16" height="3" rx="1.5" class="sc-lg-ma"/>
+                            <text x="474" y="19" class="sc-txt">MA5</text>
+                            <text x="40" y="238" class="sc-txt">成交量</text>
+                        </g>
+                    </svg>
+                </div>
+            </article>
+
+            <!-- 2 · 策略回测 -->
+            <article class="sc-slide" role="group" aria-label="2 / 3 买卖策略回测">
+                <div class="sc-copy">
+                    <span class="sc-eyebrow">策略验证</span>
+                    <h2 class="sc-title">买卖策略回测</h2>
+                    <p class="sc-desc">把买卖规则丢进历史跑一遍：净值曲线、基准对比、每一笔成交都摆出来，赚在哪亏在哪一眼看清。</p>
+                    <ul class="sc-points">
+                        <li>净值曲线与基准同屏对比</li>
+                        <li>逐笔成交明细：买点、卖点、持仓天数</li>
+                        <li>胜率 / 最大回撤 / 总盈亏一次算完</li>
+                    </ul>
+                    <a class="sc-cta" href="/pages/backtest.html">去跑一次回测<span class="sc-arrow-r">&rsaquo;</span></a>
+                </div>
+                <div class="sc-figure">
+                    <svg class="sc-art" viewBox="0 0 560 320" role="img" aria-label="策略净值与基准对比及买卖点示意图">
+                        <g class="sc-grid">
+                            <path d="M40 60H540M40 110H540M40 160H540M40 210H540M40 260H540"/>
+                            <path d="M40 40V270M540 40V270"/>
+                        </g>
+                        <path class="sc-area" d="M40 250L89 235L138 240L187 205L236 215L285 170L334 150L383 160L432 110L481 80L530 60L530 270L40 270Z"/>
+                        <polyline class="sc-bench" points="40,250 89,245 138,248 187,230 236,235 285,215 334,205 383,210 432,190 481,180 530,170"/>
+                        <polyline class="sc-equity sc-draw" points="40,250 89,235 138,240 187,205 236,215 285,170 334,150 383,160 432,110 481,80 530,60"/>
+                        <g class="sc-signals">
+                            <g class="sc-sg sc-buy"><path d="M138 240V260"/><circle cx="138" cy="272" r="10"/><text x="138" y="276">买</text></g>
+                            <g class="sc-sg sc-sell"><path d="M187 205V185"/><circle cx="187" cy="173" r="10"/><text x="187" y="177">卖</text></g>
+                            <g class="sc-sg sc-buy"><path d="M236 215V235"/><circle cx="236" cy="247" r="10"/><text x="236" y="251">买</text></g>
+                            <g class="sc-sg sc-sell"><path d="M334 150V130"/><circle cx="334" cy="118" r="10"/><text x="334" y="122">卖</text></g>
+                            <g class="sc-sg sc-buy"><path d="M383 160V180"/><circle cx="383" cy="192" r="10"/><text x="383" y="196">买</text></g>
+                            <g class="sc-sg sc-sell"><path d="M530 60V42"/><circle cx="530" cy="32" r="10"/><text x="530" y="36">卖</text></g>
+                        </g>
+                        <g class="sc-legend">
+                            <rect x="330" y="14" width="16" height="3" rx="1.5" class="sc-lg-eq"/>
+                            <text x="352" y="21" class="sc-txt">策略净值</text>
+                            <rect x="410" y="14" width="16" height="3" rx="1.5" class="sc-lg-bench"/>
+                            <text x="432" y="21" class="sc-txt">基准</text>
+                        </g>
+                    </svg>
+                </div>
+            </article>
+
+            <!-- 3 · 实时盯盘 -->
+            <article class="sc-slide" role="group" aria-label="3 / 3 实时盯盘告警">
+                <div class="sc-copy">
+                    <span class="sc-eyebrow">盘中监控</span>
+                    <h2 class="sc-title">实时盯盘告警</h2>
+                    <p class="sc-desc">盯盘标的、轮询间隔、触发阈值自己定。条件一满足立刻推到面前，不用一遍遍刷页面等信号。</p>
+                    <ul class="sc-points">
+                        <li>涨幅 / 跌幅 / 量比 / 均线突破等多类阈值</li>
+                        <li>轮询间隔可调，按自己的节奏走</li>
+                        <li>告警记录留痕，事后可复盘</li>
+                    </ul>
+                    <a class="sc-cta" href="/pages/watch.html">配置盯盘<span class="sc-arrow-r">&rsaquo;</span></a>
+                </div>
+                <div class="sc-figure">
+                    <svg class="sc-art" viewBox="0 0 560 320" role="img" aria-label="实时盯盘告警面板示意图">
+                        <rect class="sc-card" x="26" y="26" width="508" height="268" rx="10"/>
+                        <text x="48" y="62" class="sc-card-title">实时盯盘 · 告警流</text>
+                        <g class="sc-bell">
+                            <path d="M494 52a6 6 0 0 0-12 0c0 6-3 8-3 8h18s-3-2-3-8z"/>
+                            <path d="M485 63a3 3 0 0 0 6 0"/>
+                        </g>
+                        <path class="sc-divider" d="M26 78H534"/>
+                        <polyline class="sc-pulse sc-draw" points="48,150 80,147 112,152 144,143 176,148 208,138 240,145 272,132 304,142 336,112 368,124 400,98 432,106 464,74 496,86 522,64"/>
+                        <path class="sc-baseline" d="M48 158H522"/>
+                        <g class="sc-alerts">
+                            <g class="sc-al sc-al-hot"><rect x="48" y="176" width="464" height="32" rx="6"/><circle cx="66" cy="192" r="4"/><text x="80" y="196" class="sc-al-name">贵州茅台 · 600519</text><text x="496" y="196" class="sc-al-val">+3.42%　已触发</text></g>
+                            <g class="sc-al"><rect x="48" y="216" width="464" height="32" rx="6"/><circle cx="66" cy="232" r="4"/><text x="80" y="236" class="sc-al-name">宁德时代 · 300750</text><text x="496" y="236" class="sc-al-val">跌破 MA20　监控中</text></g>
+                            <g class="sc-al sc-al-hot"><rect x="48" y="256" width="464" height="32" rx="6"/><circle cx="66" cy="272" r="4"/><text x="80" y="276" class="sc-al-name">比亚迪 · 002594</text><text x="496" y="276" class="sc-al-val">量比 2.3　已触发</text></g>
+                        </g>
+                    </svg>
+                </div>
+            </article>
+
+        </div>
+        <div class="sc-bar">
+            <div class="sc-dots" id="scDots"></div>
+            <div class="sc-ctrl">
+                <button class="sc-arrow" id="scPrev" type="button" aria-label="上一张">&#8249;</button>
+                <button class="sc-arrow" id="scNext" type="button" aria-label="下一张">&#8250;</button>
             </div>
         </div>
     </section>
@@ -80,31 +231,45 @@
 
 <script src="/js/common.js?v=20260910b"></script>
 <script src="/js/date-picker.js"></script>
+<script src="/js/home.js?v=20260910d"></script>
 <script>
-    /* 有数据库模式：能落库的全量入口 */
+    /* 有数据库模式：能落库的全量入口（第 4 项是内联图标，不转义） */
     var QUICK_DB = [
-        ['股票列表', '/pages/stock-list.html', '维护分析标的，进入单只股票的 K 线明细'],
-        ['K线分析', '/pages/chart.html', '蜡烛图 + 成交量，拖拽缩放回看历史'],
-        ['策略回测', '/pages/backtest.html', '按买卖策略跑一遍历史，看盈亏曲线与成交明细'],
-        ['单只更新', '/pages/update-single.html', '指定 1 只股票与日期区间，更新行情'],
-        ['批量更新', '/pages/update-batch.html', '勾选多只股票，批量同步日K'],
-        ['条件更新', '/pages/update-filter.html', '按市场/关键字筛选后批量同步'],
-        ['接口调试', '/pages/debug.html', '测试菜单：直连供应商接口（收在「系统」下）']
+        ['股票列表', '/pages/stock-list.html', '维护分析标的，进入单只股票的 K 线明细',
+            '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>'],
+        ['K线分析', '/pages/chart.html', '蜡烛图 + 成交量，拖拽缩放回看历史',
+            '<path d="M7 4v3M7 17v3M17 3v3M17 15v5"/><rect x="4" y="7" width="6" height="10"/><rect x="14" y="6" width="6" height="9"/>'],
+        ['策略回测', '/pages/backtest.html', '按买卖策略跑一遍历史，看盈亏曲线与成交明细',
+            '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>'],
+        ['单只更新', '/pages/update-single.html', '指定 1 只股票与日期区间，更新行情',
+            '<path d="M20 11a8 8 0 1 0-2.6 5.9"/><path d="M20 4v7h-7"/>'],
+        ['批量更新', '/pages/update-batch.html', '勾选多只股票，批量同步日K',
+            '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>'],
+        ['条件更新', '/pages/update-filter.html', '按市场/关键字筛选后批量同步',
+            '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>'],
+        ['接口调试', '/pages/debug.html', '测试菜单：直连供应商接口（收在「系统」下）',
+            '<path d="M4 17l6-5-6-5"/><path d="M13 19h7"/>']
     ];
 
     /* 无数据库模式：与顶部导航同一套，只留不依赖库表的入口 */
     var QUICK_NO_DB = [
-        ['股票列表', '/pages/stock-list.html', '内存名录（沪深A股），分页 + 模糊匹配'],
-        ['K线查看', '/pages/chart.html', '单只日K，指定区间一次取回'],
-        ['策略回测', '/pages/backtest.html', '按买卖策略跑历史，看盈亏曲线与明细'],
-        ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值（需密码）'],
-        ['token配置', '/pages/config.html', '维护 waizao 令牌（内容不支持查看）']
+        ['股票列表', '/pages/stock-list.html', '内存名录（沪深A股），分页 + 模糊匹配',
+            '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>'],
+        ['K线查看', '/pages/chart.html', '单只日K，指定区间一次取回',
+            '<path d="M7 4v3M7 17v3M17 3v3M17 15v5"/><rect x="4" y="7" width="6" height="10"/><rect x="14" y="6" width="6" height="9"/>'],
+        ['策略回测', '/pages/backtest.html', '按买卖策略跑历史，看盈亏曲线与明细',
+            '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>'],
+        ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值（需密码）',
+            '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 8-3 8h18s-3-2-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'],
+        ['token配置', '/pages/config.html', '维护 waizao 令牌（内容不支持查看）',
+            '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 3h3v3"/>']
     ];
 
     function renderQuick(list) {
         document.getElementById('quick').innerHTML = list.map(function (it, i) {
             return '<a class="quick-item" href="' + it[1] + '">'
-                + '<b><span class="idx">' + (i + 1) + '</span>' + esc(it[0]) + '</b>'
+                + '<b><span class="qi-ico"><svg viewBox="0 0 24 24">' + it[3] + '</svg></span>'
+                + esc(it[0]) + '<span class="idx">' + (i + 1) + '</span></b>'
                 + '<span>' + esc(it[2]) + '</span>'
                 + '</a>';
         }).join('');
