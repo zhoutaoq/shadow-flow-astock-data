@@ -21,6 +21,6 @@
             font-size: 16px;
             padding: 2px 6px;
         }
-        .rule-row .rule-del:hover { color: #e5484d; }
+        .rule-row .rule-del:hover { color: var(--danger); }
 
         /* ============ 钉钉区：单字段全宽，与告警规则行视觉一致 ============ */

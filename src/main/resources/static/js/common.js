@@ -280,6 +280,68 @@ function padYmd(y, mo, d) {
     return fmtLocalDate(dt);
 }
 
+/* ============ 主题：暗色 / 亮色 ============ */
+const THEME_KEY = 'jn_theme';
+
+/** 已保存的主题；没存过就跟随系统偏好 */
+function currentTheme() {
+    try {
+        const saved = localStorage.getItem(THEME_KEY);
+        if (saved === 'light' || saved === 'dark') {
+            return saved;
+        }
+    } catch (e) {
+        // 隐私模式下 localStorage 不可用，退回系统偏好
+    }
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light' : 'dark';
+}
+
+/** 落到 <html data-theme> 上，配色全部由 CSS 令牌接管 */
+function applyTheme(theme) {
+    const t = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    const btn = document.getElementById('themeToggle');
+    if (btn) {
+        const tip = t === 'light' ? '切换到暗色' : '切换到亮色';
+        btn.title = tip;
+        btn.setAttribute('aria-label', tip);
+    }
+}
+
+/** 切换并记住选择；存不下就只对本次会话生效 */
+function toggleTheme() {
+    const next = currentTheme() === 'light' ? 'dark' : 'light';
+    try {
+        localStorage.setItem(THEME_KEY, next);
+    } catch (e) {
+        // 忽略：写不进 cookie / localStorage 时页面仍然可用
+    }
+    applyTheme(next);
+}
+
+/** 顶栏右侧挂切换按钮：11 个页面共用，各页面不用自己写 */
+function renderThemeToggle() {
+    const bar = document.querySelector('.topbar');
+    if (!bar || document.getElementById('themeToggle')) {
+        return;
+    }
+    const sun = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"'
+        + ' stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/>'
+        + '<path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4'
+        + 'M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>';
+    const moon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"'
+        + ' stroke-width="2" stroke-linecap="round"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5'
+        + 'a8.5 8.5 0 1 0 10.8 10.8z"/></svg>';
+    const btn = document.createElement('button');
+    btn.className = 'theme-toggle';
+    btn.id = 'themeToggle';
+    btn.type = 'button';
+    btn.innerHTML = '<span class="ico-sun">' + sun + '</span><span class="ico-moon">' + moon + '</span>';
+    btn.addEventListener('click', toggleTheme);
+    bar.appendChild(btn);
+}
+
 /* ============ 导航：一级 + 二级（悬浮展开） ============ */
 /**
  * 菜单结构：一级只留 4 项，测试/运维类入口收进「系统」的二级菜单。
@@ -465,7 +527,10 @@ function whenTokenReady() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260910a（v1.2：设计令牌统一 / 数字等宽 / 去装饰动效）');
+    console.info('[金牛数据] 前端版本 20260910b（v1.3：亮/暗主题 / 设计令牌统一 / 数字等宽）');
+    // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
+    applyTheme(currentTheme());
+    renderThemeToggle();
     await loadMode();
     ensureTokenDialog();
     renderNav();
