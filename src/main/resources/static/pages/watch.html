@@ -295,7 +295,13 @@
         document.getElementById('stockCount').textContent = '已选 ' + n + ' / ' + max + ' 只';
     }
 
+    /** 保存中：挡住连点，避免同一份配置被并发提交、把变更提示刷成一片 */
+    let saving = false;
+
     async function save() {
+        if (saving) {
+            return;
+        }
         const interval = parseInt(document.getElementById('fInterval').value, 10);
         const limits = (cfg && cfg.limits) || {};
         if (!interval || interval < (limits.minInterval || 5) || interval > (limits.maxInterval || 3600)) {
@@ -317,24 +323,34 @@
         if (!stocks.length) {
             return toast('至少选择 1 只盯盘股票', 'err');
         }
-        const r = await api('/api/watch/config', {
-            method: 'PUT',
-            headers: watchHeaders(),
-            body: JSON.stringify({
-                enabled: document.getElementById('fEnabled').checked,
-                intervalSeconds: interval,
-                rules: rules,
-                dingtalk: {
-                    webhook: document.getElementById('fWebhook').value.trim()
-                },
-                stocks: stocks
-            })
-        });
+        saving = true;
+        let r;
+        try {
+            r = await api('/api/watch/config', {
+                method: 'PUT',
+                headers: watchHeaders(),
+                body: JSON.stringify({
+                    enabled: document.getElementById('fEnabled').checked,
+                    intervalSeconds: interval,
+                    rules: rules,
+                    dingtalk: {
+                        webhook: document.getElementById('fWebhook').value.trim()
+                    },
+                    stocks: stocks
+                })
+            });
+        } finally {
+            saving = false;
+        }
         if (!r || !r.success) {
             return;
         }
+        // 保存成功只更新本地配置与展示用的落盘路径，绝不能用服务端快照重刷整个表单：
+        // 请求往返期间用户可能又改了名单，重刷会把这段编辑悄悄回滚，
+        // 表现就是「刚删掉的股票又冒出来」，再存一次又变成移除 —— 名单来回抖。
         cfg = r.data;
-        render();
+        document.getElementById('cfgFile').textContent = cfg.configFile || '-';
+        syncCount();
         toast('已保存并生效：' + stocks.length + ' 只标的，' + rules.length + ' 条规则，每 ' + cfg.intervalSeconds + ' 秒一轮', 'ok');
     }
 
