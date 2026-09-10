@@ -21,11 +21,8 @@
             <div class="field grow">
                 <label>股票 *</label>
                 <div id="codePick"></div>
-                <div class="sp-hint" id="pickHint">点选一只股票后默认展示近三个月；图上拖拽平移、滚轮缩放，靠近边缘会按需加载更多历史</div>
+                <div class="sp-hint" id="pickHint">点选一只股票后立即渲染近三个月；图上向左拖动，每次自动往前补一年</div>
             </div>
-            <button onclick="loadStock()" id="btnLoad">分析</button>
-            <!-- 无数据库模式没有入库跨度可查，只能一路往回补；给个手动入口兜底 -->
-            <button class="btn-ghost" onclick="loadOlder()" id="btnOlder" style="display:none">加载更早一年</button>
         </div>
         <div class="form-row">
             <span class="dim">均线：</span>
@@ -74,6 +71,10 @@
     };
 
     const codePicker = createStockPicker(document.getElementById('codePick'), {
+        // 选中即渲染：点选（或手输回车）产生有效代码就直接画图，不再要"分析"按钮
+        onChange: function () {
+            if (codePicker.getCodes().length) loadStock();
+        },
         onEnter: () => loadStock()
     });
 
@@ -81,7 +82,6 @@
         state.rows = [];
         state.code = '';
         state.exhausted = false;
-        document.getElementById('btnOlder').style.display = 'none';
         chart.clear();
         setVisRows([]);
         document.getElementById('stat').textContent = '';
@@ -181,7 +181,6 @@
         state.zoom = {start: 0, end: 100};
         mergeRows(await fetchRange(start, end));
         state.total = state.rows.length;
-        document.getElementById('btnOlder').style.display = state.rows.length ? '' : 'none';
         if (!state.rows.length) {
             chart.clear();
             document.getElementById('stat').textContent = '';
@@ -466,22 +465,7 @@
         return added;
     }
 
-    /** 「加载更早一年」：无数据库模式下手动补历史，绕过"拖到边缘"的触发条件 */
-    async function loadOlder() {
-        if (state.fetching || !state.code || !state.rows.length) return;
-        if (state.exhausted) return toast('已经是能取到的最早行情了', 'ok');
-        state.fetching = true;
-        try {
-            const added = await fetchLeftChunk();
-            if (!added) {
-                state.exhausted = true;
-                renderStat(state.visRows);
-                toast('更早的区间没有取到行情', 'ok');
-            }
-        } finally {
-            state.fetching = false;
-        }
-    }
+    /** 「加载更早一年」按钮已删：向左补历史统一由拖到边缘触发（maybePrefetch → fetchLeftChunk） */
 
     async function maybePrefetch() {
         if (state.fetching || !state.code || !state.rows.length) {
@@ -556,11 +540,11 @@
         if (state.rows.length) paint(false);
     });
 
-    /** 无数据库模式：不给日期输入框，默认近三个月，往回补历史一年一次 */
+    /** 无数据库模式：不给日期输入框，选中即渲染近三个月，往回补历史一年一次 */
     function onModeReady(m) {
         if (!m.noDb) return;
         document.getElementById('pickHint').textContent =
-            '点选一只股票后直接渲染近三个月；向左拖到图的最左侧、或点「加载更早一年」，每次往前补一年';
+            '点选一只股票后立即渲染近三个月；向左拖到图的最左侧，每次自动往前补一年';
     }
 
     (async function initFromQuery() {
@@ -569,10 +553,10 @@
         onModeReady(MODE);
         const p = new URLSearchParams(location.search);
         if (p.get('code')) {
+            // pickByCode 内部会触发 onChange → loadStock()，这里不用再调一次
             const ok = await codePicker.pickByCode(p.get('code'));
             if (!ok) toast(`代码 ${p.get('code')} 不在股票列表中，请从下拉里重新点选`, 'err');
         }
-        if (codePicker.getCodes().length) loadStock();
     })();
 </script>
 </body>
