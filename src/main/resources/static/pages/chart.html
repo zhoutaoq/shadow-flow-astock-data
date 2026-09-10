@@ -21,21 +21,11 @@
             <div class="field grow">
                 <label>股票 *</label>
                 <div id="codePick"></div>
-                <div class="sp-hint">点选一只股票后默认展示近三个月；图上拖拽平移、滚轮缩放，靠近边缘会按需加载更多历史</div>
+                <div class="sp-hint" id="pickHint">点选一只股票后默认展示近三个月；图上拖拽平移、滚轮缩放，靠近边缘会按需加载更多历史</div>
             </div>
             <button onclick="loadStock()" id="btnLoad">分析</button>
-        </div>
-        <!-- 无数据库模式：本地没有"已入库跨度"可查，起止日期由用户直接给 -->
-        <div class="form-row" id="rangeRow" style="display:none">
-            <div class="field">
-                <label>开始日期 *</label>
-                <input type="date" id="fStart">
-            </div>
-            <div class="field">
-                <label>结束日期 *</label>
-                <input type="date" id="fEnd">
-            </div>
-            <span class="sp-hint" id="rangeHint"></span>
+            <!-- 无数据库模式没有入库跨度可查，只能一路往回补；给个手动入口兜底 -->
+            <button class="btn-ghost" onclick="loadOlder()" id="btnOlder" style="display:none">加载更早一年</button>
         </div>
         <div class="form-row">
             <span class="dim">均线：</span>
@@ -63,8 +53,10 @@
 <script src="/js/date-picker.js"></script>
 <script src="/js/stock-picker.js"></script>
 <script>
-    const VIEW_DAYS = 92;
-    const CHUNK_DAYS = 180;
+    const VIEW_DAYS = 92;              // 默认渲染近三个月
+    const CHUNK_DAYS = 180;            // 数据库模式懒加载步长
+    const CHUNK_NODB = 365;            // 无数据库模式：向左每次补一年
+    const NODB_FLOOR = '1990-12-19';   // 无数据库模式回溯下界，防止无限往回拉
     const EDGE = 0.08;
 
     let chart = echarts.init(document.getElementById('chart'), 'dark');
@@ -77,6 +69,7 @@
         rows: [],
         visRows: [],
         fetching: false,
+        exhausted: false,   // 无数据库模式：往回拉空过一次就到底了
         zoom: {start: 0, end: 100}
     };
 
@@ -87,6 +80,8 @@
     function resetChart() {
         state.rows = [];
         state.code = '';
+        state.exhausted = false;
+        document.getElementById('btnOlder').style.display = 'none';
         chart.clear();
         setVisRows([]);
         document.getElementById('stat').textContent = '';
@@ -106,6 +101,27 @@
             res.push(i >= period - 1 ? +(sum / period).toFixed(3) : '-');
         }
         return res;
+    }
+
+    /**
+     * 均价 = 成交额 / 成交量。
+     * 注意单位：供应商的 volume 是「手」，amount 是「元」，1 手 = 100 股，
+     * 所以要先把手换成股再除，否则均价会放大 100 倍。
+     */
+    const LOT = 100;
+    function avgPrice(r) {
+        const v = Number(r && r.volume);
+        const a = Number(r && r.amount);
+        if (!v || !a || isNaN(v) || isNaN(a)) return '-';
+        return fmtNum(a / (v * LOT), 3);
+    }
+
+    /** 相对前收盘的涨跌幅，带正负号与涨跌配色 */
+    function pctHtml(r) {
+        const p = r && r.preClose != null ? Number(r.preClose) : 0;
+        if (!p) return '-';
+        const pct = (Number(r.closePrice) - p) / p * 100;
+        return `<span class="${pct >= 0 ? 'up' : 'down'}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>`;
     }
 
     function mergeRows(extra) {
@@ -151,33 +167,26 @@
         return r.data.rows || [];
     }
 
-    /** 无数据库模式：直接用页面上的起止日期取一次，本地没有更多历史可懒加载 */
-    async function loadByRange() {
-        const s = document.getElementById('fStart').value;
-        const e = document.getElementById('fEnd').value;
-        if (!s || !e) {
-            toast('请选择起止日期', 'err');
-            return;
-        }
-        if (s > e) {
-            toast('开始日期不能晚于结束日期', 'err');
-            return;
-        }
-        const span = (parseYmd(e) - parseYmd(s)) / 86400000 + 1;
-        if (span > MODE.maxSpanDays) {
-            toast(`无数据库模式单次最多查询 ${MODE.maxSpanDays} 个自然日，当前 ${span} 天`, 'err');
-            return;
-        }
-        state.minDate = s;
-        state.maxDate = e;
+    /**
+     * 无数据库模式：不提供日期输入框，选完股票直接渲染近三个月。
+     * 往回补历史走 fetchOlderChunk()——拖到左边缘自动触发，或点「加载更早一年」。
+     */
+    async function loadNoDb() {
+        const end = today();
+        const start = daysAgo(VIEW_DAYS);
+        state.minDate = null;      // 未探底，左侧还能继续拉
+        state.maxDate = end;
+        state.exhausted = false;
         state.rows = [];
         state.zoom = {start: 0, end: 100};
-        mergeRows(await fetchRange(s, e));
+        mergeRows(await fetchRange(start, end));
         state.total = state.rows.length;
-        if (!state.total) {
+        document.getElementById('btnOlder').style.display = state.rows.length ? '' : 'none';
+        if (!state.rows.length) {
             chart.clear();
             document.getElementById('stat').textContent = '';
             document.getElementById('chartTitle').textContent = `K线图 - ${state.code}`;
+            toast('最近三个月没取到行情，请确认代码是否正确', 'err');
             return;
         }
         paint(true);
@@ -190,9 +199,10 @@
         state.name = picked.name || '';
         state.rows = [];
         state.zoom = {start: 0, end: 100};
+        state.exhausted = false;
 
         if (MODE.noDb) {
-            await loadByRange();
+            await loadNoDb();
             return;
         }
 
@@ -277,12 +287,19 @@
                     const k = ps.find(p => p.seriesName === 'K线');
                     if (!k) return '';
                     const v = k.value;
+                    const r = state.rows[k.dataIndex];
                     let html = `<b>${k.axisValue}</b><br>开 ${v[1]}<br>收 ${v[2]}<br>低 ${v[3]}<br>高 ${v[4]}`;
                     ps.forEach(p => {
                         if (p.seriesName !== 'K线' && p.seriesName !== '成交量') {
                             html += `<br>${p.seriesName} ${p.value}`;
                         }
                     });
+                    if (r) {
+                        html += `<br>涨跌 ${pctHtml(r)}`
+                            + `<br>成交量 ${fmtVol(r.volume)} 手`
+                            + `<br>成交额 ${fmtVol(r.amount)} 元`
+                            + `<br>均价 ${avgPrice(r)} 元`;
+                    }
                     return html;
                 }
             },
@@ -334,8 +351,13 @@
 
         const vis = visibleIndexRange();
         const visRows = rows.slice(vis.from, vis.to);
+        // 无数据库模式没有"总条数"这个口径，改成"已加载多少、最早到哪天"
         document.getElementById('chartTitle').textContent =
-            `K线图 - ${state.code}${state.name ? ' ' + state.name : ''}（已加载 ${rows.length} / ${state.total} 个交易日）`;
+            `K线图 - ${state.code}${state.name ? ' ' + state.name : ''}（`
+            + (MODE.noDb
+                ? `已加载 ${rows.length} 个交易日，最早 ${rows[0].tradeDate}`
+                : `已加载 ${rows.length} / ${state.total} 个交易日`)
+            + '）';
         setVisRows(visRows);
         renderStat(visRows);
     }
@@ -349,11 +371,25 @@
         const pc = Number(first.preClose || first.openPrice);
         const chg = (Number(last.closePrice) - pc) / pc * 100;
         const span = loadedSpan();
+
+        // 视窗内的量额合计：成交额按金额简写，成交量按股数简写，均价由两者相除
+        let sumAmt = 0, sumVol = 0;
+        visRows.forEach(r => {
+            sumAmt += Number(r.amount || 0);
+            sumVol += Number(r.volume || 0);
+        });
+        const avg = sumVol ? fmtNum(sumAmt / (sumVol * LOT), 3) : '-';
+
         document.getElementById('stat').innerHTML =
             `视窗 ${visRows[0].tradeDate} ~ ${visRows[visRows.length - 1].tradeDate}`
             + ` · 涨跌 <b class="${chg >= 0 ? 'up' : 'down'}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</b>`
+            + ` · 成交额 ${fmtVol(sumAmt)} 元`
+            + ` · 成交量 ${fmtVol(sumVol)} 手`
+            + ` · 均价 ${avg} 元`
             + ` · 已加载 ${span.start} ~ ${span.end}`
-            + (state.minDate && span.start > state.minDate ? ' · 继续向左拖可加载更早行情' : '');
+            + (MODE.noDb
+                ? (state.exhausted ? ' · 已到最早可查行情' : ' · 继续向左拖可加载更早一年')
+                : (state.minDate && span.start > state.minDate ? ' · 继续向左拖可加载更早行情' : ''));
     }
 
     /** 视窗明细不再平铺在页面上：只记住当前可见区间，点按钮才弹窗分页展示 */
@@ -377,17 +413,74 @@
                 {label: '收盘', cls: 'num', render: r => fmtNum(r.closePrice)},
                 {label: '最高', cls: 'num', render: r => fmtNum(r.highPrice)},
                 {label: '最低', cls: 'num', render: r => fmtNum(r.lowPrice)},
-                {label: '涨跌', cls: 'num', render: r => {
-                    const p = r.preClose != null ? Number(r.preClose) : null;
-                    if (!p) return '-';
-                    const pct = (Number(r.closePrice) - p) / p * 100;
-                    return `<span class="${pct >= 0 ? 'up' : 'down'}">`
-                        + `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>`;
-                }},
-                {label: '成交量', cls: 'num', render: r => fmtVol(r.volume)},
-                {label: '成交额', cls: 'num', render: r => fmtVol(r.amount)}
+                {label: '涨跌', cls: 'num', render: r => pctHtml(r)},
+                {label: '成交量(手)', cls: 'num', render: r => fmtNum(r.volume, 0)},
+                {label: '成交额(元)', cls: 'num', render: r => fmtNum(r.amount, 0)},
+                {label: '均价', cls: 'num', render: r => avgPrice(r)}
             ]
         });
+    }
+
+    /**
+     * 向左补一段历史：数据库模式补 CHUNK_DAYS，无数据库模式补一年（CHUNK_NODB）。
+     * 补完按原视窗左端日期复位，画面不跳动。
+     * @returns {Promise<number>} 新增的交易日条数
+     */
+    async function fetchLeftChunk() {
+        const n = state.rows.length;
+        const startIdx = Math.floor(n * state.zoom.start / 100);
+        const endIdx = Math.ceil(n * state.zoom.end / 100);
+        const span = loadedSpan();
+        if (!span.start) return 0;
+
+        // 两种模式"还能不能往左"的判据不同：
+        // 数据库模式有入库最早日可比，无数据库模式只能靠拉空一次来探底
+        let from;
+        if (MODE.noDb) {
+            if (state.exhausted || span.start <= NODB_FLOOR) return 0;
+            from = clampYmd(addDays(span.start, -CHUNK_NODB), NODB_FLOOR, 'max');
+        } else {
+            if (state.minDate && span.start <= state.minDate) return 0;
+            from = clampYmd(addDays(span.start, -CHUNK_DAYS), state.minDate, 'max');
+        }
+        const to = addDays(span.start, -1);
+        if (!from || !to || from > to) return 0;
+
+        const keepDate = state.rows[startIdx] ? state.rows[startIdx].tradeDate : span.start;
+        const extra = await fetchRange(from, to);
+        if (!extra.length) {
+            if (MODE.noDb) state.exhausted = true;   // 这一段拉空 = 前面没数据了，后面不再白跑
+            return 0;
+        }
+        const added = mergeRows(extra);
+        if (added) {
+            const idx = state.rows.findIndex(r => r.tradeDate === keepDate);
+            const visLen = Math.max(1, endIdx - startIdx);
+            if (idx >= 0 && state.rows.length > 1) {
+                state.zoom.start = +(idx / (state.rows.length - 1) * 100).toFixed(2);
+                const endI = Math.min(state.rows.length - 1, idx + visLen);
+                state.zoom.end = +(endI / (state.rows.length - 1) * 100).toFixed(2);
+            }
+            paint(false);
+        }
+        return added;
+    }
+
+    /** 「加载更早一年」：无数据库模式下手动补历史，绕过"拖到边缘"的触发条件 */
+    async function loadOlder() {
+        if (state.fetching || !state.code || !state.rows.length) return;
+        if (state.exhausted) return toast('已经是能取到的最早行情了', 'ok');
+        state.fetching = true;
+        try {
+            const added = await fetchLeftChunk();
+            if (!added) {
+                state.exhausted = true;
+                renderStat(state.visRows);
+                toast('更早的区间没有取到行情', 'ok');
+            }
+        } finally {
+            state.fetching = false;
+        }
     }
 
     async function maybePrefetch() {
@@ -398,27 +491,33 @@
         const startIdx = Math.floor(n * state.zoom.start / 100);
         const endIdx = Math.ceil(n * state.zoom.end / 100);
         const span = loadedSpan();
-        let need = null;
 
-        if (state.zoom.start < EDGE * 100 && span.start > state.minDate) {
-            const from = clampYmd(addDays(span.start, -CHUNK_DAYS), state.minDate, 'max');
-            const to = addDays(span.start, -1);
-            need = {from, to, keepDate: state.rows[startIdx] ? state.rows[startIdx].tradeDate : span.start};
-        } else if (state.zoom.end > (1 - EDGE) * 100 && span.end < state.maxDate) {
-            const from = addDays(span.end, 1);
-            const to = clampYmd(addDays(span.end, CHUNK_DAYS), state.maxDate, 'min');
-            need = {from, to, keepDate: state.rows[Math.max(0, endIdx - 1)] ? state.rows[endIdx - 1].tradeDate : span.end};
-        }
-        if (!need || !need.from || !need.to || need.from > need.to) {
+        const canLeft = MODE.noDb
+            ? (!state.exhausted && span.start > NODB_FLOOR)
+            : (state.minDate && span.start > state.minDate);
+
+        if (state.zoom.start < EDGE * 100 && canLeft) {
+            state.fetching = true;
+            try {
+                await fetchLeftChunk();
+            } finally {
+                state.fetching = false;
+            }
             return;
         }
+
+        // 向右补历史只对数据库模式成立：无数据库模式下"未来"没有数据可比
+        if (MODE.noDb || state.zoom.end <= (1 - EDGE) * 100 || span.end >= state.maxDate) {
+            return;
+        }
+        const from = addDays(span.end, 1);
+        const to = clampYmd(addDays(span.end, CHUNK_DAYS), state.maxDate, 'min');
+        const keepDate = state.rows[Math.max(0, endIdx - 1)] ? state.rows[endIdx - 1].tradeDate : span.end;
         state.fetching = true;
         try {
-            const extra = await fetchRange(need.from, need.to);
-            const added = mergeRows(extra);
+            const added = mergeRows(await fetchRange(from, to));
             if (added) {
-                const keep = need.keepDate;
-                const idx = state.rows.findIndex(r => r.tradeDate === keep);
+                const idx = state.rows.findIndex(r => r.tradeDate === keepDate);
                 const visLen = Math.max(1, endIdx - startIdx);
                 if (idx >= 0 && state.rows.length > 1) {
                     state.zoom.start = +(idx / (state.rows.length - 1) * 100).toFixed(2);
@@ -457,16 +556,11 @@
         if (state.rows.length) paint(false);
     });
 
-    /** 无数据库模式：起止日期由用户给，隐藏"继续向左拖加载更多历史"这类依赖入库范围的交互 */
+    /** 无数据库模式：不给日期输入框，默认近三个月，往回补历史一年一次 */
     function onModeReady(m) {
         if (!m.noDb) return;
-        const row = document.getElementById('rangeRow');
-        row.style.display = '';
-        document.getElementById('fStart').value = daysAgo(92);
-        document.getElementById('fEnd').value = today();
-        document.getElementById('rangeHint').textContent =
-            `无数据库模式：数据每次向供应商现取，单次最多 ${m.maxSpanDays} 个自然日`;
-        initDatePickers(row);
+        document.getElementById('pickHint').textContent =
+            '点选一只股票后直接渲染近三个月；向左拖到图的最左侧、或点「加载更早一年」，每次往前补一年';
     }
 
     (async function initFromQuery() {
