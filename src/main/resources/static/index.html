@@ -5,6 +5,7 @@
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>金牛数据</title>
     <link rel="stylesheet" href="/css/common.css?v=20260910b">
+    <link rel="stylesheet" href="/css/home.css?v=20260910c">
 </head>
 <body>
 <header class="topbar">
@@ -13,8 +14,33 @@
 </header>
 
 <main class="container">
-    <!-- 无数据库模式没有"已入库"的统计口径，整块换成模式说明 -->
-    <section class="cards" id="statCards">
+    <!-- 品牌带 -->
+    <section class="hero">
+        <div class="hero-main">
+            <div>
+                <h1>金牛数据</h1>
+                <div class="hero-sub">A 股日K 行情 · 策略回测 · 实时盯盘　一站式数据工作台</div>
+                <div class="hero-tags">
+                    <span class="hero-tag">日K线</span>
+                    <span class="hero-tag">蜡烛图</span>
+                    <span class="hero-tag">买卖策略回测</span>
+                    <span class="hero-tag">批量同步</span>
+                    <span class="hero-tag">盯盘告警</span>
+                </div>
+            </div>
+            <div class="hero-live" id="heroLive" hidden>
+                <span class="dot"></span>
+                <span>行情在线</span>
+                <span class="hero-time" id="tapeTime">--:--:--</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- 指数行情带：数据到才显示 -->
+    <section class="tape" id="tape" hidden></section>
+
+    <!-- 有数据库模式才有"已入库"口径；无库模式整块换成模式说明 -->
+    <section class="cards" id="statCards" hidden>
         <div class="card">
             <div class="card-title">股票池</div>
             <div class="card-value" id="mStockCount">-</div>
@@ -38,37 +64,8 @@
     </section>
 
     <section class="panel">
-        <h2>快速入口</h2>
-        <div class="quick">
-            <a class="quick-item" data-db="1" href="/pages/stock-list.html">
-                <b>股票列表</b>
-                <span>维护分析标的，进入单只股票的 K 线明细</span>
-            </a>
-            <a class="quick-item" data-db="1" href="/pages/chart.html">
-                <b>K线分析</b>
-                <span>蜡烛图 + 成交量，拖拽缩放回看历史</span>
-            </a>
-            <a class="quick-item" href="/pages/backtest.html">
-                <b>策略回测</b>
-                <span>按买卖策略跑一遍历史，看盈亏曲线与成交明细</span>
-            </a>
-            <a class="quick-item" data-db="1" href="/pages/update-single.html">
-                <b>单只更新</b>
-                <span>指定 1 只股票与日期区间，更新行情</span>
-            </a>
-            <a class="quick-item" data-db="1" href="/pages/update-batch.html">
-                <b>批量更新</b>
-                <span>勾选多只股票，批量同步日K</span>
-            </a>
-            <a class="quick-item" data-db="1" href="/pages/update-filter.html">
-                <b>条件更新</b>
-                <span>按市场/关键字筛选后批量同步</span>
-            </a>
-            <a class="quick-item" data-db="1" href="/pages/debug.html">
-                <b>接口调试</b>
-                <span>测试菜单：直连供应商接口（收在「系统」下）</span>
-            </a>
-        </div>
+        <h2>功能入口</h2>
+        <div class="quick" id="quick"></div>
     </section>
 
     <section class="panel">
@@ -84,6 +81,42 @@
 <script src="/js/common.js?v=20260910b"></script>
 <script src="/js/date-picker.js"></script>
 <script>
+    /* 有数据库模式：能落库的全量入口 */
+    var QUICK_DB = [
+        ['股票列表', '/pages/stock-list.html', '维护分析标的，进入单只股票的 K 线明细'],
+        ['K线分析', '/pages/chart.html', '蜡烛图 + 成交量，拖拽缩放回看历史'],
+        ['策略回测', '/pages/backtest.html', '按买卖策略跑一遍历史，看盈亏曲线与成交明细'],
+        ['单只更新', '/pages/update-single.html', '指定 1 只股票与日期区间，更新行情'],
+        ['批量更新', '/pages/update-batch.html', '勾选多只股票，批量同步日K'],
+        ['条件更新', '/pages/update-filter.html', '按市场/关键字筛选后批量同步'],
+        ['接口调试', '/pages/debug.html', '测试菜单：直连供应商接口（收在「系统」下）']
+    ];
+
+    /* 无数据库模式：与顶部导航同一套，只留不依赖库表的入口 */
+    var QUICK_NO_DB = [
+        ['股票列表', '/pages/stock-list.html', '内存名录（沪深A股），分页 + 模糊匹配'],
+        ['K线查看', '/pages/chart.html', '单只日K，指定区间一次取回'],
+        ['策略回测', '/pages/backtest.html', '按买卖策略跑历史，看盈亏曲线与明细'],
+        ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值（需密码）'],
+        ['token配置', '/pages/config.html', '维护 waizao 令牌（内容不支持查看）']
+    ];
+
+    function renderQuick(list) {
+        document.getElementById('quick').innerHTML = list.map(function (it, i) {
+            return '<a class="quick-item" href="' + it[1] + '">'
+                + '<b><span class="idx">' + (i + 1) + '</span>' + esc(it[0]) + '</b>'
+                + '<span>' + esc(it[2]) + '</span>'
+                + '</a>';
+        }).join('');
+    }
+
+    function signed(v, digits) {
+        var n = Number(v);
+        if (v === null || v === undefined || isNaN(n)) return '-';
+        var s = fmtNum(Math.abs(n), digits);
+        return (n > 0 ? '+' : n < 0 ? '-' : '') + s;
+    }
+
     function renderModeDesc() {
         document.getElementById('modeDesc').innerHTML =
             '后端没有连数据库：日K每次向供应商现取，回测跑完只返回结果、不留存历史。'
@@ -94,35 +127,49 @@
                 : '未自定义令牌，系统使用内置默认令牌（不支持查看）；如需更换请到「系统配置」页。');
     }
 
+    /** 指数行情带：拿不到数据就整块不显示，不留空壳 */
+    async function loadIndices() {
+        try {
+            var r = await get('/api/market/indices');
+            var list = (r && r.success && r.data) ? r.data : [];
+            if (!list.length) return;
+            document.getElementById('tape').innerHTML = list.map(function (x) {
+                var pct = Number(x.changePercent);
+                var dir = isNaN(pct) || pct === 0 ? 'flat' : (pct > 0 ? 'up' : 'down');
+                return '<div class="tape-item">'
+                    + '<div class="tape-name">' + esc(x.name) + '</div>'
+                    + '<div class="tape-point ' + dir + '">' + fmtNum(x.point, 2) + '</div>'
+                    + '<div class="tape-chg ' + dir + '">' + signed(x.change, 2)
+                    + ' <b>' + signed(x.changePercent, 2) + '%</b></div>'
+                    + '<div class="tape-amt">成交 ' + (x.amount ? fmtVol(x.amount) : '-') + '</div>'
+                    + '</div>';
+            }).join('');
+            document.getElementById('tape').hidden = false;
+            document.getElementById('heroLive').hidden = false;
+            document.getElementById('tapeTime').textContent = new Date().toTimeString().slice(0, 8);
+        } catch (e) {
+            /* 行情拿不到不影响首页其它功能，静默即可 */
+        }
+    }
+
     (async function () {
+        loadIndices();
         await loadMode();
         if (MODE.noDb) {
-            // 概览页在无数据库模式下只留不依赖库表的入口，避免点到 404 页
-            document.getElementById('statCards').style.display = 'none';
-            const quick = document.querySelector('.quick');
-            if (quick) {
-                // 与顶部导航保持同一套：6 个一级入口，不多不少
-                quick.innerHTML = [
-                    ['股票列表', '/pages/stock-list.html', '内存名录（沪深A股），分页 + 模糊匹配'],
-                    ['K线查看', '/pages/chart.html', '单只日K，指定区间一次取回'],
-                    ['策略回测', '/pages/backtest.html', '按买卖策略跑历史，看盈亏曲线与明细'],
-                    ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值（需密码）'],
-                    ['token配置', '/pages/config.html', '维护 waizao 令牌（内容不支持查看）']
-                ].map(([b, href, span]) =>
-                    '<a class="quick-item" href="' + href + '"><b>' + b + '</b><span>' + span + '</span></a>'
-                ).join('');
-            }
+            renderQuick(QUICK_NO_DB);
             document.getElementById('modePanel').style.display = '';
             document.getElementById('modeTitle').textContent = '无数据库模式';
             renderModeDesc();
             document.addEventListener('token:ready', renderModeDesc);
             return;
         }
-        const r = await api('/api/dashboard/summary');
+        renderQuick(QUICK_DB);
+        document.getElementById('statCards').hidden = false;
+        var r = await api('/api/dashboard/summary');
         if (r && r.success) {
-            document.getElementById('mStockCount').textContent = r.data.stockCount;
-            document.getElementById('mKlineCount').textContent = r.data.klineCount;
-            document.getElementById('mCovered').textContent = r.data.coveredStockCount;
+            rollNumber(document.getElementById('mStockCount'), r.data.stockCount, {fmt: function (v) { return fmtNum(v, 0); }});
+            rollNumber(document.getElementById('mKlineCount'), r.data.klineCount, {fmt: function (v) { return fmtNum(v, 0); }});
+            rollNumber(document.getElementById('mCovered'), r.data.coveredStockCount, {fmt: function (v) { return fmtNum(v, 0); }});
         }
     })();
 </script>

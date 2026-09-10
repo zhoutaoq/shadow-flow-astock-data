@@ -1,0 +1,230 @@
+/* =========================================================================
+ * 金牛数据 · 首页
+ *
+ * 参照金融终端的信息组织方式：顶部品牌带 → 指数行情带 → 功能入口 → 说明。
+ * 数字是主角：等宽 + 大字号 + 红涨绿跌，行情一屏可读。
+ * 颜色全部走 common.css 的语义令牌，亮/暗主题无需改动本文件。
+ * ========================================================================= */
+
+/* 兜底：.tape / .cards 等网格容器的 display 会覆盖 hidden 属性的 UA 样式，
+   没这条"数据到了才显示"的区块会以空壳常驻 */
+[hidden] {
+    display: none !important;
+}
+
+/* ============ 顶部品牌带 ============ */
+.hero {
+    position: relative;
+    overflow: hidden;
+    margin: var(--sp-6) 0 var(--sp-4);
+    padding: var(--sp-6) var(--sp-6) var(--sp-5);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background:
+        radial-gradient(120% 160% at 0% 0%, var(--bg-tint) 0%, transparent 58%),
+        var(--bg-panel);
+}
+
+/* 品牌带上的一道细高光，只做定位，不做装饰动画 */
+.hero::after {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--sheen), transparent);
+}
+
+.hero-main {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--sp-5);
+    flex-wrap: wrap;
+}
+
+.hero h1 {
+    margin: 0;
+    font-size: var(--fs-28);
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text-strong);
+}
+
+.hero-sub {
+    margin-top: var(--sp-2);
+    font-size: var(--fs-13);
+    color: var(--text-dim);
+    letter-spacing: .3px;
+}
+
+.hero-tags {
+    display: flex;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+    margin-top: var(--sp-4);
+}
+
+.hero-tag {
+    padding: 3px 9px;
+    border: 1px solid var(--chip-border);
+    border-radius: var(--r-sm);
+    background: var(--chip-bg);
+    color: var(--text-dim);
+    font-size: var(--fs-11);
+    letter-spacing: .3px;
+}
+
+/* 实时脉冲点：接口到账才显示，避免"假在线" */
+.hero-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.hero-live .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--down);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--down) 22%, transparent);
+    animation: heroPulse 2s ease-in-out infinite;
+}
+
+@keyframes heroPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hero-live .dot { animation: none; }
+}
+
+.hero-time {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ============ 指数行情带 ============ */
+.tape {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+    gap: 1px;
+    margin-bottom: var(--sp-6);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--border);
+    overflow: hidden;
+}
+
+.tape-item {
+    padding: var(--sp-4) var(--sp-4) var(--sp-3);
+    background: var(--bg-panel);
+    transition: background .15s ease;
+}
+
+.tape-item:hover { background: var(--bg-row-hover); }
+
+.tape-name {
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+    letter-spacing: .3px;
+}
+
+.tape-point {
+    margin-top: 6px;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 26px;
+    line-height: 1.15;
+    font-weight: 600;
+}
+
+.tape-chg {
+    margin-top: 4px;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--fs-13);
+}
+
+.tape-chg b { font-weight: 600; }
+
+.tape-amt {
+    margin-top: 6px;
+    font-size: var(--fs-11);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 红涨绿跌：一律走语义令牌 */
+.tape-point.up, .tape-chg.up { color: var(--up); }
+.tape-point.down, .tape-chg.down { color: var(--down); }
+.tape-point.flat, .tape-chg.flat { color: var(--text-dim); }
+
+/* ============ 功能入口 ============ */
+.quick {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+    gap: var(--sp-3);
+}
+
+.quick-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 92px;
+    padding: var(--sp-4);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--bg-elev);
+    text-decoration: none;
+    transition: border-color .15s ease, background .15s ease;
+}
+
+.quick-item:hover {
+    border-color: var(--primary);
+    background: var(--bg-tint);
+}
+
+.quick-item b {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-14);
+    color: var(--text-strong);
+}
+
+/* 入口序号：等宽 + 暗底，终端味但不抢眼 */
+.quick-item .idx {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--r-sm);
+    background: var(--chip-bg);
+    border: 1px solid var(--chip-border);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: var(--fs-11);
+    font-weight: 600;
+}
+
+.quick-item:hover .idx {
+    border-color: var(--primary);
+    color: var(--primary-light);
+}
+
+.quick-item span {
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+    line-height: 1.6;
+}
+
+/* 窄屏：指数字号收一档，避免折行 */
+@media (max-width: 640px) {
+    .tape-point { font-size: 20px; }
+    .hero { padding: var(--sp-5) var(--sp-4); }
+}
