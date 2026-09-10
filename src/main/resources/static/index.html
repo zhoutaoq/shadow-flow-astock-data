@@ -1,86 +1,86 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-page-node-id="Ni1eRm1Yzl7SdwBjo37xFp">
-<head data-page-node-id="eeyg1PLc7vsHz3uxInuqF3">
-    <meta charset="UTF-8" data-page-node-id="1RA6CEOctAJYAu2DUvnOkz">
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
     <title>金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260908c" data-page-node-id="EcS08gimNVTlUTkbAFWWVJ">
+    <link rel="stylesheet" href="/css/common.css?v=20260910a">
 </head>
-<body data-page-node-id="tDbjlR3jJt8MORImcTShlg">
-<header class="topbar" data-page-node-id="kRjQrQy4rDjCHaic7NuJ8x">
-    <a class="brand" href="/" data-page-node-id="3sXl0lW6k6BgqNrG7w1AVg">金牛数据</a>
-    <nav class="nav" id="nav" data-page-node-id="lptYTPlcQMaddsWKY38Scy"></nav>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据</a>
+    <nav class="nav" id="nav"></nav>
 </header>
 
-<main class="container" data-page-node-id="qAG5AFcTqcEMQzMJoEfGn2">
+<main class="container">
     <!-- 无数据库模式没有"已入库"的统计口径，整块换成模式说明 -->
-    <section class="cards" id="statCards" data-page-node-id="vBJbKYrVig5Jh0muJxG15u">
-        <div class="card" data-page-node-id="JpBy30yeI0n3DTUdTFTwBO">
-            <div class="card-title" data-page-node-id="tMA9mN8uZlfE8MycQhRGDf">股票池</div>
-            <div class="card-value" id="mStockCount" data-page-node-id="tto8VpiPDs9FWoqllrT0Gm">-</div>
-            <div class="card-desc" data-page-node-id="rrK5W3B1cpf4DrcqvJmahZ">可分析、回测的标的数量</div>
+    <section class="cards" id="statCards">
+        <div class="card">
+            <div class="card-title">股票池</div>
+            <div class="card-value" id="mStockCount">-</div>
+            <div class="card-desc">可分析、回测的标的数量</div>
         </div>
-        <div class="card" data-page-node-id="zLHsnIFkY1NFfqXnrd0ZJJ">
-            <div class="card-title" data-page-node-id="BMTBtAVw7VS1d5nxKEFBkJ">日K记录</div>
-            <div class="card-value" id="mKlineCount" data-page-node-id="w6YsN7tg5c9Mzxs194DBKB">-</div>
-            <div class="card-desc" data-page-node-id="ezSl46244Y04cJKrjjEZz9">已入库的交易日行情</div>
+        <div class="card">
+            <div class="card-title">日K记录</div>
+            <div class="card-value" id="mKlineCount">-</div>
+            <div class="card-desc">已入库的交易日行情</div>
         </div>
-        <div class="card" data-page-node-id="CLBgNK98G6trMdoXZF63LN">
-            <div class="card-title" data-page-node-id="tJxQheecgUnyLJ5X9Eak1d">有行情的股票</div>
-            <div class="card-value" id="mCovered" data-page-node-id="SuTE3hEHceYhBgP4lH3kUp">-</div>
-            <div class="card-desc" data-page-node-id="tNdkunhTJLL4PIqAj73Y7f">至少有 1 条日K 的标的</div>
-        </div>
-    </section>
-
-    <section class="panel" id="modePanel" style="display:none" data-page-node-id="dZlIkjjxOqUBb5JWmmDqTR">
-        <h2 id="modeTitle" data-page-node-id="0Hw06r8AGPRr1z5WDxbx8S">无数据库模式</h2>
-        <div class="msg msg-info" style="display:block" id="modeDesc" data-page-node-id="D2K6h6d1XGg6LGl4U0zKV1"></div>
-    </section>
-
-    <section class="panel" data-page-node-id="oyFpLFLmZWq4E6uRZ4NF8I">
-        <h2 data-page-node-id="ZICZ9GOUC1aAVYkHkOKvHf">快速入口</h2>
-        <div class="quick" data-page-node-id="cs2uVRKbIfiHlmAQh9bjbW">
-            <a class="quick-item" data-db="1" href="/pages/stock-list.html" data-page-node-id="853djBSPYEv6IX7yGlUaAP">
-                <b data-page-node-id="xg4uAUN4akXkcGINFsyFQW">股票列表</b>
-                <span data-page-node-id="le4ycu0tnfhAA0FCVpUAfH">维护分析标的，进入单只股票的 K 线明细</span>
-            </a>
-            <a class="quick-item" data-db="1" href="/pages/chart.html" data-page-node-id="qM60mjg01mkEdx1cOjVkKC">
-                <b data-page-node-id="sJOLurBgY3szx6LcNxYBas">K线分析</b>
-                <span data-page-node-id="NbAJxFeGOCGZ8h0h15IDGo">蜡烛图 + 成交量，拖拽缩放回看历史</span>
-            </a>
-            <a class="quick-item" href="/pages/backtest.html" data-page-node-id="d9UoyMBTSsg7qXh6fnbEhi">
-                <b data-page-node-id="Jdv7nUERvGUBRoSzmE7sbX">策略回测</b>
-                <span data-page-node-id="Zcx9Gx28QuZyj5qFoso0bQ">按买卖策略跑一遍历史，看盈亏曲线与成交明细</span>
-            </a>
-            <a class="quick-item" data-db="1" href="/pages/update-single.html" data-page-node-id="q5Rm4kFPk3shdLMup2nlIC">
-                <b data-page-node-id="5BgxrE1FZYqcdRSG4Mx8Ae">单只更新</b>
-                <span data-page-node-id="T0U11HIl5iUjSnOeM5buuY">指定 1 只股票与日期区间，更新行情</span>
-            </a>
-            <a class="quick-item" data-db="1" href="/pages/update-batch.html" data-page-node-id="nfBKUuAuIi46clmQc3w9gy">
-                <b data-page-node-id="EfEJ2HJN2EWAhJs0TkSsLA">批量更新</b>
-                <span data-page-node-id="U9P0K3JGNrRLGTOgFYO5D1">勾选多只股票，批量同步日K</span>
-            </a>
-            <a class="quick-item" data-db="1" href="/pages/update-filter.html" data-page-node-id="b0CaDGjVKTCBIItkbUZYL6">
-                <b data-page-node-id="9dGJ9ZbtrPEHKm1qg2r9C7">条件更新</b>
-                <span data-page-node-id="Dx9nuae06SGaUo4dXslbVg">按市场/关键字筛选后批量同步</span>
-            </a>
-            <a class="quick-item" data-db="1" href="/pages/debug.html" data-page-node-id="ljl2nxUpNoXjwnLLtC6otr">
-                <b data-page-node-id="Bwj4P9VbGppPvepPSPzPSh">接口调试</b>
-                <span data-page-node-id="t3HxnfYKmv1LYP4gitFzuA">测试菜单：直连供应商接口（收在「系统」下）</span>
-            </a>
+        <div class="card">
+            <div class="card-title">有行情的股票</div>
+            <div class="card-value" id="mCovered">-</div>
+            <div class="card-desc">至少有 1 条日K 的标的</div>
         </div>
     </section>
 
-    <section class="panel" data-page-node-id="xO4IRoMtze1W6NHoGlXXm2">
-        <h2 data-page-node-id="LbqjwbfSX4IjgxWdRe4Yoy">产品说明</h2>
-        <table class="kv" data-page-node-id="ps737eVR3Y2OeOKt36gQfn">
-            <tr data-page-node-id="rXZ1GrZND8EfheKOCK4GS5"><th data-page-node-id="A0HNV3SgorMBjwy1JGHigk">定位</th><td data-page-node-id="g8BUikmh1B6sldwJ9b1gNN">金牛数据：股票日K 分析与回测工作台</td></tr>
-            <tr data-page-node-id="WRV2yoA8yAZRfasI1BkxJq"><th data-page-node-id="sVzjsd2TGQEXA56l6unByb">数据内容</th><td data-page-node-id="vE9fFaOpJbKr5ZrciXfV4x">日K线：交易日 / 开盘 / 收盘 / 最高 / 最低 / 成交量 / 成交额 / 前收盘</td></tr>
-            <tr data-page-node-id="RfXHTnAmBuJzkzkZwNgDwj"><th data-page-node-id="6AXXNxzgURGtkr7BMNTvIz">查看方式</th><td data-page-node-id="bvJ6odPceseDjcHkM3YdQa">先选股票，再看该标的下的 K 线分析与明细</td></tr>
+    <section class="panel" id="modePanel" style="display:none">
+        <h2 id="modeTitle">无数据库模式</h2>
+        <div class="msg msg-info" style="display:block" id="modeDesc"></div>
+    </section>
+
+    <section class="panel">
+        <h2>快速入口</h2>
+        <div class="quick">
+            <a class="quick-item" data-db="1" href="/pages/stock-list.html">
+                <b>股票列表</b>
+                <span>维护分析标的，进入单只股票的 K 线明细</span>
+            </a>
+            <a class="quick-item" data-db="1" href="/pages/chart.html">
+                <b>K线分析</b>
+                <span>蜡烛图 + 成交量，拖拽缩放回看历史</span>
+            </a>
+            <a class="quick-item" href="/pages/backtest.html">
+                <b>策略回测</b>
+                <span>按买卖策略跑一遍历史，看盈亏曲线与成交明细</span>
+            </a>
+            <a class="quick-item" data-db="1" href="/pages/update-single.html">
+                <b>单只更新</b>
+                <span>指定 1 只股票与日期区间，更新行情</span>
+            </a>
+            <a class="quick-item" data-db="1" href="/pages/update-batch.html">
+                <b>批量更新</b>
+                <span>勾选多只股票，批量同步日K</span>
+            </a>
+            <a class="quick-item" data-db="1" href="/pages/update-filter.html">
+                <b>条件更新</b>
+                <span>按市场/关键字筛选后批量同步</span>
+            </a>
+            <a class="quick-item" data-db="1" href="/pages/debug.html">
+                <b>接口调试</b>
+                <span>测试菜单：直连供应商接口（收在「系统」下）</span>
+            </a>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>产品说明</h2>
+        <table class="kv">
+            <tr><th>定位</th><td>金牛数据：股票日K 分析与回测工作台</td></tr>
+            <tr><th>数据内容</th><td>日K线：交易日 / 开盘 / 收盘 / 最高 / 最低 / 成交量 / 成交额 / 前收盘</td></tr>
+            <tr><th>查看方式</th><td>先选股票，再看该标的下的 K 线分析与明细</td></tr>
         </table>
     </section>
 </main>
 
-<script src="/js/common.js?v=20260908c"></script>
+<script src="/js/common.js?v=20260910a"></script>
 <script src="/js/date-picker.js"></script>
 <script>
     function renderModeDesc() {

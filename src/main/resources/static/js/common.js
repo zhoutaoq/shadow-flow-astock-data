@@ -465,14 +465,13 @@ function whenTokenReady() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260908c（v1.1：盯盘配置 / 6 个一级菜单 / 名录本地缓存）');
+    console.info('[金牛数据] 前端版本 20260910a（v1.2：设计令牌统一 / 数字等宽 / 去装饰动效）');
     await loadMode();
     ensureTokenDialog();
     renderNav();
     if (typeof initDatePickers === 'function') {
         initDatePickers(document);
     }
-    ensureTokenDialog();
     document.dispatchEvent(new CustomEvent('mode:ready', {detail: MODE}));
     if (typeof onModeReady === 'function') {
         onModeReady(MODE);

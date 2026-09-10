@@ -3,35 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>盯盘</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260908c">
-    <style>
-        /* ============ 多规则编辑：每条一行，× 号靠右 ============ */
-        .rule-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 0;
-        }
-        /* 周期倍数输入框固定宽度，避免被 % 拉变形 */
-        .rule-row .rule-n {
-            flex: 0 0 80px;
-        }
-        .rule-row .rule-pct {
-            flex: 0 0 96px;
-        }
-        .rule-row .rule-del {
-            margin-left: auto;
-            color: var(--text-dim, #8a93a6);
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            padding: 2px 6px;
-        }
-        .rule-row .rule-del:hover { color: #e5484d; }
-
-        /* ============ 钉钉区：单字段全宽，与告警规则行视觉一致 ============ */
-    </style>
+    <link rel="stylesheet" href="/css/common.css?v=20260910a">
+    <link rel="stylesheet" href="/css/watch.css?v=20260910a">
 </head>
 <body>
 <header class="topbar">
@@ -151,7 +124,7 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260908c"></script>
+<script src="/js/common.js?v=20260910a"></script>
 <script src="/js/stock-picker.js"></script>
 <script>
     /** 解锁令牌：只存在内存与本次会话里，刷新后需要重新输密码 */

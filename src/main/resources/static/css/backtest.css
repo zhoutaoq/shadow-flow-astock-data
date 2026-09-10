@@ -1,0 +1,709 @@
+        /* ============ 参数区：六张卡 · 2 行 × 3 列 ============
+           row1：回测对象 | 买入策略 | 买入涨跌停成交
+           row2：时间范围 | 卖出策略 | 卖出涨跌停成交
+           每行三张等高（stretch），从左上到右下按使用顺序排。 */
+        .cfg-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr) minmax(0, 1.25fr);
+            gap: 14px;
+            align-items: stretch;
+        }
+
+        .cfg-card.c1 { grid-column: 1; grid-row: 1; }
+        .cfg-card.c2 { grid-column: 1; grid-row: 2; }
+        .cfg-card.c3 { grid-column: 2; grid-row: 1; }
+        .cfg-card.c4 { grid-column: 2; grid-row: 2; }
+        .cfg-card.c5 { grid-column: 3; grid-row: 1; }
+        .cfg-card.c6 { grid-column: 3; grid-row: 2; }
+
+        @media (max-width: 960px) {
+            .cfg-grid { grid-template-columns: minmax(0, 1fr); }
+            .cfg-card.c1, .cfg-card.c2, .cfg-card.c3, .cfg-card.c4,
+            .cfg-card.c5, .cfg-card.c6 {
+                grid-column: 1;
+                grid-row: auto;
+            }
+        }
+
+        /* ============ 四张配置卡片：卡片化 + 微动效（深色底不变） ============
+           每张卡一个主色：对象=蓝、区间=青、买入=红、卖出=绿。
+           悬停时抬升并扫过一道高光，聚焦/悬停都有反馈，不再是四块死板的方框。 */
+        @keyframes cardIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: none; }
+        }
+
+        .cfg-card {
+            --accent: #3b7cff;
+            --accent-soft: rgba(59, 124, 255, .14);
+            --accent-glow: rgba(59, 124, 255, .35);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 16px 18px 18px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            /* 左上角透出一点主色，右下保持面板本色，暗底上也有层次 */
+            background:
+                radial-gradient(120% 140% at 0% 0%, var(--accent-soft), rgba(0, 0, 0, 0) 62%),
+                linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, 0) 120px),
+                var(--bg-panel);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .04);
+            overflow: hidden;
+            transition: transform .22s cubic-bezier(.2, .8, .2, 1), box-shadow .22s, border-color .22s;
+            /* backwards：动画结束回到基础样式，hover 的位移才不会被动画锁住 */
+            animation: cardIn .5s cubic-bezier(.2, .8, .2, 1) backwards;
+        }
+
+        /* 顶部主色高亮条 */
+        .cfg-card::before {
+            content: '';
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), rgba(255, 255, 255, 0) 88%);
+        }
+
+        /* 悬停时从左侧扫过的一道高光 */
+        .cfg-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -60%;
+            width: 45%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .055), transparent);
+            transform: skewX(-18deg);
+            pointer-events: none;
+            transition: left .65s cubic-bezier(.2, .8, .2, 1);
+        }
+
+        .cfg-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--accent-glow);
+            box-shadow: 0 14px 32px rgba(0, 0, 0, .45), 0 0 0 1px var(--accent-soft);
+        }
+
+        .cfg-card:hover::after { left: 115%; }
+
+        .cfg-card.c1 {
+            --accent: #3b7cff;
+            --accent-soft: rgba(59, 124, 255, .14);
+            --accent-glow: rgba(59, 124, 255, .35);
+            animation-delay: 0s;
+        }
+
+        .cfg-card.c2 {
+            --accent: #17a2a0;
+            --accent-soft: rgba(23, 162, 160, .14);
+            --accent-glow: rgba(23, 162, 160, .35);
+            animation-delay: .06s;
+        }
+
+        .cfg-card.c3 {
+            --accent: #e5484d;
+            --accent-soft: rgba(229, 72, 77, .14);
+            --accent-glow: rgba(229, 72, 77, .35);
+            animation-delay: .12s;
+        }
+
+        .cfg-card.c4 {
+            --accent: #2ea043;
+            --accent-soft: rgba(46, 160, 67, .14);
+            --accent-glow: rgba(46, 160, 67, .35);
+            animation-delay: .18s;
+        }
+
+        /* 涨跌停成交卡：色系跟所属买卖对应（买入=红、卖出=绿），亮度略降以示是附属配置 */
+        .cfg-card.c5 {
+            --accent: #f0555a;
+            --accent-soft: rgba(240, 85, 90, .12);
+            --accent-glow: rgba(240, 85, 90, .30);
+            animation-delay: .24s;
+        }
+
+        .cfg-card.c6 {
+            --accent: #35ad66;
+            --accent-soft: rgba(53, 173, 102, .12);
+            --accent-glow: rgba(53, 173, 102, .30);
+            animation-delay: .3s;
+        }
+
+        /* 组合关系：一行内联（横排），跟判断区上下分开 */
+        .logic-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .logic-row .logic-label {
+            font-size: 12px;
+            color: var(--text-dim);
+            flex: none;
+        }
+
+        .logic-seg {
+            display: inline-flex;
+            background: rgba(0, 0, 0, .22);
+            border-radius: 9px;
+            padding: 3px;
+            gap: 3px;
+        }
+
+        .logic-seg button {
+            appearance: none;
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 12px;
+            border-radius: 6px;
+            padding: 4px 10px;
+            cursor: pointer;
+            transition: all .16s;
+        }
+
+        .logic-seg button:hover { color: var(--text); }
+        .logic-seg button.on {
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .3));
+            color: #fff;
+            font-weight: 500;
+            box-shadow: 0 2px 8px var(--accent-glow);
+        }
+
+        /* 判断组件列表：数量多时内部滚动。上限 = 恰好两整行(76+8)*2，
+           裁切落在整行边界不切半行，同排卡片也不会被撑高。 */
+        .cond-box {
+            flex: 0 1 auto;
+            min-height: 0;
+            max-height: 168px;
+            overflow-y: auto;
+            padding-right: 2px;
+            scrollbar-width: thin;
+        }
+
+        .cond-box::-webkit-scrollbar { width: 6px; }
+        .cond-box::-webkit-scrollbar-thumb {
+            background: #333c52;
+            border-radius: 3px;
+        }
+
+        .cond-foot {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .cond-foot .btn-ghost { flex: none; }
+        .cond-foot .btn-ghost:disabled { opacity: .45; cursor: not-allowed; }
+        .cond-foot .btn-ghost:disabled:hover { background: transparent; border-color: var(--border); }
+
+        .cond-count {
+            font-size: 11.5px;
+            color: var(--text-dim);
+        }
+
+        .cond-count.full { color: var(--warn); }
+
+        /* ============ 涨跌停成交（卡内底部子面板） ============
+           买卖卡内一个更亮的浅色面板，与上面的策略主体拉开层次；
+           紧贴在 cond-foot 之下，cond-box 撑剩余空间。 */
+        .limit-panel {
+            background: linear-gradient(160deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, .012));
+            border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 12px;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .limit-title {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .limit-title::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+            flex: none;
+        }
+
+        .limit-desc {
+            font-size: 11px;
+            color: var(--text-dim);
+            line-height: 1.5;
+            margin-top: -6px;
+        }
+
+        /* 处理策略：单选胶囊组，替代生硬的下拉 */
+        .limit-radio {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            background: rgba(0, 0, 0, .25);
+            border-radius: 10px;
+            padding: 4px;
+        }
+
+        .limit-radio button {
+            appearance: none;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 7px;
+            padding: 6px 2px;
+            cursor: pointer;
+            line-height: 1.2;
+            transition: all .18s;
+        }
+
+        .limit-radio button small {
+            display: block;
+            font-size: 10px;
+            font-weight: 400;
+            opacity: .7;
+            margin-top: 1px;
+        }
+
+        .limit-radio button:hover:not(.on) { color: var(--text); background: rgba(255, 255, 255, .04); }
+        .limit-radio button { box-shadow: none !important; }
+        .limit-radio button.on {
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .3));
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 2px 8px var(--accent-glow);
+        }
+
+        /* 策略 3 才出现：次日开盘涨跌幅阈值组合 */
+        .limit-conds {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .limit-conds.show { display: flex; }
+
+        .limit-conds-note {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .limit-conds-note .sep { color: var(--accent); font-weight: 700; }
+
+        .limit-cond {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 8px;
+            background: rgba(0, 0, 0, .18);
+            border: 1px solid rgba(255, 255, 255, .05);
+            border-radius: 8px;
+            flex-wrap: wrap;
+            animation: condIn .22s cubic-bezier(.2, .8, .2, 1) backwards;
+        }
+
+        .limit-cond select {
+            width: auto;
+            min-width: 0;
+            flex: 0 1 auto;
+            font-size: 12px;
+            padding: 3px 4px;
+        }
+
+        .limit-cond .lbl { font-size: 12px; color: var(--text-dim); flex: none; }
+
+        .limit-cond input[type=number] {
+            width: 48px;
+            min-width: 0;
+            flex: 0 0 auto;
+            font-size: 12px;
+            padding: 3px 6px;
+        }
+
+        .limit-cond .pct { font-size: 12px; color: var(--text-dim); flex: none; }
+        .limit-cond .grow { flex: 1 1 auto; }
+
+        .limit-cond .btn-ghost {
+            padding: 2px 8px;
+            font-size: 12px;
+            flex: none;
+            border-radius: 6px;
+        }
+
+        .limit-cond .btn-ghost.del {
+            border-color: transparent;
+            background: rgba(229, 72, 77, .12);
+            color: var(--danger);
+        }
+        .limit-cond .btn-ghost.del:hover { background: rgba(229, 72, 77, .22); border-color: transparent; }
+
+        .limit-add { align-self: flex-start; }
+        .limit-add:disabled { opacity: .45; cursor: not-allowed; }
+
+        .cfg-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13.5px;
+            font-weight: 600;
+            letter-spacing: .2px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, .06);
+            color: var(--accent);
+        }
+
+        .cfg-idx {
+            width: 22px;
+            height: 22px;
+            border-radius: 7px;
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .28));
+            box-shadow: 0 2px 8px var(--accent-glow);
+            color: #fff;
+            font-size: 11.5px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: none;
+        }
+
+        /* 卡片右上角的一句话说明，跟着主色走 */
+        .cfg-tag {
+            margin-left: auto;
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--accent);
+            background: var(--accent-soft);
+            border: 1px solid var(--accent-glow);
+            border-radius: 999px;
+            padding: 2px 10px;
+            white-space: nowrap;
+        }
+
+        /* 卡片内的输入控件跟随主色发光，视觉上属于同一张卡 */
+        .cfg-card input:focus,
+        .cfg-card select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+        }
+
+        .cfg-head .cfg-opt { margin-left: auto; font-weight: 400; }
+
+        .cfg-card .field { width: 100%; }
+        .cfg-card .field input,
+        .cfg-card .field select { width: 100%; min-width: 0; }
+        .cfg-card .field input[type=date] {
+            /* 日期 picker 自带年月日按钮 + 月日历图标，最小得 140 才不挤；
+               c2 时间范围卡所在的 col1 较窄，给个底线宽度。 */
+            min-width: 140px;
+        }
+        .cfg-card .sp { min-width: 0; width: 100%; }
+
+        .cfg-sub {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        /* 快捷区间：胶囊按钮，选中的那一段填充主色 */
+        .quick-range .btn-ghost {
+            border-radius: 999px;
+            transition: transform .16s cubic-bezier(.2, .8, .2, 1), background .18s,
+                        border-color .18s, box-shadow .18s, color .18s;
+        }
+
+        .quick-range .btn-ghost:hover {
+            transform: translateY(-1px);
+            border-color: var(--primary);
+            color: #fff;
+        }
+
+        .quick-range .btn-ghost.active {
+            background: linear-gradient(135deg, var(--primary), #7aa2ff);
+            border-color: transparent;
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(59, 124, 255, .35);
+        }
+
+        /* ============ 判断组件块：上下两行，整行占满 ============
+           上行 = 序号 + 类型 chips（均分撑满整卡宽），下行 = 参数（两端对齐铺满整行）。
+           控件宽度跟随卡片变化，不再"内容贴左、右侧大片空白"。
+           改值只走 updateCond 局部更新，不重绘不闪；× 绝对定位钉在右上。 */
+        .cond-row {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 8px 32px 9px 8px;   /* 右侧给绝对定位的 × 让位 */
+            margin: 0 0 8px;
+            background: rgba(255, 255, 255, .02);
+            border: 1px solid rgba(255, 255, 255, .05);
+            border-radius: 9px;
+            font-size: 12px;
+            transition: border-color .18s, background .18s;
+        }
+        /* 仅新插入的行才走 condIn 入场动画，已存在的行改值不重画、不闪 */
+        .cond-row.fresh { animation: condIn .28s cubic-bezier(.2, .8, .2, 1) backwards; }
+
+        .cond-row:hover {
+            border-color: var(--accent-glow);
+            background: rgba(255, 255, 255, .045);
+        }
+
+        @keyframes condIn {
+            from { opacity: 0; transform: translateX(-6px); }
+            to { opacity: 1; transform: none; }
+        }
+
+        .cond-row .cond-idx {
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .3));
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: none;
+        }
+
+        /* 上行：序号 + 类型 chips，chips 均分撑满整行 */
+        .cond-top {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .cond-top .cond-types { flex: 1 1 0; min-width: 0; display: flex; }
+        .cond-top .cond-types button { flex: 1 1 0; text-align: center; padding: 4px 4px; overflow: hidden; }
+
+        /* 下行：参数；两端对齐把 labels/操作符/输入框均匀铺满整行（始终单行，不换行）；
+           number 输入框默认 72px 舒适宽度，空间不足时按 flex-shrink 收缩，绝不横向溢出。 */
+        .cond-params {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: nowrap;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .cond-params .cond-lbl { flex: none; white-space: nowrap; }
+        .cond-params > .cond-op { flex: none; }
+
+        .cond-params > input[type=number] {
+            flex: 0 1 auto;
+            width: 72px;
+            min-width: 36px;
+            text-align: left;
+            padding: 4px 8px;
+            font-size: 12px;
+            background: rgba(0, 0, 0, .28);
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 6px;
+            color: var(--text);
+        }
+
+        /* 类型选择：4 个 chip 等分排满上行；hover 取 tooltip 拿全名，
+           选中高亮跟卡片 accent 色统一。 */
+        .cond-types {
+            display: flex;
+            background: rgba(0, 0, 0, .22);
+            border-radius: 6px;
+            padding: 2px;
+            gap: 3px;
+        }
+        .cond-types button {
+            appearance: none;
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 11px;
+            border-radius: 4px;
+            padding: 3px 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            line-height: 1;
+            transition: color .14s, background .14s;
+        }
+        .cond-types button:hover { color: var(--text); }
+        .cond-types button.on {
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .25));
+            color: #fff;
+            font-weight: 500;
+            box-shadow: 0 1px 4px var(--accent-glow);
+        }
+
+        /* 操作符 chips（大于/小于）：跟 .cond-types 同款紧凑风格，
+           但只有 2 个按钮，所以 padding 略小一点 */
+        .cond-op {
+            display: flex;
+            background: rgba(0, 0, 0, .22);
+            border-radius: 6px;
+            padding: 2px;
+            gap: 2px;
+            flex: 0 0 auto;
+        }
+        .cond-op button {
+            flex: 0 0 auto;
+            appearance: none;
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 11px;
+            border-radius: 4px;
+            padding: 3px 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            line-height: 1;
+            transition: color .14s, background .14s;
+        }
+        .cond-op button:hover { color: var(--text); }
+        .cond-op button.on {
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .25));
+            color: #fff;
+            font-weight: 500;
+            box-shadow: 0 1px 4px var(--accent-glow);
+        }
+
+        .cond-lbl { color: var(--text-dim); flex: none; }
+
+        /* 删除按钮绝对定位钉在右上，跟类型 chips 行对齐；不参与流式布局 */
+        .cond-row .cond-x {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: none;
+            background: transparent;
+            color: #8b96ab;
+            font-size: 15px;
+            line-height: 1;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: none;
+        }
+        .cond-row .cond-x:hover { color: #fff; background: rgba(229, 72, 77, .4); }
+
+        .cond-empty {
+            padding: 10px 0;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        /* ============ 结果区 ============ */
+        .chart-box { width: 100%; height: 420px; }
+        .chart-box.small { height: 300px; }
+
+        .chart-ctrl {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .chk {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            color: var(--text-dim);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .chk input { accent-color: var(--primary); cursor: pointer; }
+        .chk .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+        /* 明细入口：默认收起，点击弹窗查看 */
+        .tile-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+
+        .tile {
+            flex: 1 1 260px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 16px;
+            cursor: pointer;
+            color: var(--text);
+            text-align: left;
+            transition: transform .2s cubic-bezier(.2, .8, .2, 1), box-shadow .2s,
+                        border-color .2s, background .2s;
+        }
+
+        /* 悬停：抬升 + 箭头右移，暗示「点进去看明细」 */
+        .tile:hover {
+            transform: translateY(-3px);
+            border-color: var(--primary);
+            background: #16203a;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, .38);
+        }
+
+        .tile:active { transform: translateY(-1px); }
+        .tile b { font-size: 14px; font-weight: 600; }
+        .tile .dim { font-size: 12px; }
+        .tile .arrow {
+            margin-left: auto;
+            color: var(--primary);
+            font-size: 13px;
+            transition: transform .2s cubic-bezier(.2, .8, .2, 1);
+        }
+
+        .tile:hover .arrow { transform: translateX(4px); }
+
+        .strategy { display: flex; flex-direction: column; gap: 8px; }
+
+        .strat-line {
+            display: flex;
+            gap: 8px;
+            font-size: 13px;
+            border-bottom: 1px dashed #232b3d;
+            padding-bottom: 6px;
+        }
+
+        /* 标签不换行：买入（且：全部满足才触发）这类要整段待在一行 */
+        .strat-line .k, .strat-rule .k {
+            flex: none;
+            min-width: 74px;
+            white-space: nowrap;
+            color: var(--text-dim);
+            font-size: 12px;
+        }
+
+        .strat-rule .k { padding-top: 1px; }
+
+        .strat-line .v { flex: 1; }
+
+        .strat-rule { display: flex; gap: 8px; font-size: 13px; }
+        .strat-rule ol { margin: 0; padding-left: 18px; flex: 1; }
+        .strat-rule li { margin-bottom: 2px; }
+
+        .table-scroll { overflow: auto; max-height: 66vh; }

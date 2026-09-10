@@ -1,830 +1,120 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-page-node-id="GLfPlOD52lIgVIHxkIl1Sh">
-<head data-page-node-id="GWIRAaz2rSmyf6Pir8tVg7">
-    <meta charset="UTF-8" data-page-node-id="IFxfZLByN82ba2Ena2A7YQ">
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
     <title>策略回测 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260908c" data-page-node-id="IblNgYhVsHPlrioFhjaH2B">
-    <style>
-        /* ============ 参数区：六张卡 · 2 行 × 3 列 ============
-           row1：回测对象 | 买入策略 | 买入涨跌停成交
-           row2：时间范围 | 卖出策略 | 卖出涨跌停成交
-           每行三张等高（stretch），从左上到右下按使用顺序排。 */
-        .cfg-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr) minmax(0, 1.25fr);
-            gap: 14px;
-            align-items: stretch;
-        }
-
-        .cfg-card.c1 { grid-column: 1; grid-row: 1; }
-        .cfg-card.c2 { grid-column: 1; grid-row: 2; }
-        .cfg-card.c3 { grid-column: 2; grid-row: 1; }
-        .cfg-card.c4 { grid-column: 2; grid-row: 2; }
-        .cfg-card.c5 { grid-column: 3; grid-row: 1; }
-        .cfg-card.c6 { grid-column: 3; grid-row: 2; }
-
-        @media (max-width: 960px) {
-            .cfg-grid { grid-template-columns: minmax(0, 1fr); }
-            .cfg-card.c1, .cfg-card.c2, .cfg-card.c3, .cfg-card.c4,
-            .cfg-card.c5, .cfg-card.c6 {
-                grid-column: 1;
-                grid-row: auto;
-            }
-        }
-
-        /* ============ 四张配置卡片：卡片化 + 微动效（深色底不变） ============
-           每张卡一个主色：对象=蓝、区间=青、买入=红、卖出=绿。
-           悬停时抬升并扫过一道高光，聚焦/悬停都有反馈，不再是四块死板的方框。 */
-        @keyframes cardIn {
-            from { opacity: 0; transform: translateY(12px); }
-            to { opacity: 1; transform: none; }
-        }
-
-        .cfg-card {
-            --accent: #3b7cff;
-            --accent-soft: rgba(59, 124, 255, .14);
-            --accent-glow: rgba(59, 124, 255, .35);
-            position: relative;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            padding: 16px 18px 18px;
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            /* 左上角透出一点主色，右下保持面板本色，暗底上也有层次 */
-            background:
-                radial-gradient(120% 140% at 0% 0%, var(--accent-soft), rgba(0, 0, 0, 0) 62%),
-                linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, 0) 120px),
-                var(--bg-panel);
-            box-shadow: 0 1px 2px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .04);
-            overflow: hidden;
-            transition: transform .22s cubic-bezier(.2, .8, .2, 1), box-shadow .22s, border-color .22s;
-            /* backwards：动画结束回到基础样式，hover 的位移才不会被动画锁住 */
-            animation: cardIn .5s cubic-bezier(.2, .8, .2, 1) backwards;
-        }
-
-        /* 顶部主色高亮条 */
-        .cfg-card::before {
-            content: '';
-            position: absolute;
-            inset: 0 0 auto 0;
-            height: 2px;
-            background: linear-gradient(90deg, var(--accent), rgba(255, 255, 255, 0) 88%);
-        }
-
-        /* 悬停时从左侧扫过的一道高光 */
-        .cfg-card::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -60%;
-            width: 45%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .055), transparent);
-            transform: skewX(-18deg);
-            pointer-events: none;
-            transition: left .65s cubic-bezier(.2, .8, .2, 1);
-        }
-
-        .cfg-card:hover {
-            transform: translateY(-3px);
-            border-color: var(--accent-glow);
-            box-shadow: 0 14px 32px rgba(0, 0, 0, .45), 0 0 0 1px var(--accent-soft);
-        }
-
-        .cfg-card:hover::after { left: 115%; }
-
-        .cfg-card.c1 {
-            --accent: #3b7cff;
-            --accent-soft: rgba(59, 124, 255, .14);
-            --accent-glow: rgba(59, 124, 255, .35);
-            animation-delay: 0s;
-        }
-
-        .cfg-card.c2 {
-            --accent: #17a2a0;
-            --accent-soft: rgba(23, 162, 160, .14);
-            --accent-glow: rgba(23, 162, 160, .35);
-            animation-delay: .06s;
-        }
-
-        .cfg-card.c3 {
-            --accent: #e5484d;
-            --accent-soft: rgba(229, 72, 77, .14);
-            --accent-glow: rgba(229, 72, 77, .35);
-            animation-delay: .12s;
-        }
-
-        .cfg-card.c4 {
-            --accent: #2ea043;
-            --accent-soft: rgba(46, 160, 67, .14);
-            --accent-glow: rgba(46, 160, 67, .35);
-            animation-delay: .18s;
-        }
-
-        /* 涨跌停成交卡：色系跟所属买卖对应（买入=红、卖出=绿），亮度略降以示是附属配置 */
-        .cfg-card.c5 {
-            --accent: #f0555a;
-            --accent-soft: rgba(240, 85, 90, .12);
-            --accent-glow: rgba(240, 85, 90, .30);
-            animation-delay: .24s;
-        }
-
-        .cfg-card.c6 {
-            --accent: #35ad66;
-            --accent-soft: rgba(53, 173, 102, .12);
-            --accent-glow: rgba(53, 173, 102, .30);
-            animation-delay: .3s;
-        }
-
-        /* 组合关系：一行内联（横排），跟判断区上下分开 */
-        .logic-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .logic-row .logic-label {
-            font-size: 12px;
-            color: var(--text-dim);
-            flex: none;
-        }
-
-        .logic-seg {
-            display: inline-flex;
-            background: rgba(0, 0, 0, .22);
-            border-radius: 9px;
-            padding: 3px;
-            gap: 3px;
-        }
-
-        .logic-seg button {
-            appearance: none;
-            border: none;
-            background: transparent;
-            color: var(--text-dim);
-            font-size: 12px;
-            border-radius: 6px;
-            padding: 4px 10px;
-            cursor: pointer;
-            transition: all .16s;
-        }
-
-        .logic-seg button:hover { color: var(--text); }
-        .logic-seg button.on {
-            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .3));
-            color: #fff;
-            font-weight: 500;
-            box-shadow: 0 2px 8px var(--accent-glow);
-        }
-
-        /* 判断组件列表：数量多时内部滚动。上限 = 恰好两整行(76+8)*2，
-           裁切落在整行边界不切半行，同排卡片也不会被撑高。 */
-        .cond-box {
-            flex: 0 1 auto;
-            min-height: 0;
-            max-height: 168px;
-            overflow-y: auto;
-            padding-right: 2px;
-            scrollbar-width: thin;
-        }
-
-        .cond-box::-webkit-scrollbar { width: 6px; }
-        .cond-box::-webkit-scrollbar-thumb {
-            background: #333c52;
-            border-radius: 3px;
-        }
-
-        .cond-foot {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .cond-foot .btn-ghost { flex: none; }
-        .cond-foot .btn-ghost:disabled { opacity: .45; cursor: not-allowed; }
-        .cond-foot .btn-ghost:disabled:hover { background: transparent; border-color: var(--border); }
-
-        .cond-count {
-            font-size: 11.5px;
-            color: var(--text-dim);
-        }
-
-        .cond-count.full { color: var(--warn); }
-
-        /* ============ 涨跌停成交（卡内底部子面板） ============
-           买卖卡内一个更亮的浅色面板，与上面的策略主体拉开层次；
-           紧贴在 cond-foot 之下，cond-box 撑剩余空间。 */
-        .limit-panel {
-            background: linear-gradient(160deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, .012));
-            border: 1px solid rgba(255, 255, 255, .07);
-            border-radius: 12px;
-            padding: 12px 14px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .limit-title {
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            font-size: 12.5px;
-            font-weight: 600;
-            color: var(--accent);
-        }
-
-        .limit-title::before {
-            content: "";
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-soft);
-            flex: none;
-        }
-
-        .limit-desc {
-            font-size: 11px;
-            color: var(--text-dim);
-            line-height: 1.5;
-            margin-top: -6px;
-        }
-
-        /* 处理策略：单选胶囊组，替代生硬的下拉 */
-        .limit-radio {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 6px;
-            background: rgba(0, 0, 0, .25);
-            border-radius: 10px;
-            padding: 4px;
-        }
-
-        .limit-radio button {
-            appearance: none;
-            border: 1px solid transparent;
-            background: transparent;
-            color: var(--text-dim);
-            font-size: 12px;
-            font-weight: 500;
-            border-radius: 7px;
-            padding: 6px 2px;
-            cursor: pointer;
-            line-height: 1.2;
-            transition: all .18s;
-        }
-
-        .limit-radio button small {
-            display: block;
-            font-size: 10px;
-            font-weight: 400;
-            opacity: .7;
-            margin-top: 1px;
-        }
-
-        .limit-radio button:hover:not(.on) { color: var(--text); background: rgba(255, 255, 255, .04); }
-        .limit-radio button { box-shadow: none !important; }
-        .limit-radio button.on {
-            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .3));
-            color: #fff;
-            border-color: transparent;
-            box-shadow: 0 2px 8px var(--accent-glow);
-        }
-
-        /* 策略 3 才出现：次日开盘涨跌幅阈值组合 */
-        .limit-conds {
-            display: none;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .limit-conds.show { display: flex; }
-
-        .limit-conds-note {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            font-size: 11px;
-            color: var(--text-dim);
-        }
-
-        .limit-conds-note .sep { color: var(--accent); font-weight: 700; }
-
-        .limit-cond {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 8px;
-            background: rgba(0, 0, 0, .18);
-            border: 1px solid rgba(255, 255, 255, .05);
-            border-radius: 8px;
-            flex-wrap: wrap;
-            animation: condIn .22s cubic-bezier(.2, .8, .2, 1) backwards;
-        }
-
-        .limit-cond select {
-            width: auto;
-            min-width: 0;
-            flex: 0 1 auto;
-            font-size: 12px;
-            padding: 3px 4px;
-        }
-
-        .limit-cond .lbl { font-size: 12px; color: var(--text-dim); flex: none; }
-
-        .limit-cond input[type=number] {
-            width: 48px;
-            min-width: 0;
-            flex: 0 0 auto;
-            font-size: 12px;
-            padding: 3px 6px;
-        }
-
-        .limit-cond .pct { font-size: 12px; color: var(--text-dim); flex: none; }
-        .limit-cond .grow { flex: 1 1 auto; }
-
-        .limit-cond .btn-ghost {
-            padding: 2px 8px;
-            font-size: 12px;
-            flex: none;
-            border-radius: 6px;
-        }
-
-        .limit-cond .btn-ghost.del {
-            border-color: transparent;
-            background: rgba(229, 72, 77, .12);
-            color: var(--danger);
-        }
-        .limit-cond .btn-ghost.del:hover { background: rgba(229, 72, 77, .22); border-color: transparent; }
-
-        .limit-add { align-self: flex-start; }
-        .limit-add:disabled { opacity: .45; cursor: not-allowed; }
-
-        .cfg-head {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 13.5px;
-            font-weight: 600;
-            letter-spacing: .2px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid rgba(255, 255, 255, .06);
-            color: var(--accent);
-        }
-
-        .cfg-idx {
-            width: 22px;
-            height: 22px;
-            border-radius: 7px;
-            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .28));
-            box-shadow: 0 2px 8px var(--accent-glow);
-            color: #fff;
-            font-size: 11.5px;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex: none;
-        }
-
-        /* 卡片右上角的一句话说明，跟着主色走 */
-        .cfg-tag {
-            margin-left: auto;
-            font-size: 11px;
-            font-weight: 400;
-            color: var(--accent);
-            background: var(--accent-soft);
-            border: 1px solid var(--accent-glow);
-            border-radius: 999px;
-            padding: 2px 10px;
-            white-space: nowrap;
-        }
-
-        /* 卡片内的输入控件跟随主色发光，视觉上属于同一张卡 */
-        .cfg-card input:focus,
-        .cfg-card select:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-soft);
-        }
-
-        .cfg-head .cfg-opt { margin-left: auto; font-weight: 400; }
-
-        .cfg-card .field { width: 100%; }
-        .cfg-card .field input,
-        .cfg-card .field select { width: 100%; min-width: 0; }
-        .cfg-card .field input[type=date] {
-            /* 日期 picker 自带年月日按钮 + 月日历图标，最小得 140 才不挤；
-               c2 时间范围卡所在的 col1 较窄，给个底线宽度。 */
-            min-width: 140px;
-        }
-        .cfg-card .sp { min-width: 0; width: 100%; }
-
-        .cfg-sub {
-            font-size: 12px;
-            color: var(--text-dim);
-            margin-top: 2px;
-        }
-
-        /* 快捷区间：胶囊按钮，选中的那一段填充主色 */
-        .quick-range .btn-ghost {
-            border-radius: 999px;
-            transition: transform .16s cubic-bezier(.2, .8, .2, 1), background .18s,
-                        border-color .18s, box-shadow .18s, color .18s;
-        }
-
-        .quick-range .btn-ghost:hover {
-            transform: translateY(-1px);
-            border-color: var(--primary);
-            color: #fff;
-        }
-
-        .quick-range .btn-ghost.active {
-            background: linear-gradient(135deg, var(--primary), #7aa2ff);
-            border-color: transparent;
-            color: #fff;
-            box-shadow: 0 4px 14px rgba(59, 124, 255, .35);
-        }
-
-        /* ============ 判断组件块：上下两行，整行占满 ============
-           上行 = 序号 + 类型 chips（均分撑满整卡宽），下行 = 参数（两端对齐铺满整行）。
-           控件宽度跟随卡片变化，不再"内容贴左、右侧大片空白"。
-           改值只走 updateCond 局部更新，不重绘不闪；× 绝对定位钉在右上。 */
-        .cond-row {
-            position: relative;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            padding: 8px 32px 9px 8px;   /* 右侧给绝对定位的 × 让位 */
-            margin: 0 0 8px;
-            background: rgba(255, 255, 255, .02);
-            border: 1px solid rgba(255, 255, 255, .05);
-            border-radius: 9px;
-            font-size: 12px;
-            transition: border-color .18s, background .18s;
-        }
-        /* 仅新插入的行才走 condIn 入场动画，已存在的行改值不重画、不闪 */
-        .cond-row.fresh { animation: condIn .28s cubic-bezier(.2, .8, .2, 1) backwards; }
-
-        .cond-row:hover {
-            border-color: var(--accent-glow);
-            background: rgba(255, 255, 255, .045);
-        }
-
-        @keyframes condIn {
-            from { opacity: 0; transform: translateX(-6px); }
-            to { opacity: 1; transform: none; }
-        }
-
-        .cond-row .cond-idx {
-            width: 20px;
-            height: 20px;
-            border-radius: 6px;
-            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .3));
-            color: #fff;
-            font-size: 11px;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex: none;
-        }
-
-        /* 上行：序号 + 类型 chips，chips 均分撑满整行 */
-        .cond-top {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            width: 100%;
-        }
-
-        .cond-top .cond-types { flex: 1 1 0; min-width: 0; display: flex; }
-        .cond-top .cond-types button { flex: 1 1 0; text-align: center; padding: 4px 4px; overflow: hidden; }
-
-        /* 下行：参数；两端对齐把 labels/操作符/输入框均匀铺满整行（始终单行，不换行）；
-           number 输入框默认 72px 舒适宽度，空间不足时按 flex-shrink 收缩，绝不横向溢出。 */
-        .cond-params {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: nowrap;
-            gap: 8px;
-            width: 100%;
-        }
-
-        .cond-params .cond-lbl { flex: none; white-space: nowrap; }
-        .cond-params > .cond-op { flex: none; }
-
-        .cond-params > input[type=number] {
-            flex: 0 1 auto;
-            width: 72px;
-            min-width: 36px;
-            text-align: left;
-            padding: 4px 8px;
-            font-size: 12px;
-            background: rgba(0, 0, 0, .28);
-            border: 1px solid rgba(255, 255, 255, .08);
-            border-radius: 6px;
-            color: var(--text);
-        }
-
-        /* 类型选择：4 个 chip 等分排满上行；hover 取 tooltip 拿全名，
-           选中高亮跟卡片 accent 色统一。 */
-        .cond-types {
-            display: flex;
-            background: rgba(0, 0, 0, .22);
-            border-radius: 6px;
-            padding: 2px;
-            gap: 3px;
-        }
-        .cond-types button {
-            appearance: none;
-            border: none;
-            background: transparent;
-            color: var(--text-dim);
-            font-size: 11px;
-            border-radius: 4px;
-            padding: 3px 6px;
-            cursor: pointer;
-            white-space: nowrap;
-            line-height: 1;
-            transition: color .14s, background .14s;
-        }
-        .cond-types button:hover { color: var(--text); }
-        .cond-types button.on {
-            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .25));
-            color: #fff;
-            font-weight: 500;
-            box-shadow: 0 1px 4px var(--accent-glow);
-        }
-
-        /* 操作符 chips（大于/小于）：跟 .cond-types 同款紧凑风格，
-           但只有 2 个按钮，所以 padding 略小一点 */
-        .cond-op {
-            display: flex;
-            background: rgba(0, 0, 0, .22);
-            border-radius: 6px;
-            padding: 2px;
-            gap: 2px;
-            flex: 0 0 auto;
-        }
-        .cond-op button {
-            flex: 0 0 auto;
-            appearance: none;
-            border: none;
-            background: transparent;
-            color: var(--text-dim);
-            font-size: 11px;
-            border-radius: 4px;
-            padding: 3px 6px;
-            cursor: pointer;
-            white-space: nowrap;
-            line-height: 1;
-            transition: color .14s, background .14s;
-        }
-        .cond-op button:hover { color: var(--text); }
-        .cond-op button.on {
-            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .25));
-            color: #fff;
-            font-weight: 500;
-            box-shadow: 0 1px 4px var(--accent-glow);
-        }
-
-        .cond-lbl { color: var(--text-dim); flex: none; }
-
-        /* 删除按钮绝对定位钉在右上，跟类型 chips 行对齐；不参与流式布局 */
-        .cond-row .cond-x {
-            position: absolute;
-            top: 6px;
-            right: 6px;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            border: none;
-            background: transparent;
-            color: #8b96ab;
-            font-size: 15px;
-            line-height: 1;
-            padding: 0;
-            margin: 0;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex: none;
-        }
-        .cond-row .cond-x:hover { color: #fff; background: rgba(229, 72, 77, .4); }
-
-        .cond-empty {
-            padding: 10px 0;
-            font-size: 12px;
-            color: var(--text-dim);
-        }
-
-        /* ============ 结果区 ============ */
-        .chart-box { width: 100%; height: 420px; }
-        .chart-box.small { height: 300px; }
-
-        .chart-ctrl {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            flex-wrap: wrap;
-            margin-bottom: 8px;
-            font-size: 12px;
-        }
-
-        .chk {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            color: var(--text-dim);
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .chk input { accent-color: var(--primary); cursor: pointer; }
-        .chk .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
-
-        /* 明细入口：默认收起，点击弹窗查看 */
-        .tile-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
-
-        .tile {
-            flex: 1 1 260px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 14px 16px;
-            cursor: pointer;
-            color: var(--text);
-            text-align: left;
-            transition: transform .2s cubic-bezier(.2, .8, .2, 1), box-shadow .2s,
-                        border-color .2s, background .2s;
-        }
-
-        /* 悬停：抬升 + 箭头右移，暗示「点进去看明细」 */
-        .tile:hover {
-            transform: translateY(-3px);
-            border-color: var(--primary);
-            background: #16203a;
-            box-shadow: 0 10px 24px rgba(0, 0, 0, .38);
-        }
-
-        .tile:active { transform: translateY(-1px); }
-        .tile b { font-size: 14px; font-weight: 600; }
-        .tile .dim { font-size: 12px; }
-        .tile .arrow {
-            margin-left: auto;
-            color: var(--primary);
-            font-size: 13px;
-            transition: transform .2s cubic-bezier(.2, .8, .2, 1);
-        }
-
-        .tile:hover .arrow { transform: translateX(4px); }
-
-        .strategy { display: flex; flex-direction: column; gap: 8px; }
-
-        .strat-line {
-            display: flex;
-            gap: 8px;
-            font-size: 13px;
-            border-bottom: 1px dashed #232b3d;
-            padding-bottom: 6px;
-        }
-
-        /* 标签不换行：买入（且：全部满足才触发）这类要整段待在一行 */
-        .strat-line .k, .strat-rule .k {
-            flex: none;
-            min-width: 74px;
-            white-space: nowrap;
-            color: var(--text-dim);
-            font-size: 12px;
-        }
-
-        .strat-rule .k { padding-top: 1px; }
-
-        .strat-line .v { flex: 1; }
-
-        .strat-rule { display: flex; gap: 8px; font-size: 13px; }
-        .strat-rule ol { margin: 0; padding-left: 18px; flex: 1; }
-        .strat-rule li { margin-bottom: 2px; }
-
-        .table-scroll { overflow: auto; max-height: 66vh; }
-    </style>
+    <link rel="stylesheet" href="/css/common.css?v=20260910a">
+    <link rel="stylesheet" href="/css/backtest.css?v=20260910a">
 </head>
-<body data-page-node-id="NYO3uWlCPxAMnloGqZAlb8">
-<header class="topbar" data-page-node-id="rME8o8HCqjYfi3pFTabXFa">
-    <a class="brand" href="/" data-page-node-id="PYLJCVxxeZFZ7lOrig3FVP">金牛数据</a>
-    <nav class="nav" id="nav" data-page-node-id="48h5lg2dPr3BGRvLEe7M9E"></nav>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据</a>
+    <nav class="nav" id="nav"></nav>
 </header>
 
-<main class="container" data-page-node-id="1U2lQ7kUFitakFeeH7FOnJ">
-    <div id="msgBox" class="msg" data-page-node-id="KsfgevcLl5Cs2dGIarGxXg"></div>
+<main class="container">
+    <div id="msgBox" class="msg"></div>
 
-    <section class="panel" data-page-node-id="IX70WhLCeB4EjqKP1Spe9i">
-        <div class="cfg-panel-head" data-page-node-id="HNfdqfbTWYPGby5u1ATtwn">
-            <h2 style="margin:0" data-page-node-id="HNfdqfbTWYPGby5u1ATtwn">回测配置</h2>
-            <div class="cfg-panel-actions" data-page-node-id="joELNXCrgui2GwcYZZeipL">
-                <button onclick="runBacktest()" id="btnRun" data-page-node-id="MsuqrNPCGKkX6P2stcq9EI">开始回测</button>
-                <button class="btn-ghost" onclick="exportConfig()" data-page-node-id="eORBQsbsH69XOjBWIcxAoK">导出配置</button>
-                <button class="btn-ghost" onclick="document.getElementById('fileImport').click()" data-page-node-id="g3qzkvGnrlYecpdAk749TH">导入配置</button>
+    <section class="panel">
+        <div class="cfg-panel-head">
+            <h2 style="margin:0">回测配置</h2>
+            <div class="cfg-panel-actions">
+                <button onclick="runBacktest()" id="btnRun">开始回测</button>
+                <button class="btn-ghost" onclick="exportConfig()">导出配置</button>
+                <button class="btn-ghost" onclick="document.getElementById('fileImport').click()">导入配置</button>
                 <input type="file" id="fileImport" accept="application/json,.json" style="display:none"
-                       onchange="importConfig(this)" data-page-node-id="vyjX6L4jrpUukwYYBUM9xH">
+                       onchange="importConfig(this)">
             </div>
         </div>
-        <div class="cfg-grid" data-page-node-id="t9dTy0TDLhPCTmXhVI6UTw">
+        <div class="cfg-grid">
             <!-- 1 回测对象 -->
-            <div class="cfg-card c1" data-page-node-id="Cx7KYij46smKsERsTC27wR">
-                <div class="cfg-head" data-page-node-id="t3DCWGTw7xrbQB4tSM3L43"><span class="cfg-idx" data-page-node-id="AgE2HE8uSrOxFgljCWxHlK">1</span>回测对象<span class="cfg-tag">标的 · 账户</span></div>
-                <div class="field" data-page-node-id="vMxgmbNVZ4XHR4XFjeJ2zu">
-                    <label data-page-node-id="INQFlvly8U764M8dc88jim">股票 *</label>
-                    <div id="codePick" data-page-node-id="0nHvw0C2BF3FdCfhAftf8h"></div>
-                    <div class="sp-hint" data-page-node-id="tK0L6BGdxBrrvqQEe6MODP">输入代码或名称，从匹配结果里<b data-page-node-id="d41JjAWVO6hdgVNH4FZnQC">点选一只</b></div>
+            <div class="cfg-card c1">
+                <div class="cfg-head"><span class="cfg-idx">1</span>回测对象<span class="cfg-tag">标的 · 账户</span></div>
+                <div class="field">
+                    <label>股票 *</label>
+                    <div id="codePick"></div>
+                    <div class="sp-hint">输入代码或名称，从匹配结果里<b>点选一只</b></div>
                 </div>
-                <div class="cfg-sub" data-page-node-id="CkPbMntQDEdDddrmxajn3u">账户</div>
-                <div class="field" data-page-node-id="uSBhqELuQG3U4omIISSrNB">
-                    <label data-page-node-id="qY9uzhB1nfXtxUQ5qeas8c">账户起始金额 *</label>
-                    <input type="number" id="fInit" value="100000" min="1" step="1000" data-page-node-id="2ZmVIYAkt9fA3X2pHQ46I1">
+                <div class="cfg-sub">账户</div>
+                <div class="field">
+                    <label>账户起始金额 *</label>
+                    <input type="number" id="fInit" value="100000" min="1" step="1000">
                 </div>
-                <div class="field" data-page-node-id="mgcQqbl0go0jl1Ci7ROsEm">
-                    <label data-page-node-id="ElCnXtSzjbv9dAuIRNOszs">手续费滑点 *</label>
-                    <input type="number" id="fFee" value="0.01" min="0" step="0.001" data-page-node-id="WUlMPZwUcyXgyB8jzryMqw">
-                    <div class="sp-hint" data-page-node-id="SBXfn9pKKoOikWBxcFhlpK">单位 %，0.01% = 万分之一</div>
+                <div class="field">
+                    <label>手续费滑点 *</label>
+                    <input type="number" id="fFee" value="0.01" min="0" step="0.001">
+                    <div class="sp-hint">单位 %，0.01% = 万分之一</div>
                 </div>
             </div>
 
             <!-- 2 时间范围 -->
-            <div class="cfg-card c2" data-page-node-id="vZr0a06oURV6rUCUJo0RRp">
-                <div class="cfg-head" data-page-node-id="fpTE4AM7OvKFoeHHfLcaIQ"><span class="cfg-idx" data-page-node-id="11KMw0n3aCJspHCleckd3R">4</span>时间范围<span class="cfg-tag">起止 · 跨度</span></div>
-                <div class="field" data-page-node-id="XkLA6rDBmLCFhhTHncZRFE">
-                    <label data-page-node-id="Qx21QFyXhf7puJX0fy1tgz">开始日期 *</label>
-                    <input type="date" id="fStart" data-page-node-id="NR5ZGAbj0MaFsLbmQo6Y6V">
+            <div class="cfg-card c2">
+                <div class="cfg-head"><span class="cfg-idx">4</span>时间范围<span class="cfg-tag">起止 · 跨度</span></div>
+                <div class="field">
+                    <label>开始日期 *</label>
+                    <input type="date" id="fStart">
                 </div>
-                <div class="field" data-page-node-id="IA1XIl7GN32enKZhKfJXue">
-                    <label data-page-node-id="qLlZUfOF11ZrRykg7Eylph">结束日期 *</label>
-                    <input type="date" id="fEnd" data-page-node-id="m2LCeagucMvpq3O6aq8zrc">
+                <div class="field">
+                    <label>结束日期 *</label>
+                    <input type="date" id="fEnd">
                 </div>
-                <div class="cfg-sub" data-page-node-id="B2K5196cWG6nkuGNvH239C">快捷区间</div>
-                <div class="quick-range" style="display:flex;gap:6px;flex-wrap:wrap" data-page-node-id="IRIbi0Mx7X2fX4sbIDRWRp">
-                    <button class="btn-ghost btn-sm" data-days="90" onclick="setRange(90)" data-page-node-id="4kwpV5zTFLnt9FaqBQdHzQ">近3月</button>
+                <div class="cfg-sub">快捷区间</div>
+                <div class="quick-range" style="display:flex;gap:6px;flex-wrap:wrap">
+                    <button class="btn-ghost btn-sm" data-days="90" onclick="setRange(90)">近3月</button>
                     <button class="btn-ghost btn-sm" data-days="180" onclick="setRange(180)">近半年</button>
-                    <button class="btn-ghost btn-sm" data-days="365" onclick="setRange(365)" data-page-node-id="TNtfVVMZK23ivrBgiAxPyY">近1年</button>
-                    <button class="btn-ghost btn-sm" data-days="1095" onclick="setRange(1095)" data-page-node-id="066LqbVocUQ084QMzehQyk">近3年</button>
+                    <button class="btn-ghost btn-sm" data-days="365" onclick="setRange(365)">近1年</button>
+                    <button class="btn-ghost btn-sm" data-days="1095" onclick="setRange(1095)">近3年</button>
                     <button class="btn-ghost btn-sm" data-days="1825" onclick="setRange(1825)">近5年</button>
                     <button class="btn-ghost btn-sm" data-days="3650" onclick="setRange(3650)">近10年</button>
                 </div>
-                <div class="sp-hint" id="spanHint" data-page-node-id="oNfm8aAQciEZ8fKHuZgxgH"></div>
-                <div class="sp-hint" data-page-node-id="q83yghwy70ktPAK4b6JCg3">
+                <div class="sp-hint" id="spanHint"></div>
+                <div class="sp-hint">
                     区间之前的数据只用于计算均线/涨幅，不产生交易；起止两天缺数据时会先从供应商补一次。
                 </div>
             </div>
 
             <!-- 3 买入策略 -->
-            <div class="cfg-card c3" data-page-node-id="AkNGMLrYatXEcaY5DVYKFG">
-                <div class="cfg-head" data-page-node-id="JR6iqondq2nCHyazjsYvi7">
-                    <span class="cfg-idx" data-page-node-id="RpAdhKwFMduLCqUALDYe8a">2</span>买入策略<span class="cfg-tag">全仓买入</span>
+            <div class="cfg-card c3">
+                <div class="cfg-head">
+                    <span class="cfg-idx">2</span>买入策略<span class="cfg-tag">全仓买入</span>
                 </div>
-                <div class="logic-row" data-page-node-id="PHqvYv5JppZguXTTbYBskq">
-                    <span class="logic-label" data-page-node-id="C3Sf0OE0DPdDKMJtwXBi9H">组合</span>
+                <div class="logic-row">
+                    <span class="logic-label">组合</span>
                     <div class="logic-seg" id="buyLogicSeg">
                         <button type="button" data-v="and" class="on">全部满足</button>
                         <button type="button" data-v="or">任一满足</button>
                     </div>
-                    <select id="buyLogic" style="display:none" data-page-node-id="ChL9qzSYVY0PWv06Q17qTE">
-                        <option value="and" selected data-page-node-id="cy9R965D2BntFDIT1E57eI">且（全部满足才买入）</option>
-                        <option value="or" data-page-node-id="Sg7QFR8llEhlVXqpuz6zep">或（任一满足即买入）</option>
+                    <select id="buyLogic" style="display:none">
+                        <option value="and" selected>且（全部满足才买入）</option>
+                        <option value="or">或（任一满足即买入）</option>
                     </select>
                 </div>
-                <div class="cond-box" id="buyConds" data-page-node-id="2W6tijdUhL6WPcqZc1xBQr"></div>
+                <div class="cond-box" id="buyConds"></div>
                 <div class="cond-foot">
-                    <button class="btn-ghost btn-sm" id="buyAdd" onclick="addCond('buy')" data-page-node-id="drbcsi3exbWXWX7PaeTN4d">+ 添加判断组件</button>
+                    <button class="btn-ghost btn-sm" id="buyAdd" onclick="addCond('buy')">+ 添加判断组件</button>
                     <span class="cond-count" id="buyCount"></span>
                 </div>
             </div>
 
             <!-- 4 卖出策略 -->
-            <div class="cfg-card c4" data-page-node-id="0JQgSRcJolcCnRIn62trrv">
-                <div class="cfg-head" data-page-node-id="YxaUW71gVKHDNKeDc1l40P">
-                    <span class="cfg-idx" data-page-node-id="AjFHAknwLBQ3iSXVQIATUD">5</span>卖出策略<span class="cfg-tag">全仓卖出</span>
+            <div class="cfg-card c4">
+                <div class="cfg-head">
+                    <span class="cfg-idx">5</span>卖出策略<span class="cfg-tag">全仓卖出</span>
                 </div>
-                <div class="logic-row" data-page-node-id="nNnWCovjEEspjkCLkK1dkC">
-                    <span class="logic-label" data-page-node-id="1ZHzeBITBTTFI3MKbXtp7y">组合</span>
+                <div class="logic-row">
+                    <span class="logic-label">组合</span>
                     <div class="logic-seg" id="sellLogicSeg">
                         <button type="button" data-v="and" class="on">全部满足</button>
                         <button type="button" data-v="or">任一满足</button>
                     </div>
-                    <select id="sellLogic" style="display:none" data-page-node-id="mzSmkGCkaQrdJLLkcex7HA">
-                        <option value="and" selected data-page-node-id="N6beKAx97gvKa8ydzIBzKA">且（全部满足才卖出）</option>
-                        <option value="or" data-page-node-id="RqFMVkhZggxoSFdzfb4j5r">或（任一满足即卖出）</option>
+                    <select id="sellLogic" style="display:none">
+                        <option value="and" selected>且（全部满足才卖出）</option>
+                        <option value="or">或（任一满足即卖出）</option>
                     </select>
                 </div>
-                <div class="cond-box" id="sellConds" data-page-node-id="vmfXRi1uSWFxTs2XZuEpqS"></div>
+                <div class="cond-box" id="sellConds"></div>
                 <div class="cond-foot">
-                    <button class="btn-ghost btn-sm" id="sellAdd" onclick="addCond('sell')" data-page-node-id="LwSFIrsGPTQuN1SMAkDcBZ">+ 添加判断组件</button>
+                    <button class="btn-ghost btn-sm" id="sellAdd" onclick="addCond('sell')">+ 添加判断组件</button>
                     <span class="cond-count" id="sellCount"></span>
                 </div>
             </div>
@@ -866,93 +156,93 @@
             </div>
         </div>
 
-        <div class="form-row" style="margin-top:14px" data-page-node-id="XHYr6GmmrPiJ0hVJj8D1IL">
-            <span class="dim" id="hint" data-page-node-id="fwMaaN1qxi2ajcLiwhcB05"></span>
+        <div class="form-row" style="margin-top:14px">
+            <span class="dim" id="hint"></span>
         </div>
-        <div id="progressBox" style="display:none;margin-top:10px" data-page-node-id="XHYr6GmmrPiJ0hVJj8D1IL">
-            <div style="display:flex;align-items:center;gap:10px" data-page-node-id="nYTDugvwVxSHwVlCtUaOSd">
-                <div style="flex:1;height:10px;background:#232b3d;border-radius:5px;overflow:hidden" data-page-node-id="URmmc1rYr6OXGzKmTxaq0T">
-                    <div id="progressBar" style="width:0%;height:100%;background:#4c8dff;transition:width .2s" data-page-node-id="LUjNqi8XCmR0OgHcZ6mhUe"></div>
+        <div id="progressBox" style="display:none;margin-top:10px">
+            <div style="display:flex;align-items:center;gap:10px">
+                <div style="flex:1;height:10px;background:#232b3d;border-radius:5px;overflow:hidden">
+                    <div id="progressBar" style="width:0%;height:100%;background:#4c8dff;transition:width .2s"></div>
                 </div>
-                <span class="dim" id="progressText" style="min-width:44px" data-page-node-id="HMMMYkaZXp38IKlNxzZylq">0%</span>
+                <span class="dim" id="progressText" style="min-width:44px">0%</span>
             </div>
-            <div class="sp-hint" id="progressMsg" data-page-node-id="8vjjYBkZBjnVSIWmbTqOi0"></div>
+            <div class="sp-hint" id="progressMsg"></div>
         </div>
-        <div class="sp-hint" data-page-node-id="L9ZOwiyJjhhYTSK47pDfVs">
+        <div class="sp-hint">
             每次交易都是<b>全仓</b>：买入用全部可用现金买入，卖出一次性清仓；
             <b>最小交易单位 100 股</b>，买入股数按 100 股的整数倍向下取整。
             信号在当日收盘确认，按当日收盘价成交。
         </div>
     </section>
 
-    <section class="panel" id="resultPanel" style="display:none" data-page-node-id="b9F4pRJQ9ju0n4JhK84u22">
-        <h2 data-page-node-id="WnnFAcqeTsUQp5Kirpybrp">回测结果</h2>
-        <div id="summary" data-page-node-id="gGV6hd9dBrJwq5w0do03i9"></div>
+    <section class="panel" id="resultPanel" style="display:none">
+        <h2>回测结果</h2>
+        <div id="summary"></div>
 
-        <h3 data-page-node-id="hIxGDE54BkAvAom2XesqEC">回测策略</h3>
-        <div id="strategy" class="strategy" data-page-node-id="BLMxsZR8WjFF7nfCk4gEO5"></div>
+        <h3>回测策略</h3>
+        <div id="strategy" class="strategy"></div>
 
-        <h3 data-page-node-id="Q3nTIW6RnGDKEbBbFjUwdt">阶段K线（含买卖点）</h3>
+        <h3>阶段K线（含买卖点）</h3>
         <!-- 明细表格都收进弹窗，按钮统一放在 K 线图上方 -->
-        <div class="tile-row" data-page-node-id="H3TIxM1H4k87zwuK1V6CYB">
-            <button class="tile" onclick="openDaily()" data-page-node-id="iroWeAYCFF9w2Ibj40LCew">
-                <b data-page-node-id="T1twXiMlTSkILscvtMdn9k">每日账户</b>
-                <span class="dim" id="dailyCount" data-page-node-id="LgPd9Z2bqznzK7ImEs8CLD">0 行</span>
-                <span class="arrow" data-page-node-id="2KABLfEhHdnCdEIBNQMgjb">点击展开 ›</span>
+        <div class="tile-row">
+            <button class="tile" onclick="openDaily()">
+                <b>每日账户</b>
+                <span class="dim" id="dailyCount">0 行</span>
+                <span class="arrow">点击展开 ›</span>
             </button>
-            <button class="tile" onclick="openTrades()" data-page-node-id="5nYYLK0gI5DzTPYwhYl77w">
-                <b data-page-node-id="q5mXutiWj4tPLQIwUnU5N2">买卖明细</b>
-                <span class="dim" id="tradeCount" data-page-node-id="BHxpsDYjab6Qr9FCXvGfDW">0 笔</span>
-                <span class="arrow" data-page-node-id="nYQ1RKeygWFhO79Ywh5PoH">点击展开 ›</span>
+            <button class="tile" onclick="openTrades()">
+                <b>买卖明细</b>
+                <span class="dim" id="tradeCount">0 笔</span>
+                <span class="arrow">点击展开 ›</span>
             </button>
         </div>
-        <div id="klineChart" class="chart-box" data-page-node-id="nWeHujVH7BmDI8dJs2S4K0"></div>
+        <div id="klineChart" class="chart-box"></div>
 
-        <h3 data-page-node-id="6auH2SdEMUFGS6g38US6Aq">盈亏走势</h3>
-        <div class="chart-ctrl" data-page-node-id="ODyr0FeHodYX60C3GhDcHD">
-            <span class="dim" data-page-node-id="UsMeVRAN2xdNBxrd91gAmw">选择展示曲线</span>
-            <label class="chk" data-page-node-id="oaqXO3iER9K4QIsAnD0VeN">
-                <input type="checkbox" id="sAmount" checked onchange="renderProfit()" data-page-node-id="Z2G8LUclnkk8i2KLyjw5EF">
-                <span class="dot" style="background:#e5a00d" data-page-node-id="1HA7X0O2Ry2VGFw2XVYcBw"></span>盈亏金额
+        <h3>盈亏走势</h3>
+        <div class="chart-ctrl">
+            <span class="dim">选择展示曲线</span>
+            <label class="chk">
+                <input type="checkbox" id="sAmount" checked onchange="renderProfit()">
+                <span class="dot" style="background:#e5a00d"></span>盈亏金额
             </label>
-            <label class="chk" data-page-node-id="ZrGeEZG0WOCTNUtYMC5dUH">
-                <input type="checkbox" id="sRatio" checked onchange="renderProfit()" data-page-node-id="v9Sq8Pt30AUF7udxRXCFVA">
-                <span class="dot" style="background:#4c8dff" data-page-node-id="KtQXQXhjnddY8DWDpxhoQ8"></span>盈亏比例
+            <label class="chk">
+                <input type="checkbox" id="sRatio" checked onchange="renderProfit()">
+                <span class="dot" style="background:#4c8dff"></span>盈亏比例
             </label>
-            <label class="chk" data-page-node-id="pY0iiIXCpn5ulB8asw91mJ">
-                <input type="checkbox" id="sPrincipal" onchange="renderProfit()" data-page-node-id="22eUNjc9gvHatElMmohHCn">
-                <span class="dot" style="background:#a371f7" data-page-node-id="ev0H0Y983qMjkj4UbTmMIB"></span>本金走势（账户总金额）
+            <label class="chk">
+                <input type="checkbox" id="sPrincipal" onchange="renderProfit()">
+                <span class="dot" style="background:#a371f7"></span>本金走势（账户总金额）
             </label>
         </div>
-        <div id="profitChart" class="chart-box small" data-page-node-id="cytfmjKaOLLlIRXAbKmnXy"></div>
+        <div id="profitChart" class="chart-box small"></div>
     </section>
 
     <!-- 无数据库模式回测不落盘，没有历史可查，整块隐藏 -->
-    <section class="panel" id="histPanel" data-page-node-id="eRUwbVGpgxNqIiaHhnlFcK">
-        <h2 data-page-node-id="zE9mv0d5D7nLCof5XFGl2g">历史回测</h2>
-        <div style="overflow:auto" data-page-node-id="KzgsNe4TidMIHDzn6tMyvG">
-            <table class="grid" data-page-node-id="syBmLtGSS8qb1xoioPk7w3">
-                <thead data-page-node-id="LPVZVetonkPY1erEuIAH95">
-                <tr data-page-node-id="tw238zRPjkozNPIjypIGtY">
-                    <th data-page-node-id="84ikNe5ROeWpptF71dtvjS">股票</th>
-                    <th data-page-node-id="G2IWGNewUG0c7YkfcCO9Yn">区间</th>
-                    <th class="num" data-page-node-id="ZJpGGPT0zeUrX2ETp7mVgw">起始金额</th>
-                    <th class="num" data-page-node-id="1maGvO3AMdmHsgVVipgByH">期末金额</th>
-                    <th class="num" data-page-node-id="viFL3Ij9sLmyxHAKDPT75n">盈亏</th>
-                    <th class="num" data-page-node-id="unSJdQnWrOQRHco5bfoA1k">盈亏比例</th>
-                    <th class="num" data-page-node-id="hLqZTwfrxlrmiHKeyGMmbk">成交</th>
-                    <th data-page-node-id="slApfdkPglDYaONPD5tHUJ">回测时间</th>
-                    <th data-page-node-id="OOqyvRuLw2fEOYr0cgmjeq">操作</th>
+    <section class="panel" id="histPanel">
+        <h2>历史回测</h2>
+        <div style="overflow:auto">
+            <table class="grid">
+                <thead>
+                <tr>
+                    <th>股票</th>
+                    <th>区间</th>
+                    <th class="num">起始金额</th>
+                    <th class="num">期末金额</th>
+                    <th class="num">盈亏</th>
+                    <th class="num">盈亏比例</th>
+                    <th class="num">成交</th>
+                    <th>回测时间</th>
+                    <th>操作</th>
                 </tr>
                 </thead>
-                <tbody id="histBody" data-page-node-id="hADjDvfizcbslc5r6h3v7V"></tbody>
+                <tbody id="histBody"></tbody>
             </table>
         </div>
     </section>
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260908c"></script>
+<script src="/js/common.js?v=20260910a"></script>
 <script src="/js/date-picker.js"></script>
 <script src="/js/stock-picker.js"></script>
 <script>
