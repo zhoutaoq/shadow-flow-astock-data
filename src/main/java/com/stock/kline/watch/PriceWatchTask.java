@@ -296,7 +296,7 @@ public class PriceWatchTask {
      *   <li>1.5% ~ 3% 短线快速拉升 / 短线快速下挫</li>
      *   <li>≥ 3%   急速拉升 / 急速下挫</li>
      * </ul>
-     * 多个命中时长同时列出，例如 "过去 1 个轮询周期 +0.5%、过去 5 个轮询周期 +2.1%"。
+     * 消息含"过去 Ns 内累计涨幅"与"当前涨跌幅"，并列出拉升成交量 / 拉升成交额。
      */
     String buildAlert(Quote q, List<Hit> hits) {
         BigDecimal maxDelta = BigDecimal.ZERO;
@@ -308,26 +308,24 @@ public class PriceWatchTask {
         boolean up = maxDelta.signum() >= 0;
         BigDecimal absPct = maxDelta.abs();
         String action = phraseFor(absPct, up);
-        String cond = conditionsLine(hits, up);
-        // 命中的第一条规则 intervals 就是这次推送的主要时间范围
-        int mainIntervals = hits.get(0).rule.getIntervals();
 
         BigDecimal volDelta = volumeDelta(q);
         BigDecimal amtDelta = amountDelta(q);
 
         StringBuilder sb = new StringBuilder();
         sb.append(q.getName()).append(' ').append(action);
-        sb.append("，在过去 ").append(mainIntervals)
-                .append(mainIntervals == 1 ? " 个轮询周期内" : " 个轮询周期内");
+        // 命中的第一条规则 intervals × 轮询间隔秒 = 这次推送的主要时间范围
+        long intervalSec = store.getIntervalSeconds();
+        long mainSec = (long) hits.get(0).rule.getIntervals() * intervalSec;
+        sb.append("，过去 ").append(mainSec).append("s 内");
         sb.append(up ? "累计涨幅 " : "累计跌幅 ")
                 .append(absPct.toPlainString()).append('%');
         sb.append("，现价 ").append(q.getPrice().toPlainString()).append(" 元");
         BigDecimal todayPct = q.changePercent();
-        sb.append("，今日累计").append(up ? "涨" : "跌").append("幅 ")
+        sb.append("，当前涨跌幅 ")
                 .append(todayPct == null ? "—" : todayPct.toPlainString()).append('%');
-        sb.append("。\n触发条件：").append(cond);
         if (volDelta != null) {
-            sb.append("\n拉升成交量：").append(formatVolume(volDelta));
+            sb.append("，拉升成交量：").append(formatVolume(volDelta));
         }
         if (amtDelta != null) {
             sb.append("，拉升成交额：").append(formatAmount(amtDelta));
@@ -351,20 +349,6 @@ public class PriceWatchTask {
             if (absPct.compareTo(new BigDecimal("3")) < 0) return "短线快速下挫";
             return "急速下挫";
         }
-    }
-
-    /** 把命中的所有规则拼成一行：过去 1 个轮询周期 +0.5%、过去 5 个轮询周期 +2.1% */
-    private static String conditionsLine(List<Hit> hits, boolean up) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < hits.size(); i++) {
-            Hit h = hits.get(i);
-            if (i > 0) sb.append("；");
-            sb.append("过去 ").append(h.rule.getIntervals())
-                    .append(h.rule.getIntervals() == 1 ? " 个轮询周期" : " 个轮询周期")
-                    .append(up ? " +" : " ")
-                    .append(h.delta.toPlainString()).append('%');
-        }
-        return sb.toString();
     }
 
     /** 拉升成交量 = 上一轮累计成交量到本轮累计成交量的差值（可能为负：缩量就显示 0） */
@@ -393,15 +377,14 @@ public class PriceWatchTask {
         return diff.signum() < 0 ? BigDecimal.ZERO : diff;
     }
 
-    /** 成交量按"万手"显示：1234 → 12.34 万手；超过 1 亿手 → 1.23 亿手 */
+    /** 成交量按"手"显示（v 单位是"股"，1手=100股）：1234 → 1234 手；超过 1 亿手 → 1.23 亿手 */
     static String formatVolume(BigDecimal v) {
         if (v == null) return "—";
-        // v 单位是"股"
-        BigDecimal wan = v.divide(BigDecimal.valueOf(10000L * 100), 2, BigDecimal.ROUND_HALF_UP);
-        if (wan.compareTo(BigDecimal.valueOf(10000)) >= 0) {
-            return wan.divide(BigDecimal.valueOf(10000), 2, BigDecimal.ROUND_HALF_UP).toPlainString() + " 亿手";
+        BigDecimal hand = v.divide(BigDecimal.valueOf(100), 2, BigDecimal.ROUND_HALF_UP);
+        if (hand.compareTo(BigDecimal.valueOf(100000000)) >= 0) {
+            return hand.divide(BigDecimal.valueOf(100000000), 2, BigDecimal.ROUND_HALF_UP).toPlainString() + " 亿手";
         }
-        return wan.toPlainString() + " 万手";
+        return hand.toPlainString() + " 手";
     }
 
     /** 成交额按"万元"显示 */

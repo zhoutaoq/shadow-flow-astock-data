@@ -5,23 +5,28 @@
     <title>策略回测 - 金牛数据</title>
     <link rel="stylesheet" href="/css/common.css?v=20260908c" data-page-node-id="IblNgYhVsHPlrioFhjaH2B">
     <style>
-        /* ============ 参数区：2×2，右侧买入/卖出更宽，保证判断组件一行放得下 ============ */
+        /* ============ 参数区：六张卡 · 2 行 × 3 列 ============
+           row1：回测对象 | 买入策略 | 买入涨跌停成交
+           row2：时间范围 | 卖出策略 | 卖出涨跌停成交
+           每行三张等高（stretch），从左上到右下按使用顺序排。 */
         .cfg-grid {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr) minmax(0, 1.25fr);
             gap: 14px;
-            align-items: start;
+            align-items: stretch;
         }
 
-        /* 左列：回测对象 / 时间范围；右列：买入策略 / 卖出策略 */
         .cfg-card.c1 { grid-column: 1; grid-row: 1; }
         .cfg-card.c2 { grid-column: 1; grid-row: 2; }
         .cfg-card.c3 { grid-column: 2; grid-row: 1; }
         .cfg-card.c4 { grid-column: 2; grid-row: 2; }
+        .cfg-card.c5 { grid-column: 3; grid-row: 1; }
+        .cfg-card.c6 { grid-column: 3; grid-row: 2; }
 
-        @media (max-width: 1080px) {
+        @media (max-width: 960px) {
             .cfg-grid { grid-template-columns: minmax(0, 1fr); }
-            .cfg-card.c1, .cfg-card.c2, .cfg-card.c3, .cfg-card.c4 {
+            .cfg-card.c1, .cfg-card.c2, .cfg-card.c3, .cfg-card.c4,
+            .cfg-card.c5, .cfg-card.c6 {
                 grid-column: 1;
                 grid-row: auto;
             }
@@ -117,6 +122,246 @@
             animation-delay: .18s;
         }
 
+        /* 涨跌停成交卡：色系跟所属买卖对应（买入=红、卖出=绿），亮度略降以示是附属配置 */
+        .cfg-card.c5 {
+            --accent: #f0555a;
+            --accent-soft: rgba(240, 85, 90, .12);
+            --accent-glow: rgba(240, 85, 90, .30);
+            animation-delay: .24s;
+        }
+
+        .cfg-card.c6 {
+            --accent: #35ad66;
+            --accent-soft: rgba(53, 173, 102, .12);
+            --accent-glow: rgba(53, 173, 102, .30);
+            animation-delay: .3s;
+        }
+
+        /* 组合关系：一行内联（横排），跟判断区上下分开 */
+        .logic-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .logic-row .logic-label {
+            font-size: 12px;
+            color: var(--text-dim);
+            flex: none;
+        }
+
+        .logic-seg {
+            display: inline-flex;
+            background: rgba(0, 0, 0, .22);
+            border-radius: 9px;
+            padding: 3px;
+            gap: 3px;
+        }
+
+        .logic-seg button {
+            appearance: none;
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 12px;
+            border-radius: 6px;
+            padding: 4px 10px;
+            cursor: pointer;
+            transition: all .16s;
+        }
+
+        .logic-seg button:hover { color: var(--text); }
+        .logic-seg button.on {
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .3));
+            color: #fff;
+            font-weight: 500;
+            box-shadow: 0 2px 8px var(--accent-glow);
+        }
+
+        /* 判断组件列表：数量多时内部滚动。上限 = 恰好两整行(76+8)*2，
+           裁切落在整行边界不切半行，同排卡片也不会被撑高。 */
+        .cond-box {
+            flex: 0 1 auto;
+            min-height: 0;
+            max-height: 168px;
+            overflow-y: auto;
+            padding-right: 2px;
+            scrollbar-width: thin;
+        }
+
+        .cond-box::-webkit-scrollbar { width: 6px; }
+        .cond-box::-webkit-scrollbar-thumb {
+            background: #333c52;
+            border-radius: 3px;
+        }
+
+        .cond-foot {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .cond-foot .btn-ghost { flex: none; }
+        .cond-foot .btn-ghost:disabled { opacity: .45; cursor: not-allowed; }
+        .cond-foot .btn-ghost:disabled:hover { background: transparent; border-color: var(--border); }
+
+        .cond-count {
+            font-size: 11.5px;
+            color: var(--text-dim);
+        }
+
+        .cond-count.full { color: var(--warn); }
+
+        /* ============ 涨跌停成交（卡内底部子面板） ============
+           买卖卡内一个更亮的浅色面板，与上面的策略主体拉开层次；
+           紧贴在 cond-foot 之下，cond-box 撑剩余空间。 */
+        .limit-panel {
+            background: linear-gradient(160deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, .012));
+            border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 12px;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .limit-title {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .limit-title::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+            flex: none;
+        }
+
+        .limit-desc {
+            font-size: 11px;
+            color: var(--text-dim);
+            line-height: 1.5;
+            margin-top: -6px;
+        }
+
+        /* 处理策略：单选胶囊组，替代生硬的下拉 */
+        .limit-radio {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            background: rgba(0, 0, 0, .25);
+            border-radius: 10px;
+            padding: 4px;
+        }
+
+        .limit-radio button {
+            appearance: none;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 7px;
+            padding: 6px 2px;
+            cursor: pointer;
+            line-height: 1.2;
+            transition: all .18s;
+        }
+
+        .limit-radio button small {
+            display: block;
+            font-size: 10px;
+            font-weight: 400;
+            opacity: .7;
+            margin-top: 1px;
+        }
+
+        .limit-radio button:hover:not(.on) { color: var(--text); background: rgba(255, 255, 255, .04); }
+        .limit-radio button { box-shadow: none !important; }
+        .limit-radio button.on {
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .3));
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 2px 8px var(--accent-glow);
+        }
+
+        /* 策略 3 才出现：次日开盘涨跌幅阈值组合 */
+        .limit-conds {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .limit-conds.show { display: flex; }
+
+        .limit-conds-note {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .limit-conds-note .sep { color: var(--accent); font-weight: 700; }
+
+        .limit-cond {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 8px;
+            background: rgba(0, 0, 0, .18);
+            border: 1px solid rgba(255, 255, 255, .05);
+            border-radius: 8px;
+            flex-wrap: wrap;
+            animation: condIn .22s cubic-bezier(.2, .8, .2, 1) backwards;
+        }
+
+        .limit-cond select {
+            width: auto;
+            min-width: 0;
+            flex: 0 1 auto;
+            font-size: 12px;
+            padding: 3px 4px;
+        }
+
+        .limit-cond .lbl { font-size: 12px; color: var(--text-dim); flex: none; }
+
+        .limit-cond input[type=number] {
+            width: 48px;
+            min-width: 0;
+            flex: 0 0 auto;
+            font-size: 12px;
+            padding: 3px 6px;
+        }
+
+        .limit-cond .pct { font-size: 12px; color: var(--text-dim); flex: none; }
+        .limit-cond .grow { flex: 1 1 auto; }
+
+        .limit-cond .btn-ghost {
+            padding: 2px 8px;
+            font-size: 12px;
+            flex: none;
+            border-radius: 6px;
+        }
+
+        .limit-cond .btn-ghost.del {
+            border-color: transparent;
+            background: rgba(229, 72, 77, .12);
+            color: var(--danger);
+        }
+        .limit-cond .btn-ghost.del:hover { background: rgba(229, 72, 77, .22); border-color: transparent; }
+
+        .limit-add { align-self: flex-start; }
+        .limit-add:disabled { opacity: .45; cursor: not-allowed; }
+
         .cfg-head {
             display: flex;
             align-items: center;
@@ -169,6 +414,11 @@
         .cfg-card .field { width: 100%; }
         .cfg-card .field input,
         .cfg-card .field select { width: 100%; min-width: 0; }
+        .cfg-card .field input[type=date] {
+            /* 日期 picker 自带年月日按钮 + 月日历图标，最小得 140 才不挤；
+               c2 时间范围卡所在的 col1 较窄，给个底线宽度。 */
+            min-width: 140px;
+        }
         .cfg-card .sp { min-width: 0; width: 100%; }
 
         .cfg-sub {
@@ -197,34 +447,174 @@
             box-shadow: 0 4px 14px rgba(59, 124, 255, .35);
         }
 
-        /* 判断组件：整行不换行，宽度不够时控件自己收缩，删除按钮靠右 */
+        /* ============ 判断组件块：上下两行，整行占满 ============
+           上行 = 序号 + 类型 chips（均分撑满整卡宽），下行 = 参数（两端对齐铺满整行）。
+           控件宽度跟随卡片变化，不再"内容贴左、右侧大片空白"。
+           改值只走 updateCond 局部更新，不重绘不闪；× 绝对定位钉在右上。 */
         .cond-row {
+            position: relative;
             display: flex;
-            align-items: center;
-            gap: 5px;
-            flex-wrap: nowrap;
-            white-space: nowrap;
-            padding: 8px 6px;
-            margin: 0 -6px;
-            border-bottom: 1px dashed #2b3145;
-            border-radius: 6px;
+            flex-direction: column;
+            gap: 8px;
+            padding: 8px 32px 9px 8px;   /* 右侧给绝对定位的 × 让位 */
+            margin: 0 0 8px;
+            background: rgba(255, 255, 255, .02);
+            border: 1px solid rgba(255, 255, 255, .05);
+            border-radius: 9px;
             font-size: 12px;
-            /* 新增一行时淡入，悬停给一点底色，方便对焦到这一行 */
-            animation: condIn .28s cubic-bezier(.2, .8, .2, 1) backwards;
-            transition: background .18s;
+            transition: border-color .18s, background .18s;
         }
+        /* 仅新插入的行才走 condIn 入场动画，已存在的行改值不重画、不闪 */
+        .cond-row.fresh { animation: condIn .28s cubic-bezier(.2, .8, .2, 1) backwards; }
 
-        .cond-row:hover { background: rgba(255, 255, 255, .03); }
+        .cond-row:hover {
+            border-color: var(--accent-glow);
+            background: rgba(255, 255, 255, .045);
+        }
 
         @keyframes condIn {
             from { opacity: 0; transform: translateX(-6px); }
             to { opacity: 1; transform: none; }
         }
 
-        .cond-row .idx { flex: none; color: var(--text-dim); }
-        .cond-row input[type=number] { width: 54px; min-width: 0; flex: 0 0 auto; }
-        .cond-row select { width: auto; min-width: 60px; max-width: 175px; flex: 0 0 auto; }
-        .cond-row .btn-ghost { padding: 2px 8px; font-size: 12px; margin-left: auto; flex: none; }
+        .cond-row .cond-idx {
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .3));
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: none;
+        }
+
+        /* 上行：序号 + 类型 chips，chips 均分撑满整行 */
+        .cond-top {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .cond-top .cond-types { flex: 1 1 0; min-width: 0; display: flex; }
+        .cond-top .cond-types button { flex: 1 1 0; text-align: center; padding: 4px 4px; overflow: hidden; }
+
+        /* 下行：参数；两端对齐把 labels/操作符/输入框均匀铺满整行（始终单行，不换行）；
+           number 输入框默认 72px 舒适宽度，空间不足时按 flex-shrink 收缩，绝不横向溢出。 */
+        .cond-params {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: nowrap;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .cond-params .cond-lbl { flex: none; white-space: nowrap; }
+        .cond-params > .cond-op { flex: none; }
+
+        .cond-params > input[type=number] {
+            flex: 0 1 auto;
+            width: 72px;
+            min-width: 36px;
+            text-align: left;
+            padding: 4px 8px;
+            font-size: 12px;
+            background: rgba(0, 0, 0, .28);
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 6px;
+            color: var(--text);
+        }
+
+        /* 类型选择：4 个 chip 等分排满上行；hover 取 tooltip 拿全名，
+           选中高亮跟卡片 accent 色统一。 */
+        .cond-types {
+            display: flex;
+            background: rgba(0, 0, 0, .22);
+            border-radius: 6px;
+            padding: 2px;
+            gap: 3px;
+        }
+        .cond-types button {
+            appearance: none;
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 11px;
+            border-radius: 4px;
+            padding: 3px 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            line-height: 1;
+            transition: color .14s, background .14s;
+        }
+        .cond-types button:hover { color: var(--text); }
+        .cond-types button.on {
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .25));
+            color: #fff;
+            font-weight: 500;
+            box-shadow: 0 1px 4px var(--accent-glow);
+        }
+
+        /* 操作符 chips（大于/小于）：跟 .cond-types 同款紧凑风格，
+           但只有 2 个按钮，所以 padding 略小一点 */
+        .cond-op {
+            display: flex;
+            background: rgba(0, 0, 0, .22);
+            border-radius: 6px;
+            padding: 2px;
+            gap: 2px;
+            flex: 0 0 auto;
+        }
+        .cond-op button {
+            flex: 0 0 auto;
+            appearance: none;
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 11px;
+            border-radius: 4px;
+            padding: 3px 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            line-height: 1;
+            transition: color .14s, background .14s;
+        }
+        .cond-op button:hover { color: var(--text); }
+        .cond-op button.on {
+            background: linear-gradient(135deg, var(--accent), rgba(255, 255, 255, .25));
+            color: #fff;
+            font-weight: 500;
+            box-shadow: 0 1px 4px var(--accent-glow);
+        }
+
+        .cond-lbl { color: var(--text-dim); flex: none; }
+
+        /* 删除按钮绝对定位钉在右上，跟类型 chips 行对齐；不参与流式布局 */
+        .cond-row .cond-x {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: none;
+            background: transparent;
+            color: #8b96ab;
+            font-size: 15px;
+            line-height: 1;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: none;
+        }
+        .cond-row .cond-x:hover { color: #fff; background: rgba(229, 72, 77, .4); }
 
         .cond-empty {
             padding: 10px 0;
@@ -365,32 +755,11 @@
                     <input type="number" id="fFee" value="0.01" min="0" step="0.001" data-page-node-id="WUlMPZwUcyXgyB8jzryMqw">
                     <div class="sp-hint" data-page-node-id="SBXfn9pKKoOikWBxcFhlpK">单位 %，0.01% = 万分之一</div>
                 </div>
-                <div class="cfg-sub">涨跌停成交</div>
-                <div class="field">
-                    <label>处理策略</label>
-                    <select id="fLimitStrategy" onchange="toggleLimitRatio()">
-                        <option value="1">1 无视（仍按信号日收盘价成交）</option>
-                        <option value="2">2 次日开盘非涨跌停立即成交</option>
-                        <option value="3">3 次日非涨跌停且涨跌幅达阈值才成交</option>
-                    </select>
-                    <div class="sp-hint">信号日收盘价封在涨跌停板上时不保证能成交，这里决定怎么处理</div>
-                </div>
-                <div class="field" id="fLimitRatioField" style="display:none">
-                    <label>涨跌幅阈值 n%</label>
-                    <div style="display:flex;gap:6px">
-                        <select id="fLimitOp" style="flex:0 0 92px">
-                            <option value="gt">涨幅 &gt;</option>
-                            <option value="lt">跌幅 &gt;</option>
-                        </select>
-                        <input type="number" id="fLimitRatio" value="3" min="0" step="0.1" style="flex:1">
-                    </div>
-                    <div class="sp-hint">相对信号日收盘价计算；买入遇次日涨停开盘、卖出遇次日跌停开盘一律作废</div>
-                </div>
             </div>
 
             <!-- 2 时间范围 -->
             <div class="cfg-card c2" data-page-node-id="vZr0a06oURV6rUCUJo0RRp">
-                <div class="cfg-head" data-page-node-id="fpTE4AM7OvKFoeHHfLcaIQ"><span class="cfg-idx" data-page-node-id="11KMw0n3aCJspHCleckd3R">2</span>时间范围<span class="cfg-tag">起止 · 跨度</span></div>
+                <div class="cfg-head" data-page-node-id="fpTE4AM7OvKFoeHHfLcaIQ"><span class="cfg-idx" data-page-node-id="11KMw0n3aCJspHCleckd3R">4</span>时间范围<span class="cfg-tag">起止 · 跨度</span></div>
                 <div class="field" data-page-node-id="XkLA6rDBmLCFhhTHncZRFE">
                     <label data-page-node-id="Qx21QFyXhf7puJX0fy1tgz">开始日期 *</label>
                     <input type="date" id="fStart" data-page-node-id="NR5ZGAbj0MaFsLbmQo6Y6V">
@@ -417,33 +786,83 @@
             <!-- 3 买入策略 -->
             <div class="cfg-card c3" data-page-node-id="AkNGMLrYatXEcaY5DVYKFG">
                 <div class="cfg-head" data-page-node-id="JR6iqondq2nCHyazjsYvi7">
-                    <span class="cfg-idx" data-page-node-id="RpAdhKwFMduLCqUALDYe8a">3</span>买入策略<span class="cfg-tag">全仓买入</span>
+                    <span class="cfg-idx" data-page-node-id="RpAdhKwFMduLCqUALDYe8a">2</span>买入策略<span class="cfg-tag">全仓买入</span>
                 </div>
-                <div class="field" data-page-node-id="PHqvYv5JppZguXTTbYBskq">
-                    <label data-page-node-id="C3Sf0OE0DPdDKMJtwXBi9H">组合关系</label>
-                    <select id="buyLogic" data-page-node-id="ChL9qzSYVY0PWv06Q17qTE">
+                <div class="logic-row" data-page-node-id="PHqvYv5JppZguXTTbYBskq">
+                    <span class="logic-label" data-page-node-id="C3Sf0OE0DPdDKMJtwXBi9H">组合</span>
+                    <div class="logic-seg" id="buyLogicSeg">
+                        <button type="button" data-v="and" class="on">全部满足</button>
+                        <button type="button" data-v="or">任一满足</button>
+                    </div>
+                    <select id="buyLogic" style="display:none" data-page-node-id="ChL9qzSYVY0PWv06Q17qTE">
                         <option value="and" selected data-page-node-id="cy9R965D2BntFDIT1E57eI">且（全部满足才买入）</option>
                         <option value="or" data-page-node-id="Sg7QFR8llEhlVXqpuz6zep">或（任一满足即买入）</option>
                     </select>
                 </div>
-                <div id="buyConds" data-page-node-id="2W6tijdUhL6WPcqZc1xBQr"></div>
-                <button class="btn-ghost btn-sm" onclick="addCond('buy')" data-page-node-id="drbcsi3exbWXWX7PaeTN4d">+ 添加判断组件</button>
+                <div class="cond-box" id="buyConds" data-page-node-id="2W6tijdUhL6WPcqZc1xBQr"></div>
+                <div class="cond-foot">
+                    <button class="btn-ghost btn-sm" id="buyAdd" onclick="addCond('buy')" data-page-node-id="drbcsi3exbWXWX7PaeTN4d">+ 添加判断组件</button>
+                    <span class="cond-count" id="buyCount"></span>
+                </div>
             </div>
 
             <!-- 4 卖出策略 -->
             <div class="cfg-card c4" data-page-node-id="0JQgSRcJolcCnRIn62trrv">
                 <div class="cfg-head" data-page-node-id="YxaUW71gVKHDNKeDc1l40P">
-                    <span class="cfg-idx" data-page-node-id="AjFHAknwLBQ3iSXVQIATUD">4</span>卖出策略<span class="cfg-tag">全仓卖出</span>
+                    <span class="cfg-idx" data-page-node-id="AjFHAknwLBQ3iSXVQIATUD">5</span>卖出策略<span class="cfg-tag">全仓卖出</span>
                 </div>
-                <div class="field" data-page-node-id="nNnWCovjEEspjkCLkK1dkC">
-                    <label data-page-node-id="1ZHzeBITBTTFI3MKbXtp7y">组合关系</label>
-                    <select id="sellLogic" data-page-node-id="mzSmkGCkaQrdJLLkcex7HA">
+                <div class="logic-row" data-page-node-id="nNnWCovjEEspjkCLkK1dkC">
+                    <span class="logic-label" data-page-node-id="1ZHzeBITBTTFI3MKbXtp7y">组合</span>
+                    <div class="logic-seg" id="sellLogicSeg">
+                        <button type="button" data-v="and" class="on">全部满足</button>
+                        <button type="button" data-v="or">任一满足</button>
+                    </div>
+                    <select id="sellLogic" style="display:none" data-page-node-id="mzSmkGCkaQrdJLLkcex7HA">
                         <option value="and" selected data-page-node-id="N6beKAx97gvKa8ydzIBzKA">且（全部满足才卖出）</option>
                         <option value="or" data-page-node-id="RqFMVkhZggxoSFdzfb4j5r">或（任一满足即卖出）</option>
                     </select>
                 </div>
-                <div id="sellConds" data-page-node-id="vmfXRi1uSWFxTs2XZuEpqS"></div>
-                <button class="btn-ghost btn-sm" onclick="addCond('sell')" data-page-node-id="LwSFIrsGPTQuN1SMAkDcBZ">+ 添加判断组件</button>
+                <div class="cond-box" id="sellConds" data-page-node-id="vmfXRi1uSWFxTs2XZuEpqS"></div>
+                <div class="cond-foot">
+                    <button class="btn-ghost btn-sm" id="sellAdd" onclick="addCond('sell')" data-page-node-id="LwSFIrsGPTQuN1SMAkDcBZ">+ 添加判断组件</button>
+                    <span class="cond-count" id="sellCount"></span>
+                </div>
+            </div>
+
+            <!-- 5 买入涨跌停成交 -->
+            <div class="cfg-card c5">
+                <div class="cfg-head"><span class="cfg-idx">3</span>买点买入失败（涨停板）次日策略</div>
+                <div class="limit-desc">信号日收盘封涨停时买不进，决定怎么处理</div>
+                <div class="limit-radio" id="buyLimitRadio">
+                    <button type="button" data-strategy="1" class="on">无视<small>按收盘价买入</small></button>
+                    <button type="button" data-strategy="2">次日开盘<small>非涨停即买</small></button>
+                    <button type="button" data-strategy="3">次日开盘<small>达条件才买</small></button>
+                </div>
+                <div class="limit-conds" id="buyLimitConds">
+                    <div class="limit-conds-note">次日开盘相对信号日收盘涨跌幅，满足任一即买入
+                        <span class="sep">或</span></div>
+                    <div id="buyLimitRows"></div>
+                    <button type="button" class="btn-ghost btn-sm limit-add" id="buyLimitAdd"
+                            onclick="addLimitCond('buy')">+ 添加条件</button>
+                </div>
+            </div>
+
+            <!-- 6 卖出涨跌停成交 -->
+            <div class="cfg-card c6">
+                <div class="cfg-head"><span class="cfg-idx">6</span>卖点卖出失败（跌停板）次日策略</div>
+                <div class="limit-desc">信号日收盘封跌停时卖不出，决定怎么处理</div>
+                <div class="limit-radio" id="sellLimitRadio">
+                    <button type="button" data-strategy="1" class="on">无视<small>按收盘价卖出</small></button>
+                    <button type="button" data-strategy="2">次日开盘<small>非跌停即卖</small></button>
+                    <button type="button" data-strategy="3">次日开盘<small>达条件才卖</small></button>
+                </div>
+                <div class="limit-conds" id="sellLimitConds">
+                    <div class="limit-conds-note">次日开盘相对信号日收盘涨跌幅，满足任一即卖出
+                        <span class="sep">或</span></div>
+                    <div id="sellLimitRows"></div>
+                    <button type="button" class="btn-ghost btn-sm limit-add" id="sellLimitAdd"
+                            onclick="addLimitCond('sell')">+ 添加条件</button>
+                </div>
             </div>
         </div>
 
@@ -546,6 +965,21 @@
         sell: [{type: 'ABOVE_MA_DAYS', op: 'lt', n: 2, m: 20, x: 3, ratio: 1.5}]
     };
 
+    /** 单侧判断组件上限：卡片高度按这个数量固定，再多会撑破布局 */
+    const MAX_CONDS = 4;
+
+    /**
+     * 涨跌停成交配置（买入/卖出各一份）。
+     * strategy：1 无视、2 次日开盘即成交、3 次日开盘满足阈值组合才成交。
+     * conds：策略 3 的阈值条件，最多 2 条、条间为「或」；ratio 为页面百分数，提交换算成小数。
+     */
+    const limits = {
+        buy:  {strategy: 1, conds: [{dir: 'gt', op: 'gt', ratio: 3}]},
+        sell: {strategy: 1, conds: [{dir: 'gt', op: 'gt', ratio: 3}]}
+    };
+    /** 单侧涨跌停阈值条件上限 */
+    const MAX_LIMIT_CONDS = 2;
+
     /** 最近一次回测结果：弹窗与曲线勾选都要从它重新渲染 */
     let lastResult = null;
     /** 每日账户 / 买卖明细的缓存：表格收起后只在弹窗里分页展示 */
@@ -609,61 +1043,179 @@
     // ============ 策略组件编辑 ============
 
     function addCond(side) {
+        if (conds[side].length >= MAX_CONDS) {
+            return toast(`买入/卖出策略最多 ${MAX_CONDS} 个判断组件`, 'err');
+        }
         conds[side].push({type: 'CHANGE', op: 'gt', n: 5, m: 20, x: 3, ratio: 1.5});
-        renderConds(side);
+        // 增量追加：只插入新行（带入场动画），不动已有行 → 不闪
+        const box = document.getElementById(side + 'Conds');
+        const empty = box.querySelector('.cond-empty');
+        if (empty) empty.remove();
+        const i = conds[side].length - 1;
+        const wrap = document.createElement('div');
+        wrap.innerHTML = condRow(side, i, conds[side][i]);
+        const row = wrap.firstElementChild;
+        row.classList.add('fresh');   // 新行才走入场动画
+        box.appendChild(row);
+        updateCondCount(side);
     }
 
     function delCond(side, i) {
+        const box = document.getElementById(side + 'Conds');
+        const row = box.querySelector('.cond-row[data-i="' + i + '"]');
+        if (row) row.remove();         // 只删当前行 DOM
         conds[side].splice(i, 1);
-        renderConds(side);
+        // 后面行的 data-i 需要 -1，保证 × 删除时拿到的是新下标
+        Array.from(box.querySelectorAll('.cond-row')).forEach(r => {
+            const oldI = Number(r.getAttribute('data-i'));
+            if (oldI > i) {
+                r.setAttribute('data-i', oldI - 1);
+                // 同时把按钮里 hardcode 的 onclick 索引一并刷新
+                const xBtn = r.querySelector('.cond-x');
+                if (xBtn) xBtn.setAttribute('onclick', "delCond('" + side + "'," + (oldI - 1) + ")");
+            }
+        });
+        // 列表空了补个占位
+        if (!conds[side].length) {
+            box.innerHTML = '<div class="cond-empty">还没有判断组件，点下方按钮新增</div>';
+        }
+        updateCondCount(side);
     }
 
+    /**
+     * 改一个判断组件的字段。
+     * - type 变了：控件组合变了（如近N日涨跌幅 → 连续N日站上），必须重画该行。
+     * - 其它字段（op/n/m/x/ratio）：只更新数据 + 受影响的 input/select value，
+     *   不动 DOM、不触发动画，敲数字时整组不闪，光标不丢。
+     */
     function updateCond(side, i, key, value) {
         conds[side][i][key] = value;
-        renderConds(side);
+        const box = document.getElementById(side + 'Conds');
+        const row = box.querySelector('.cond-row[data-i="' + i + '"]');
+        if (!row) return;
+        if (key === 'type') {
+            // 控件组合变了，整行重画（不带 fresh 动画，避免闪烁）
+            const tmp = document.createElement('div');
+            tmp.innerHTML = condRow(side, i, conds[side][i]);
+            const fresh = tmp.firstElementChild;
+            row.replaceWith(fresh);
+            // 重新绑定内部事件用的 data-i
+            fresh.setAttribute('data-i', i);
+            rebindCondRow(fresh, side, i);
+            return;
+        }
+        // 其余字段：op / n / m / x / ratio → 直接同步 DOM 值
+        syncCondField(row, key, value);
     }
 
+    /** 把 condRow 模板里 inline onclick 的索引校正到当前下标 i（用于 delCond 后行序前移） */
+    function rebindCondRow(row, side, i) {
+        // typeSel 的 onchange 已经由模板生成时写了 i，这里一般一致；只在初始化异常时兜底
+        row.querySelectorAll('select, input').forEach(el => {
+            const oc = el.getAttribute('onchange');
+            if (!oc) return;
+            // 形如 updateCond('buy',2,'n',Number(this.value)) → 把第二个参数改成 i
+            el.setAttribute('onchange', oc.replace(/updateCond\('([^']+)',\d+,/, "updateCond('$1'," + i + ","));
+        });
+        const xBtn = row.querySelector('.cond-x');
+        if (xBtn) xBtn.setAttribute('onclick', "delCond('" + side + "'," + i + ")");
+    }
+
+    /**
+     * 局部更新某个字段对应的 DOM value，不重建行。
+     * 注意：用户敲数字时 onchange 才触发（input 输入中浏览器不触发），所以这里写 value 不会覆盖正在输入的内容。
+     */
+    function syncCondField(row, key, value) {
+        const c = value;
+        const setVal = (el, v) => { if (el && el.value !== String(v)) el.value = v; };
+        // 通过 onchange 字符串里的 key 名反查 input；模板里固定 order，遍历匹配即可
+        row.querySelectorAll('select, input').forEach(el => {
+            const oc = el.getAttribute('onchange') || '';
+            const m = oc.match(/updateCond\('[^']+',\d+,'([^']+)'/);
+            if (m && m[1] === key) setVal(el, c);
+        });
+    }
+
+    function updateCondCount(side) {
+        const n = conds[side].length;
+        const full = n >= MAX_CONDS;
+        document.getElementById(side + 'Add').disabled = full;
+        const cnt = document.getElementById(side + 'Count');
+        cnt.textContent = n + '/' + MAX_CONDS + (full ? ' 已上限' : '');
+        cnt.classList.toggle('full', full);
+    }
+
+    /** 全量重画仅用于：导入配置（applyRule）、首次 init、reset 等"整体重建"场景 */
     function renderConds(side) {
         const box = document.getElementById(side + 'Conds');
         if (!conds[side].length) {
             box.innerHTML = '<div class="cond-empty">还没有判断组件，点下方按钮新增</div>';
-            return;
+        } else {
+            // 一次性写入，模板里硬编码 data-i
+            box.innerHTML = conds[side].map((c, i) => condRow(side, i, c)).join('');
         }
-        box.innerHTML = conds[side].map((c, i) => condRow(side, i, c)).join('');
+        updateCondCount(side);
     }
 
-    /** 单个组件一行，控件随类型变化 */
+    /** 单个判断组件：上行「序号 + 类型 chips」均分撑满，下行「参数」输入框弹性撑满 */
     function condRow(side, i, c) {
-        const typeSel = `<select onchange="updateCond('${side}',${i},'type',this.value)">
-            <option value="CHANGE"${c.type === 'CHANGE' ? ' selected' : ''}>近N日涨幅</option>
-            <option value="ABOVE_MA_DAYS"${c.type === 'ABOVE_MA_DAYS' ? ' selected' : ''}>连续N日站上/跌破均线</option>
-            <option value="CLOSE_MA"${c.type === 'CLOSE_MA' ? ' selected' : ''}>收盘价与均线</option>
-            <option value="VOLUME_MA"${c.type === 'VOLUME_MA' ? ' selected' : ''}>成交量倍数</option>
-        </select>`;
-        const opSel = `<select onchange="updateCond('${side}',${i},'op',this.value)">
-            <option value="gt"${c.op === 'gt' ? ' selected' : ''}>大于</option>
-            <option value="lt"${c.op === 'lt' ? ' selected' : ''}>小于</option>
-        </select>`;
+        // 类型 chips：4 个中文短标签等分排满上行；hover 看 tooltip 拿全名
+        const types = [
+            {v: 'CHANGE',        t: '涨跌幅', full: '近N日涨跌幅'},
+            {v: 'ABOVE_MA_DAYS', t: '站均线', full: '连续N日站上/跌破均线'},
+            {v: 'VOLUME_MA',     t: '量能比', full: '成交量倍数'},
+            {v: 'CLOSE_MA',      t: '收盘价', full: '收盘价与均线'}
+        ];
+        const typeChips = `<div class="cond-types" role="tablist">
+            ${types.map(t => `<button type="button" data-type="${t.v}"
+                class="${c.type === t.v ? 'on' : ''}" title="${t.full}"
+                onclick="updateCond('${side}',${i},'type','${t.v}')">${t.t}</button>`).join('')}
+        </div>`;
+        // 操作符（大于/小于）也改成 chip：没有 native select 默认 120px 的视觉占地
+        const opChips = `<div class="cond-op" role="tablist">
+            <button type="button" data-op="gt" class="${c.op === 'gt' ? 'on' : ''}"
+                onclick="updateCond('${side}',${i},'op','gt')">大于</button>
+            <button type="button" data-op="lt" class="${c.op === 'lt' ? 'on' : ''}"
+                onclick="updateCond('${side}',${i},'op','lt')">小于</button>
+        </div>`;
         const num = (key, val, min) =>
             `<input type="number" value="${val}" min="${min}" step="1"
                 onchange="updateCond('${side}',${i},'${key}',Number(this.value))">`;
 
-        let body;
+        let main;
         if (c.type === 'CHANGE') {
-            body = `近 ${num('n', c.n, 1)} 日涨幅 ${opSel}
+            // "近 N 日 涨跌幅 大于 X %"
+            main = `<span class="cond-lbl">近</span>${num('n', c.n, 1)}
+                    <span class="cond-lbl">日</span>${opChips}
                     <input type="number" value="${c.x}" step="0.1"
-                        onchange="updateCond('${side}',${i},'x',Number(this.value))"> %`;
+                        onchange="updateCond('${side}',${i},'x',Number(this.value))">
+                    <span class="cond-lbl">%</span>`;
         } else if (c.type === 'ABOVE_MA_DAYS') {
-            body = `连续 ${num('n', c.n, 1)} 日收盘价 ${opSel} ${num('m', c.m, 1)} 日线`;
+            // "连续 N 日 < M 均线"
+            main = `<span class="cond-lbl">连续</span>${num('n', c.n, 1)}
+                    ${opChips}${num('m', c.m, 1)}
+                    <span class="cond-lbl">均线</span>`;
         } else if (c.type === 'VOLUME_MA') {
-            body = `成交量 ${opSel} 前 ${num('n', c.n, 1)} 日均量
+            // "量 > 前 N 日 R 倍"
+            main = `<span class="cond-lbl">量</span>${opChips}
+                    <span class="cond-lbl">前</span>${num('n', c.n, 1)}
+                    <span class="cond-lbl">日</span>
                     <input type="number" value="${c.ratio}" min="0" step="0.1"
-                        onchange="updateCond('${side}',${i},'ratio',Number(this.value))"> 倍`;
+                        onchange="updateCond('${side}',${i},'ratio',Number(this.value))">
+                    <span class="cond-lbl">倍</span>`;
         } else {
-            body = `收盘价 ${opSel} ${num('n', c.n, 1)} 日线`;
+            // "收 > N 均线"
+            main = `<span class="cond-lbl">收</span>${opChips}${num('n', c.n, 1)}
+                    <span class="cond-lbl">均线</span>`;
         }
-        return `<div class="cond-row"><span class="idx">${i + 1}.</span>${typeSel}${body}
-            <button class="btn-ghost" onclick="delCond('${side}',${i})">删除</button></div>`;
+        return `<div class="cond-row" data-i="${i}">
+            <div class="cond-top">
+                <span class="cond-idx">${i + 1}</span>
+                ${typeChips}
+            </div>
+            <div class="cond-params">${main}</div>
+            <button class="cond-x" title="删除该条件" onclick="delCond('${side}',${i})">×</button>
+        </div>`;
     }
 
     /** 组装策略组：页面百分数 → 小数 */
@@ -687,25 +1239,170 @@
         return {logic: document.getElementById(side + 'Logic').value, conditions: list};
     }
 
-    // ============ 执行回测 ============
+    // ============ 涨跌停成交（策略 3 阈值组合） ============
 
-    /** 策略 3 才需要填涨跌幅阈值，另外两个策略把输入框收起来 */
-    function toggleLimitRatio() {
-        const s = Number(document.getElementById('fLimitStrategy').value);
-        document.getElementById('fLimitRatioField').style.display = (s === 3) ? '' : 'none';
+    /** 单侧涨跌停配置初始化：绑定单选胶囊的点击，并画一次初始态 */
+    function initLimits() {
+        ['buy', 'sell'].forEach(side => {
+            const radio = document.getElementById(side + 'LimitRadio');
+            radio.addEventListener('click', e => {
+                const btn = e.target.closest('button[data-strategy]');
+                if (!btn) return;
+                limits[side].strategy = parseInt(btn.getAttribute('data-strategy'), 10);
+                renderLimit(side);
+            });
+        });
     }
 
-    /** 读取页面上的涨跌停成交配置，提交给后端 */
-    function buildLimitCfg() {
-        const limitStrategy = Number(document.getElementById('fLimitStrategy').value);
-        const cfg = {
-            limitStrategy: limitStrategy,
-            limitOp: document.getElementById('fLimitOp').value
-        };
-        if (limitStrategy === 3) {
-            cfg.limitRatio = Number(document.getElementById('fLimitRatio').value) / 100;
+    /** 组合关系分段控件：点击写回隐藏 select，让 buildRule 照旧读 value */
+    function bindLogics() {
+        ['buy', 'sell'].forEach(side => {
+            const seg = document.getElementById(side + 'LogicSeg');
+            seg.addEventListener('click', e => {
+                const b = e.target.closest('button[data-v]');
+                if (!b) return;
+                document.getElementById(side + 'Logic').value = b.getAttribute('data-v');
+                syncLogicSeg(side);
+            });
+        });
+    }
+
+    /** 按当前 select.value 高亮分段（导入/还原配置后也调它） */
+    function syncLogicSeg(side) {
+        const v = document.getElementById(side + 'Logic').value || 'and';
+        document.querySelectorAll('#' + side + 'LogicSeg button[data-v]')
+            .forEach(b => b.classList.toggle('on', b.getAttribute('data-v') === v));
+    }
+
+    /** 画某一侧的涨跌停面板：单选高亮 + 策略 3 才展开条件组 */
+    function renderLimit(side) {
+        const l = limits[side];
+        const radio = document.getElementById(side + 'LimitRadio');
+        const btns = radio.querySelectorAll('button[data-strategy]');
+        btns.forEach(b => b.classList.toggle('on', parseInt(b.getAttribute('data-strategy'), 10) === l.strategy));
+
+        const condsBox = document.getElementById(side + 'LimitConds');
+        const showConds = l.strategy === 3;
+        condsBox.classList.toggle('show', showConds);
+        if (!showConds) return;
+
+        const rows = document.getElementById(side + 'LimitRows');
+        rows.innerHTML = l.conds.map((c, i) => limitCondRow(side, i, c)).join('');
+        document.getElementById(side + 'LimitAdd').disabled = l.conds.length >= MAX_LIMIT_CONDS;
+    }
+
+    /** 单条阈值条件行：涨跌幅方向 + 大于/小于 + 数值(%)，删按钮靠右 */
+    function limitCondRow(side, i, c) {
+        const dirSel = `<select onchange="updateLimitCond('${side}',${i},'dir',this.value)">
+            <option value="gt"${c.dir === 'gt' ? ' selected' : ''}>涨幅</option>
+            <option value="lt"${c.dir === 'lt' ? ' selected' : ''}>跌幅</option>
+        </select>`;
+        const opSel = `<select onchange="updateLimitCond('${side}',${i},'op',this.value)">
+            <option value="gt"${c.op === 'gt' ? ' selected' : ''}>大于</option>
+            <option value="lt"${c.op === 'lt' ? ' selected' : ''}>小于</option>
+        </select>`;
+        return `<div class="limit-cond" data-i="${i}">
+            <span class="lbl">次日开盘</span>
+            ${dirSel}
+            ${opSel}
+            <input type="number" value="${c.ratio}" min="0" step="0.1"
+                onchange="updateLimitCond('${side}',${i},'ratio',Number(this.value))">
+            <span class="pct">%</span>
+            <span class="grow"></span>
+            <button type="button" class="btn-ghost del" onclick="delLimitCond('${side}',${i})">删</button>
+        </div>`;
+    }
+
+    function addLimitCond(side) {
+        if (limits[side].conds.length >= MAX_LIMIT_CONDS) {
+            return toast('涨跌停阈值条件最多 ' + MAX_LIMIT_CONDS + ' 条', 'err');
+        }
+        limits[side].conds.push({dir: 'gt', op: 'gt', ratio: 3});
+        // 增量追加：只在容器里插一行，不重画其它条件
+        const rows = document.getElementById(side + 'LimitRows');
+        const i = limits[side].conds.length - 1;
+        const wrap = document.createElement('div');
+        wrap.innerHTML = limitCondRow(side, i, limits[side].conds[i]);
+        const row = wrap.firstElementChild;
+        row.classList.add('fresh');
+        rows.appendChild(row);
+        document.getElementById(side + 'LimitAdd').disabled = limits[side].conds.length >= MAX_LIMIT_CONDS;
+    }
+
+    function delLimitCond(side, i) {
+        const rows = document.getElementById(side + 'LimitRows');
+        const row = rows.querySelector('.limit-cond[data-i="' + i + '"]');
+        if (row) row.remove();
+        limits[side].conds.splice(i, 1);
+        // 后面行 data-i 前移
+        Array.from(rows.querySelectorAll('.limit-cond')).forEach(r => {
+            const oldI = Number(r.getAttribute('data-i'));
+            if (oldI > i) {
+                r.setAttribute('data-i', oldI - 1);
+                r.querySelectorAll('select, input').forEach(el => {
+                    const oc = el.getAttribute('onchange');
+                    if (oc) el.setAttribute('onchange',
+                        oc.replace(/updateLimitCond\('([^']+)',\d+,/, "updateLimitCond('$1'," + (oldI - 1) + ","));
+                });
+                const delBtn = r.querySelector('.del');
+                if (delBtn) delBtn.setAttribute('onclick', "delLimitCond('" + side + "'," + (oldI - 1) + ")");
+            }
+        });
+        document.getElementById(side + 'LimitAdd').disabled = limits[side].conds.length >= MAX_LIMIT_CONDS;
+    }
+
+    /** 涨跌停条件的字段结构稳定（dir/op/ratio），不重画，只同步 DOM value */
+    function updateLimitCond(side, i, key, value) {
+        limits[side].conds[i][key] = value;
+        const rows = document.getElementById(side + 'LimitRows');
+        const row = rows.querySelector('.limit-cond[data-i="' + i + '"]');
+        if (!row) return;
+        row.querySelectorAll('select, input').forEach(el => {
+            const oc = el.getAttribute('onchange') || '';
+            const m = oc.match(/updateLimitCond\('[^']+',\d+,'([^']+)'/);
+            if (m && m[1] === key && el.value !== String(value)) el.value = value;
+        });
+    }
+
+    /** 读取某一侧卡片上的涨跌停成交配置（策略 3 阈值小数化），提交给后端 */
+    function buildLimitCfg(side) {
+        const l = limits[side];
+        const cfg = {strategy: l.strategy};
+        if (l.strategy === 3) {
+            cfg.conds = l.conds.map(c => ({
+                dir: c.dir,
+                op: c.op,
+                ratio: Number(c.ratio) / 100
+            }));
         }
         return cfg;
+    }
+
+    /** 策略 3 至少要一条有效条件（数值为不小于 0 的数） */
+    function limitCfgValid(cfg) {
+        return !!(cfg.conds && cfg.conds.length) &&
+            cfg.conds.every(c => !(c.ratio == null) && !isNaN(c.ratio) && c.ratio >= 0);
+    }
+
+    /** 把涨跌停配置还原到某一侧：兼容新版 conds[]，也兼容旧版单条 op/ratio */
+    function applyLimitCfg(side, cfg) {
+        if (!cfg) return;
+        const l = limits[side];
+        if (cfg.strategy != null) l.strategy = cfg.strategy;
+        const src = cfg.conds && cfg.conds.length
+            ? cfg.conds
+            // 旧格式：strategy=3 时只有单条 {op:'gt'|'lt', ratio(小数)}
+            : (cfg.op && cfg.ratio != null
+                ? [{dir: cfg.op, op: 'gt', ratio: cfg.ratio}]
+                : []);
+        if (src.length) {
+            l.conds = src.slice(0, MAX_LIMIT_CONDS).map(c => ({
+                dir: c.dir || 'gt',
+                op: c.op || 'gt',
+                ratio: Number(c.ratio) * 100
+            }));
+        }
+        renderLimit(side);
     }
 
     async function runBacktest() {
@@ -738,9 +1435,14 @@
         if (!conds.buy.length || !conds.sell.length) {
             return toast('买入和卖出策略都至少需要一个判断组件', 'err');
         }
-        const limitCfg = buildLimitCfg();
-        if (limitCfg.limitStrategy === 3 && !(limitCfg.limitRatio >= 0)) {
-            return toast('涨跌停策略 3 需要填写不小于 0 的涨跌幅阈值', 'err');
+        // 涨跌停：买入、卖出各一份独立配置，各自校验
+        const buyLimit = buildLimitCfg('buy');
+        const sellLimit = buildLimitCfg('sell');
+        if (buyLimit.strategy === 3 && !limitCfgValid(buyLimit)) {
+            return toast('买入涨跌停策略 3 至少要一条有效的涨跌幅阈值（数值 ≥ 0）', 'err');
+        }
+        if (sellLimit.strategy === 3 && !limitCfgValid(sellLimit)) {
+            return toast('卖出涨跌停策略 3 至少要一条有效的涨跌幅阈值（数值 ≥ 0）', 'err');
         }
 
         const btn = document.getElementById('btnRun');
@@ -761,7 +1463,8 @@
                 feeRate: feePct / 100,
                 buyRule: buildRule('buy'),
                 sellRule: buildRule('sell'),
-                ...limitCfg
+                buyLimit: buyLimit,
+                sellLimit: sellLimit
             });
             if (r.success) {
                 render(r.data);
@@ -835,7 +1538,8 @@
             feeRate: Number(document.getElementById('fFee').value) / 100,
             buyRule: buildRule('buy'),
             sellRule: buildRule('sell'),
-            ...buildLimitCfg()
+            buyLimit: buildLimitCfg('buy'),
+            sellLimit: buildLimitCfg('sell')
         };
         const blob = new Blob([JSON.stringify(cfg, null, 2)], {type: 'application/json'});
         const a = document.createElement('a');
@@ -860,10 +1564,14 @@
             if (cfg.feeRate != null) document.getElementById('fFee').value = Number(cfg.feeRate) * 100;
             if (cfg.buyRule) applyRule('buy', cfg.buyRule);
             if (cfg.sellRule) applyRule('sell', cfg.sellRule);
-            if (cfg.limitStrategy != null) document.getElementById('fLimitStrategy').value = cfg.limitStrategy;
-            if (cfg.limitOp) document.getElementById('fLimitOp').value = cfg.limitOp;
-            if (cfg.limitRatio != null) document.getElementById('fLimitRatio').value = Number(cfg.limitRatio) * 100;
-            toggleLimitRatio();
+            // 涨跌停：现版本买卖各一份；老配置只有一份 limitStrategy 时两边都套用
+            if (cfg.buyLimit || cfg.sellLimit || cfg.limitStrategy != null) {
+                const legacy = cfg.limitStrategy != null
+                    ? {strategy: cfg.limitStrategy, op: cfg.limitOp, ratio: cfg.limitRatio}
+                    : null;
+                applyLimitCfg('buy', cfg.buyLimit || legacy);
+                applyLimitCfg('sell', cfg.sellLimit || legacy);
+            }
             if (cfg.stockCode) {
                 codePicker.clear();
                 await codePicker.pickByCode(cfg.stockCode);
@@ -878,10 +1586,15 @@
         }
     }
 
-    /** 把策略组还原到页面：小数 → 百分数 / 倍数 */
+    /** 把策略组还原到页面：小数 → 百分数 / 倍数；超过上限的组件直接丢弃 */
     function applyRule(side, rule) {
         if (rule.logic) document.getElementById(side + 'Logic').value = rule.logic;
-        conds[side] = (rule.conditions || []).map(c => ({
+        syncLogicSeg(side);
+        const list = (rule.conditions || []).slice(0, MAX_CONDS);
+        if ((rule.conditions || []).length > MAX_CONDS) {
+            toast(`${side === 'buy' ? '买入' : '卖出'}策略超过 ${MAX_CONDS} 个组件，多余的已忽略`, 'err');
+        }
+        conds[side] = list.map(c => ({
             type: c.type || 'CHANGE',
             op: c.op || 'gt',
             n: c.n != null ? Number(c.n) : 5,
@@ -1249,6 +1962,8 @@
 
     renderConds('buy');
     renderConds('sell');
+    initLimits();
+    bindLogics();
     document.getElementById('fStart').addEventListener('change', renderSpanHint);
     document.getElementById('fEnd').addEventListener('change', renderSpanHint);
 
@@ -1258,7 +1973,8 @@
             document.getElementById('histPanel').style.display = 'none';
         }
         renderSpanHint();
-        toggleLimitRatio();
+        renderLimit('buy');
+        renderLimit('sell');
         loadHistory();
         // 从股票列表跳过来时带上 ?code=，直接预填标的
         const q = new URLSearchParams(location.search);

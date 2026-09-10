@@ -62,8 +62,6 @@ public class BacktestService {
     private static final int STRATEGY_NEXT_OPEN = 2;
     /** 涨跌停策略 3：次日开盘非涨跌停、且相对信号日收盘涨跌幅达阈值才成交 */
     private static final int STRATEGY_NEXT_COND = 3;
-    /** 策略 3 的比较方向：跌幅超过阈值 */
-    private static final String OP_LT = "lt";
 
     private final KlineSource klineSource;
     private final BacktestStore store;
@@ -393,7 +391,8 @@ public class BacktestService {
                              BigDecimal th, BacktestRunRequest req) {
         StockKlineDaily t = all.get(i);
         BigDecimal close = t.getClosePrice();
-        int strategy = req.getLimitStrategy();
+        BacktestRunRequest.LimitConfig limit = limitCfg(req, isBuy);
+        int strategy = limit.getStrategy();
 
         // T 日是否受阻：买入遇涨停（没人卖）、卖出遇跌停（没人买）
         boolean blocked = isBuy ? isLimitUp(t, th) : isLimitDown(t, th);
@@ -414,17 +413,56 @@ public class BacktestService {
         if (isBuy ? isOpenLimitUp(n, th) : isOpenLimitDown(n, th)) {
             return null;
         }
-        if (strategy == STRATEGY_NEXT_COND && req.getLimitRatio() != null) {
-            // 相对信号日 T 收盘价的涨跌幅满足条件才成交
-            BigDecimal ratio = req.getLimitRatio();
+        if (strategy == STRATEGY_NEXT_COND && hasConds(limit)) {
+            // 次日开盘相对信号日 T 收盘的带符号涨跌幅（涨幅为正、跌幅为负）
             BigDecimal chg = open.subtract(close).divide(close, SCALE_RATE, RoundingMode.HALF_UP);
-            boolean ok = OP_LT.equals(req.getLimitOp())
-                    ? chg.compareTo(ratio.negate()) < 0
-                    : chg.compareTo(ratio) > 0;
+            // 满足任一（或）条件即成交，否则作废
+            boolean ok = matchAnyLimitCond(limit, chg);
             return ok ? new Fill(i + 1, n.getTradeDate(), open) : null;
         }
-        // 策略 2（或策略 3 未配阈值）：按次日开盘价成交
+        // 策略 2（或策略 3 未配条件）：按次日开盘价成交
         return new Fill(i + 1, n.getTradeDate(), open);
+    }
+
+    /** 策略 3 是否配了阈值条件 */
+    private boolean hasConds(BacktestRunRequest.LimitConfig limit) {
+        return limit.getConds() != null && !limit.getConds().isEmpty();
+    }
+
+    /**
+     * 判断次日开盘的带符号涨跌幅 chg（涨幅为正、跌幅为负）是否命中任一条阈值条件。
+     *
+     * <p>每条条件 = 方向(dir) + 比较符(op) + 阈值(ratio)。方向决定走哪一轴并算出「该方向的幅度」：
+     * <ul>
+     *   <li>dir=up（涨幅）：当天需真的上涨（chg&gt;0），幅度 = chg</li>
+     *   <li>dir=down（跌幅）：当天需真的下跌（chg&lt;0），幅度 = -chg</li>
+     * </ul>
+     * 方向不符（该行不成立）则本行直接不命中；幅度再按 gt/lt 与 ratio 比较。
+     */
+    private boolean matchAnyLimitCond(BacktestRunRequest.LimitConfig limit, BigDecimal chg) {
+        for (BacktestRunRequest.LimitConfig.LimitCond c : limit.getConds()) {
+            if (c == null || c.getRatio() == null || c.getRatio().signum() < 0) {
+                continue;
+            }
+            BigDecimal mag = "down".equals(c.getDir()) ? chg.negate() : chg;
+            // 方向不符（如选涨幅当日却是下跌），本行不成立
+            if (mag.signum() < 0) {
+                continue;
+            }
+            boolean hit = "lt".equals(c.getOp())
+                    ? mag.compareTo(c.getRatio()) < 0
+                    : mag.compareTo(c.getRatio()) > 0;
+            if (hit) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 取某一侧的涨跌停处理配置：请求里没带（或为 null）时按「无视」处理 */
+    private BacktestRunRequest.LimitConfig limitCfg(BacktestRunRequest req, boolean isBuy) {
+        BacktestRunRequest.LimitConfig c = isBuy ? req.getBuyLimit() : req.getSellLimit();
+        return c != null ? c : new BacktestRunRequest.LimitConfig();
     }
 
     // ============ 成交与快照 ============
