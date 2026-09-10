@@ -1,1 +1,0 @@
-chart.dispatchAction({type:'dataZoom',start:60,end:100});'set'

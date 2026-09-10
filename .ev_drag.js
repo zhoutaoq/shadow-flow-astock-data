@@ -1,1 +1,0 @@
-(function(){var c=document.querySelector('#chart canvas');var r=c.getBoundingClientRect();var y=r.top+150,x0=r.left+r.width*0.8;function ev(t,x){c.dispatchEvent(new MouseEvent(t,{clientX:x,clientY:y,bubbles:true,cancelable:true,view:window}));}ev('mousedown',x0);for(var i=1;i<=12;i++){ev('mousemove',x0+i*18);}ev('mouseup',x0+216);return 'dragged';})()
