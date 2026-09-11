@@ -6,7 +6,8 @@
 
     <groupId>com.stock</groupId>
     <artifactId>stock-kline-data-crawler</artifactId>
-    <version>1.0.0</version>
+    <!-- 发布版本号：会写进 jar 清单的 Implementation-Version，钉钉「生产发布」启动消息直接读它 -->
+    <version>1.2.0</version>
     <packaging>jar</packaging>
 
     <parent>

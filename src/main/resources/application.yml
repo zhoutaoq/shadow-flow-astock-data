@@ -88,6 +88,13 @@ watch:
   interval-seconds: 10
   # 触发阈值（%）：与上一次成功查询的价格相比，涨/跌幅绝对值达到这个值就推钉钉
   threshold-percent: 0.5
+  # 启动通知：系统起来后推一条钉钉（首行标明「生产发布」+ 版本号）。
+  # 默认 false —— 本地开发反复重启不该往群里刷消息；
+  # 生产发布时在启动命令上显式打开：--watch.startup-notify.enabled=true（见 sh/remote.sh 的 ARGS）
+  startup-notify:
+    enabled: false
+    # 版本号：留空 = 自动取 jar 清单里的 Implementation-Version（即 pom 的 <version>）
+    version: ""
   # 并发查询的线程池大小
   thread-pool-size: 8
   # 涨停 / 跌停股票的"放量"判断（两个条件满足任一即告警；只盯当前封板中的标的）。

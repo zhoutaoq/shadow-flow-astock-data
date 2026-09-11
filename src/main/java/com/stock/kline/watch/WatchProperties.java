@@ -48,6 +48,8 @@ public class WatchProperties {
 
     private final Surge surge = new Surge();
 
+    private final StartupNotify startupNotify = new StartupNotify();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -122,6 +124,39 @@ public class WatchProperties {
 
     public Surge getSurge() {
         return surge;
+    }
+
+    public StartupNotify getStartupNotify() {
+        return startupNotify;
+    }
+
+    /**
+     * 启动通知：系统起来后推一条钉钉启动消息（含生产发布标识与版本号）。
+     *
+     * <p><b>默认关</b>——本地开发反复重启会一直打扰群里，所以本地不发；
+     * 生产发布时在启动命令上显式打开：<code>--watch.startup-notify.enabled=true</code>。
+     */
+    public static class StartupNotify {
+        /** 是否推送启动通知；默认 false = 本地不发消息 */
+        private boolean enabled = false;
+        /** 版本号：留空表示自动取 jar 清单里的 Implementation-Version（就是 pom 的 version） */
+        private String version = "";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getVersion() {
+            return version;
+        }
+
+        public void setVersion(String version) {
+            this.version = version == null ? "" : version;
+        }
     }
 
     /**

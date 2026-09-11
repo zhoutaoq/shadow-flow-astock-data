@@ -26,6 +26,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>只在配置了 webhook（<code>watch.dingtalk.webhook</code> 非空）时真正发送；
  * 未配置则整块静默，不打扰日志。
  *
+ * <p>启动通知再叠一层环境开关：<code>watch.startup-notify.enabled</code>
+ * <b>默认 false</b>（本地开发反复重启不发消息），生产发布时用
+ * <code>--watch.startup-notify.enabled=true</code> 打开，消息首行标明「生产发布」与版本号。
+ *
  * <p>实现要点：
  * <ul>
  *   <li>启动通知挂在 {@link ApplicationReadyEvent} 上，保证所有 bean 就绪、配置已载入后才发；</li>
@@ -84,15 +88,29 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         sendPool.shutdownNow();
     }
 
-    /** 应用就绪后推送启动消息（webhook 未配置则跳过） */
+    /**
+     * 应用就绪后推送启动消息。
+     *
+     * <p>两个前置条件：<b>启动通知开关打开</b>（{@code watch.startup-notify.enabled}，
+     * 本地默认关，生产发布时用命令行参数打开）+ webhook 已配置。
+     * 本地开发反复重启不该往群里刷消息，所以默认不下发。
+     */
     @Override
     public void onApplicationEvent(ApplicationReadyEvent event) {
+        if (!props.getStartupNotify().isEnabled()) {
+            log.info("[watch] 启动通知未开启（本地默认不发；生产发布用 "
+                    + "--watch.startup-notify.enabled=true 打开），本轮跳过");
+            return;
+        }
         if (!props.getDingtalk().configured()) {
+            log.warn("[watch] 启动通知已开启，但没有配置钉钉 webhook，跳过");
             return;
         }
         WatchSettings snap = store.snapshot();
-        String msg = buildStartup(snap);
-        dispatch(msg, "启动通知");
+        String version = resolveVersion();
+        log.info("[watch] 生产发布启动通知：版本 {}，标的 {} 只", version,
+                snap.getStocks() == null ? 0 : snap.getStocks().size());
+        dispatch(buildStartup(snap, version), "启动通知");
     }
 
     /** store 变更回调：只在与启动基线不同的名单/规则变化时推送差异 */
@@ -135,18 +153,33 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         dispatch(sb.toString().trim(), "配置变更通知");
     }
 
-    /** 启动消息：IP + 服务地址 + 盯盘名单 + 告警规则 */
-    private String buildStartup(WatchSettings snap) {
+    /** 启动消息：【生产发布】+ 版本号 + IP + 服务地址 + 盯盘名单 + 告警规则 */
+    private String buildStartup(WatchSettings snap, String version) {
         List<WatchSettings.StockRef> stocks = snap.getStocks() == null
                 ? new ArrayList<>() : snap.getStocks();
         String ip = WatchText.localIp();
         String port = env.getProperty("server.port", "80");
-        StringBuilder sb = new StringBuilder("盯盘系统已启动\n");
+        StringBuilder sb = new StringBuilder("【生产发布】盯盘系统 ").append(version).append(" 已启动\n");
         sb.append("IP：").append(ip).append('\n');
         sb.append("服务地址：http://").append(ip).append(':').append(port).append('\n');
         sb.append("盯盘股票（").append(stocks.size()).append("）：").append(stockText(stocks)).append('\n');
         sb.append("告警规则：").append(ruleText(snap)).append('\n');
         return sb.toString().trim();
+    }
+
+    /**
+     * 版本号：配置里写了就用配置的；没写就取 jar 清单里的 Implementation-Version
+     * （由 maven-jar-plugin 按 pom 的 {@code <version>} 写进去，生产 jar 就是发布版本）；
+     * 都取不到（比如从 IDE 直接跑 class）标 dev。
+     */
+    private String resolveVersion() {
+        String cfg = props.getStartupNotify().getVersion();
+        if (cfg != null && !cfg.trim().isEmpty()) {
+            return cfg.trim();
+        }
+        Package pkg = WatchNotifier.class.getPackage();
+        String fromJar = pkg == null ? null : pkg.getImplementationVersion();
+        return fromJar == null || fromJar.trim().isEmpty() ? "dev" : fromJar.trim();
     }
 
     private void dispatch(String content, String kind) {
