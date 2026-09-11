@@ -47,6 +47,9 @@ public class WatchController {
     private static final double MIN_THRESHOLD = 0.01, MAX_THRESHOLD = 20;
     /** 告警规则的"过去时长"用轮询间隔的倍数表示，至少 1 倍、最多 60 倍 */
     private static final int MIN_RULE_INTERVALS = 1, MAX_RULE_INTERVALS = 60;
+    /** 放量阈值：成交额 1万 ~ 100亿元；倍数 1 ~ 1000 倍 */
+    private static final double MIN_SURGE_AMOUNT_WAN = 1, MAX_SURGE_AMOUNT_WAN = 1000000;
+    private static final double MIN_SURGE_TIMES = 1, MAX_SURGE_TIMES = 1000;
     private static final int MAX_RULES = 8;
     private static final int MAX_STOCKS = 200;
 
@@ -133,6 +136,8 @@ public class WatchController {
         dt.put("webhook", s.getDingtalk() == null || s.getDingtalk().getWebhook() == null
                 ? "" : s.getDingtalk().getWebhook());
         data.put("dingtalk", dt);
+        // 涨跌停放量阈值（页面回显）：amountWan 单位万元，times 是相对上一间隔的倍数
+        data.put("surge", s.getSurge() == null ? new WatchSettings.SurgeCfg() : s.getSurge());
         data.put("stocks", s.getStocks());
         data.put("configFile", store.getFile() == null ? "" : store.getFile().toString());
         Map<String, Object> limits = new LinkedHashMap<>();
@@ -144,6 +149,10 @@ public class WatchController {
         limits.put("maxRuleIntervals", MAX_RULE_INTERVALS);
         limits.put("maxRules", MAX_RULES);
         limits.put("maxStocks", MAX_STOCKS);
+        limits.put("minSurgeAmountWan", MIN_SURGE_AMOUNT_WAN);
+        limits.put("maxSurgeAmountWan", MAX_SURGE_AMOUNT_WAN);
+        limits.put("minSurgeTimes", MIN_SURGE_TIMES);
+        limits.put("maxSurgeTimes", MAX_SURGE_TIMES);
         data.put("limits", limits);
         return data;
     }

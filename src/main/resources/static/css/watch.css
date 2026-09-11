@@ -23,4 +23,8 @@
         }
         .rule-row .rule-del:hover { color: var(--danger); }
 
+        /* 涨跌停放量的两个阈值输入框：固定宽度，避免被前后的说明文字挤变形 */
+        .rule-row .surge-amount { flex: 0 0 110px; }
+        .rule-row .surge-times  { flex: 0 0 90px; }
+
         /* ============ 钉钉区：单字段全宽，与告警规则行视觉一致 ============ */

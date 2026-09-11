@@ -90,6 +90,13 @@ watch:
   threshold-percent: 0.5
   # 并发查询的线程池大小
   thread-pool-size: 8
+  # 涨停 / 跌停股票的"放量"判断（两个条件满足任一即告警；只盯当前封板中的标的）。
+  # v1.2 起这两个阈值改为页面可配并落盘，这里只是「首次启动、还没有落盘配置文件」时的默认值。
+  surge:
+    # 单个轮询间隔的成交额超过多少万元算放量
+    amount-wan: 2000
+    # 单个轮询间隔的成交额大于上一个间隔的多少倍算放量
+    times: 10
   sina:
     base-url: http://hq.sinajs.cn
     connect-timeout-ms: 5000

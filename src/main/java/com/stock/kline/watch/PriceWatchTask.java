@@ -27,6 +27,10 @@ import java.util.concurrent.TimeUnit;
  *   <li>告警条件变成多规则（过去时长 + 偏离%），任一条命中即触发</li>
  *   <li>同一轮里多条规则同时触发合并为一条推送，列出所有触发条件</li>
  *   <li>推送内容含拉升成交量、成交额，并按涨幅分档措辞（上涨 / 快速上涨 / 急速拉升）</li>
+ *   <li>涨停 / 打开涨停 / 跌停 / 打开跌停的封板通知，补上成交量与成交额</li>
+ *   <li>新增"涨停 / 跌停放量"监控：单个轮询间隔的成交额超过配置阈值（默认 2000 万），
+ *       或大于上一个间隔成交额的配置倍数（默认 10 倍），即算放量并告警
+ *       （只在"不放量 → 放量"时推一次，不逐轮刷屏；阈值在盯盘页面配置）</li>
  * </ul>
  */
 @Component
@@ -46,6 +50,13 @@ public class PriceWatchTask {
     private static final BigDecimal TH_ST = new BigDecimal("4.5");
     private static final BigDecimal TH_GROW = new BigDecimal("19.5");
     private static final BigDecimal TH_MAIN = new BigDecimal("9.5");
+
+    /** 成交量显示用的进位基数：一万手 / 一亿手（手 = 股 / 100） */
+    private static final BigDecimal WAN_HAND = BigDecimal.valueOf(10000L);
+    private static final BigDecimal YI_HAND = BigDecimal.valueOf(100000000L);
+
+    /** 1 万元 = 10000 元：把配置里的"万元"阈值换算成行情接口给的"元" */
+    private static final BigDecimal YUAN_PER_WAN = BigDecimal.valueOf(10000L);
 
     private final WatchConfigStore store;
     private final SinaQuoteClient quoteClient;
@@ -79,7 +90,8 @@ public class PriceWatchTask {
      *
      * <p>采样按时间升序存放，每条 {毫秒时间戳, 价格}。轮询拿到新价就 append，
      * 超过最长规则时长的旧采样 trim 掉。成交额、成交量的上一次值也保留，
-     * 用来在告警消息里算"拉升成交量/成交额"。
+     * 用来在告警消息里算"拉升成交量/成交额"；另外留一个"上一个间隔的成交额增量"
+     * 当对比基数，供涨停 / 跌停的放量判断看倍数。
      */
     private static class State {
         /** (时间, 价格) 历史采样 */
@@ -87,6 +99,10 @@ public class PriceWatchTask {
         /** 上一次记录里的累计成交量/成交额，用来算差值 */
         BigDecimal lastVolume;
         BigDecimal lastAmount;
+        /** 上一个轮询间隔的成交额增量：与本轮增量比倍数，判断是否"突然放量" */
+        BigDecimal prevAmountDelta;
+        /** 上一轮是否已按"放量"告警过：只在"不放量 → 放量"时推一次，避免逐轮刷屏 */
+        boolean volumeSurge;
         /** 上次的封板状态：1 涨停 / 0 未涨跌停 / -1 跌停 */
         int limitState = LIMIT_NONE;
     }
@@ -173,6 +189,8 @@ public class PriceWatchTask {
     private boolean check(WatchTarget t, Quote q) {
         State st = states.computeIfAbsent(q.getCode(), k -> new State());
         int limitState = limitStateOf(q);
+        // 本轮增量必须在写新一轮基数之前算：它就是"这一个轮询间隔"的成交额
+        BigDecimal amountDelta = intervalAmountDelta(st, q);
 
         // 写新采样 + trim 旧采样（保留所有规则都够用的窗口）
         long maxWindowSec = maxRuleSeconds();
@@ -210,8 +228,21 @@ public class PriceWatchTask {
         if (st.history.size() < 2) {
             st.lastVolume = q.getVolume();
             st.lastAmount = q.getAmount();
+            st.prevAmountDelta = null;
+            st.volumeSurge = false;
             log.info("[watch] {} 建立基线：现价 {}（首轮不推送）", q.getName(), q.getPrice());
             return false;
+        }
+
+        // 放量监控：只盯当前封在涨停 / 跌停板上的标的；"不放量 → 放量"才推，避免逐轮刷屏。
+        // 开板（limitState 回到 NONE）就把窗口重置，下次重新封板再从头判断。
+        if (limitState == LIMIT_NONE) {
+            st.volumeSurge = false;
+        } else if (!st.volumeSurge && isSurge(amountDelta, st.prevAmountDelta, store.surge())) {
+            if (sendSurgeAlert(q, limitState, amountDelta, st.prevAmountDelta)) {
+                pushed = true;
+            }
+            st.volumeSurge = true;
         }
 
         // 多规则扫描：每条规则的"过去时长"= 该规则 intervals 倍 × 轮询间隔秒数
@@ -245,6 +276,7 @@ public class PriceWatchTask {
 
         st.lastVolume = q.getVolume();
         st.lastAmount = q.getAmount();
+        st.prevAmountDelta = amountDelta;
         return pushed;
     }
 
@@ -377,12 +409,50 @@ public class PriceWatchTask {
         return diff.signum() < 0 ? BigDecimal.ZERO : diff;
     }
 
-    /** 成交量按"手"显示（v 单位是"股"，1手=100股）：1234 → 1234 手；超过 1 亿手 → 1.23 亿手 */
+    /**
+     * 本轮相对上一轮的累计成交额增量，即"这一个轮询间隔"的成交额（放量判断的输入）。
+     *
+     * <p>首轮还没有基数、或累计值出现回退（数据异常）时返回 null，表示本轮无法判断放量。
+     */
+    private static BigDecimal intervalAmountDelta(State st, Quote q) {
+        if (q.getAmount() == null || st.lastAmount == null) {
+            return null;
+        }
+        BigDecimal diff = q.getAmount().subtract(st.lastAmount);
+        return diff.signum() < 0 ? null : diff;
+    }
+
+    /**
+     * 是否放量：单个轮询间隔成交额超过配置的成交额阈值（万元），
+     * 或大于配置倍数 × 上一个间隔成交额。两个阈值都在盯盘页面配置（默认 2000 万 / 10 倍）。
+     *
+     * @param cur  本轮间隔成交额（元），null 表示无法判断
+     * @param prev 上一轮间隔成交额（元），null 表示没有可比基数
+     * @param cfg  放量阈值；null 时按默认阈值兜底，避免脏配置把判断打崩
+     */
+    static boolean isSurge(BigDecimal cur, BigDecimal prev, WatchSettings.SurgeCfg cfg) {
+        if (cur == null || cur.signum() <= 0) {
+            return false;
+        }
+        double amountWan = cfg == null ? 2000 : cfg.getAmountWan();
+        double times = cfg == null ? 10 : cfg.getTimes();
+        BigDecimal threshold = BigDecimal.valueOf(amountWan).multiply(YUAN_PER_WAN);
+        if (threshold.signum() > 0 && cur.compareTo(threshold) > 0) {
+            return true;
+        }
+        return prev != null && prev.signum() > 0 && times > 0
+                && cur.compareTo(prev.multiply(BigDecimal.valueOf(times))) > 0;
+    }
+
+    /** 成交量按"手"显示（v 单位是"股"，1手=100股）：1234 → 1234 手；万手 / 亿手自动进位 */
     static String formatVolume(BigDecimal v) {
         if (v == null) return "—";
         BigDecimal hand = v.divide(BigDecimal.valueOf(100), 2, BigDecimal.ROUND_HALF_UP);
-        if (hand.compareTo(BigDecimal.valueOf(100000000)) >= 0) {
-            return hand.divide(BigDecimal.valueOf(100000000), 2, BigDecimal.ROUND_HALF_UP).toPlainString() + " 亿手";
+        if (hand.compareTo(YI_HAND) >= 0) {
+            return hand.divide(YI_HAND, 2, BigDecimal.ROUND_HALF_UP).toPlainString() + " 亿手";
+        }
+        if (hand.compareTo(WAN_HAND) >= 0) {
+            return hand.divide(WAN_HAND, 2, BigDecimal.ROUND_HALF_UP).toPlainString() + " 万手";
         }
         return hand.toPlainString() + " 手";
     }
@@ -439,6 +509,8 @@ public class PriceWatchTask {
     /**
      * 推送封板 / 开板通知。
      *
+     * <p>消息带上当日累计成交量与成交额，方便直接看封板力度。
+     *
      * @param state  涨停还是跌停
      * @param closed true = 刚封上板，false = 刚打开板
      */
@@ -452,11 +524,47 @@ public class PriceWatchTask {
         BigDecimal pct = q.changePercent();
         String pctText = pct == null ? "—" : pct.toPlainString() + "%";
         String msg = q.getName() + " " + word
-                + "，现价 " + q.getPrice().toPlainString() + " 元，涨跌幅为 " + pctText + "。";
+                + "，现价 " + q.getPrice().toPlainString() + " 元，涨跌幅为 " + pctText
+                + "，成交量 " + formatVolume(q.getVolume())
+                + "，成交额 " + formatAmount(q.getAmount()) + "。";
         if (notifier.send(msg)) {
             log.info("[watch] 已推送：{}", msg);
         } else {
             log.warn("[watch] 钉钉未推送（webhook 未配置或调用失败），内容：{}", msg);
         }
+    }
+
+    /**
+     * 推送"涨停 / 跌停放量"通知。
+     *
+     * <p>成交额说的是"本区间 vs 上区间"：本区间 = 本轮轮询间隔的成交额增量，
+     * 上区间 = 上一个轮询间隔的增量，两者可比时才给出放大倍数。成交量同样取本区间增量。
+     *
+     * @return 是否真的推成功（失败也照样记状态，跟封板通知一个口径，不逐轮重试刷屏）
+     */
+    private boolean sendSurgeAlert(Quote q, int state, BigDecimal curAmount, BigDecimal prevAmount) {
+        String word = state == LIMIT_UP ? "涨停" : "跌停";
+        BigDecimal pct = q.changePercent();
+        StringBuilder sb = new StringBuilder();
+        sb.append(q.getName()).append(' ').append(word).append("放量");
+        sb.append("，现价 ").append(q.getPrice().toPlainString()).append(" 元");
+        sb.append("，涨跌幅 ").append(pct == null ? "—" : pct.toPlainString()).append('%');
+        sb.append("，本区间成交额 ").append(formatAmount(curAmount));
+        if (prevAmount != null) {
+            sb.append("（上区间 ").append(formatAmount(prevAmount));
+            if (prevAmount.signum() > 0 && curAmount != null && curAmount.signum() > 0) {
+                BigDecimal times = curAmount.divide(prevAmount, 1, BigDecimal.ROUND_HALF_UP);
+                sb.append("，放大 ").append(times.toPlainString()).append(" 倍");
+            }
+            sb.append("）");
+        }
+        sb.append("，本区间成交量 ").append(formatVolume(volumeDelta(q))).append('。');
+        String msg = sb.toString();
+        if (notifier.send(msg)) {
+            log.info("[watch] 已推送：{}", msg);
+            return true;
+        }
+        log.warn("[watch] 钉钉未推送（webhook 未配置或调用失败），内容：{}", msg);
+        return false;
     }
 }

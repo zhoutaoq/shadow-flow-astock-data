@@ -53,6 +53,9 @@ public class WatchConfigStore {
      * 至少 1 个周期（必须横跨一次轮询才有"过去"的语义）；最多 60 个周期，避免太久远。
      */
     private static final int MIN_RULE_INTERVALS = 1, MAX_RULE_INTERVALS = 60;
+    /** 放量阈值范围：成交额 1万 ~ 100亿元；倍数 1 ~ 1000 倍 */
+    private static final double MIN_SURGE_AMOUNT_WAN = 1, MAX_SURGE_AMOUNT_WAN = 1000000;
+    private static final double MIN_SURGE_TIMES = 1, MAX_SURGE_TIMES = 1000;
     /** 最多允许的规则条数：UI / 落盘 / 推送合并都要照单全收，太多了没意义 */
     private static final int MAX_RULES = 8;
     /** 盯盘名单上限：每轮并发查一遍，太多既慢又容易被行情接口限流 */
@@ -131,6 +134,7 @@ public class WatchConfigStore {
         }
         copy.setRules(rules);
         copy.setDingtalk(copyDingtalk(current.getDingtalk()));
+        copy.setSurge(copySurge(current.getSurge()));
         List<WatchSettings.StockRef> refs = new ArrayList<>(current.getStocks().size());
         for (WatchSettings.StockRef r : current.getStocks()) {
             refs.add(new WatchSettings.StockRef(r.getCode(), r.getName()));
@@ -159,6 +163,11 @@ public class WatchConfigStore {
             out.add(new WatchSettings.Rule(r.getIntervals(), r.getPercent()));
         }
         return out;
+    }
+
+    /** 放量阈值的快照（外部只读，不要 push 进来） */
+    public synchronized WatchSettings.SurgeCfg surge() {
+        return copySurge(current.getSurge());
     }
 
     /** 盯盘标的（供轮询使用）；名称缺失时按名录补一次 */
@@ -232,6 +241,7 @@ public class WatchConfigStore {
         WatchSettings.DingTalkCfg dt = new WatchSettings.DingTalkCfg();
         dt.setWebhook(props.getDingtalk().getWebhook() == null ? "" : props.getDingtalk().getWebhook());
         s.setDingtalk(dt);
+        s.setSurge(new WatchSettings.SurgeCfg(props.getSurge().getAmountWan(), props.getSurge().getTimes()));
         s.setStocks(new ArrayList<>());
         return s;
     }
@@ -285,6 +295,14 @@ public class WatchConfigStore {
             out.setWebhook(src.getWebhook() == null ? "" : src.getWebhook());
         }
         return out;
+    }
+
+    /** 放量阈值拷贝；null 时退回 yml 默认值，保证调用方永远拿到可用对象 */
+    private WatchSettings.SurgeCfg copySurge(WatchSettings.SurgeCfg src) {
+        if (src == null) {
+            return new WatchSettings.SurgeCfg(props.getSurge().getAmountWan(), props.getSurge().getTimes());
+        }
+        return new WatchSettings.SurgeCfg(src.getAmountWan(), src.getTimes());
     }
 
     private static boolean isBlank(String s) {
@@ -357,6 +375,8 @@ public class WatchConfigStore {
         }
         s.setRules(out);
 
+        normalizeSurge(s);
+
         List<WatchSettings.StockRef> stockSrc = s.getStocks() == null
                 ? new ArrayList<>() : s.getStocks();
         List<WatchSettings.StockRef> stockOut = new ArrayList<>();
@@ -381,6 +401,30 @@ public class WatchConfigStore {
             stockOut.add(new WatchSettings.StockRef(code, name));
         }
         s.setStocks(stockOut);
+    }
+
+    /**
+     * 放量阈值：越界、非法（含 null）就退回 yml 默认值。
+     *
+     * <p>不夹到边界值而是整体退回默认——夹到 1 万元会让"几乎每轮都算放量"，
+     * 反而制造一堆告警，退回默认更安全。
+     */
+    private void normalizeSurge(WatchSettings s) {
+        WatchSettings.SurgeCfg sg = s.getSurge();
+        if (sg == null) {
+            s.setSurge(new WatchSettings.SurgeCfg(props.getSurge().getAmountWan(), props.getSurge().getTimes()));
+            return;
+        }
+        if (!(sg.getAmountWan() >= MIN_SURGE_AMOUNT_WAN && sg.getAmountWan() <= MAX_SURGE_AMOUNT_WAN)) {
+            log.warn("[watch] 放量成交额阈值 {} 万元超出 {} ~ {} 万元，已退回默认 {} 万元",
+                    sg.getAmountWan(), MIN_SURGE_AMOUNT_WAN, MAX_SURGE_AMOUNT_WAN, props.getSurge().getAmountWan());
+            sg.setAmountWan(props.getSurge().getAmountWan());
+        }
+        if (!(sg.getTimes() >= MIN_SURGE_TIMES && sg.getTimes() <= MAX_SURGE_TIMES)) {
+            log.warn("[watch] 放量倍数 {} 超出 {} ~ {}，已退回默认 {}",
+                    sg.getTimes(), MIN_SURGE_TIMES, MAX_SURGE_TIMES, props.getSurge().getTimes());
+            sg.setTimes(props.getSurge().getTimes());
+        }
     }
 
     private String nameOf(String code) {

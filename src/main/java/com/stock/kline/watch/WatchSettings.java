@@ -14,6 +14,8 @@ import java.util.List;
  * 钉钉 webhook 也放进这份配置（落盘里就是明文，靠密码门 + 部署账号可见性兜底）。
  * 时间长度按"轮询间隔的倍数"计量，把"轮询间隔 60s、过去 3 个周期 = 180 秒"这种语义化，
  * 页面上就不用再独立维护一个时长字段。
+ *
+ * <p>涨跌停的"放量"判断阈值（{@link SurgeCfg}）同样放在这份配置里，页面可改、落盘持久化。
  */
 public class WatchSettings {
 
@@ -32,6 +34,9 @@ public class WatchSettings {
 
     /** 钉钉机器人配置（落盘字段） */
     private DingTalkCfg dingtalk = new DingTalkCfg();
+
+    /** 涨停 / 跌停股票的"放量"判断阈值（页面可改） */
+    private SurgeCfg surge = new SurgeCfg();
 
     /** 盯盘股票集合 */
     private List<StockRef> stocks = new ArrayList<>();
@@ -66,6 +71,14 @@ public class WatchSettings {
 
     public void setDingtalk(DingTalkCfg dingtalk) {
         this.dingtalk = dingtalk == null ? new DingTalkCfg() : dingtalk;
+    }
+
+    public SurgeCfg getSurge() {
+        return surge;
+    }
+
+    public void setSurge(SurgeCfg surge) {
+        this.surge = surge == null ? new SurgeCfg() : surge;
     }
 
     public List<StockRef> getStocks() {
@@ -142,6 +155,43 @@ public class WatchSettings {
 
         public void setWebhook(String webhook) {
             this.webhook = webhook;
+        }
+    }
+
+    /**
+     * 涨停 / 跌停股票的"放量"判断阈值（落盘字段，页面可改）。
+     *
+     * <p>两个条件满足任一即算放量：单个轮询间隔的成交额超过 {@code amountWan} 万元，
+     * 或者大于上一个间隔成交额的 {@code times} 倍。只对当前封在涨停 / 跌停板上的标的生效。
+     */
+    public static class SurgeCfg {
+        /** 单个轮询间隔的成交额阈值（万元）：超过它就算放量 */
+        private double amountWan = 2000;
+        /** 放量倍数：单个轮询间隔成交额大于上一间隔的多少倍算放量 */
+        private double times = 10;
+
+        public SurgeCfg() {
+        }
+
+        public SurgeCfg(double amountWan, double times) {
+            this.amountWan = amountWan;
+            this.times = times;
+        }
+
+        public double getAmountWan() {
+            return amountWan;
+        }
+
+        public void setAmountWan(double amountWan) {
+            this.amountWan = amountWan;
+        }
+
+        public double getTimes() {
+            return times;
+        }
+
+        public void setTimes(double times) {
+            this.times = times;
         }
     }
 

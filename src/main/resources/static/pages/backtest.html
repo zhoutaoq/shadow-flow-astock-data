@@ -395,8 +395,19 @@
             rebindCondRow(fresh, side, i);
             return;
         }
-        // 其余字段：op / n / m / x / ratio → 直接同步 DOM 值
+        if (key === 'op') {
+            // 大于/小于 在策略行里是 button chip（不是 select/input），
+            // syncCondField 只扫 select/input 扫不到它 → 必须单独切换高亮
+            syncOpChips(row, value);
+        }
+        // 其余字段：n / m / x / ratio → 直接同步 DOM 值
         syncCondField(row, key, value);
+    }
+
+    /** 切换某一行「大于/小于」chip 的选中态（chip 是 button，不进 syncCondField 的 select/input 扫描） */
+    function syncOpChips(row, op) {
+        row.querySelectorAll('.cond-op button[data-op]').forEach(b =>
+            b.classList.toggle('on', b.getAttribute('data-op') === op));
     }
 
     /** 把 condRow 模板里 inline onclick 的索引校正到当前下标 i（用于 delCond 后行序前移） */

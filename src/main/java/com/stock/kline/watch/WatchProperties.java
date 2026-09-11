@@ -46,6 +46,8 @@ public class WatchProperties {
 
     private final DingTalk dingtalk = new DingTalk();
 
+    private final Surge surge = new Surge();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -116,6 +118,38 @@ public class WatchProperties {
 
     public DingTalk getDingtalk() {
         return dingtalk;
+    }
+
+    public Surge getSurge() {
+        return surge;
+    }
+
+    /**
+     * 涨停 / 跌停股票的"放量"判断默认阈值。
+     *
+     * <p>只在「首次启动、还没有落盘配置文件」时作为初始值，之后一律以落盘配置（页面可改）为准。
+     */
+    public static class Surge {
+        /** 单个轮询间隔的成交额超过多少万元算放量 */
+        private double amountWan = 2000;
+        /** 单个轮询间隔的成交额大于上一个间隔的多少倍算放量 */
+        private double times = 10;
+
+        public double getAmountWan() {
+            return amountWan;
+        }
+
+        public void setAmountWan(double amountWan) {
+            this.amountWan = amountWan;
+        }
+
+        public double getTimes() {
+            return times;
+        }
+
+        public void setTimes(double times) {
+            this.times = times;
+        }
     }
 
     /** 新浪行情接口 */
