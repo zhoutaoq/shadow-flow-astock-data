@@ -535,6 +535,30 @@
         maybePrefetch();
     });
 
+    /**
+     * 关键补丁：datazoom 事件只在窗口值「变化」时才派发。
+     * 无数据库模式初始视窗就是全部已加载数据（start=0），往左拖时窗口值
+     * 已到边界不再变化，ECharts 不发事件，上面的 datazoom 回调永远不执行，
+     * maybePrefetch 就永远不会被触发——表现为"无法左拉、也不自动补数"。
+     *
+     * 这里自己跟踪按下/拖动手势：按下瞬间和拖动过程中都主动探一次边界，
+     * 靠 maybePrefetch 内部的 fetching 防重入，高频调用无副作用。
+     */
+    const chartEl = document.getElementById('chart');
+    let chartDragging = false;
+    chartEl.addEventListener('mousedown', function () {
+        chartDragging = true;
+        maybePrefetch();
+    });
+    window.addEventListener('mouseup', function () {
+        chartDragging = false;
+    });
+    chartEl.addEventListener('mousemove', function () {
+        if (chartDragging) {
+            maybePrefetch();
+        }
+    });
+
     window.addEventListener('resize', () => chart.resize());
     document.querySelectorAll('.ma').forEach(x => x.onchange = () => {
         if (state.rows.length) paint(false);

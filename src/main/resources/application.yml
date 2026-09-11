@@ -4,6 +4,12 @@ server:
     encoding:
       charset: UTF-8
       force: true
+  # 压缩静态资源与接口响应：echarts.min.js 1MB gzip 后约 330KB，
+  # 低带宽服务器（~1Mbps）上首屏从 8s 降到 ~2.5s
+  compression:
+    enabled: true
+    min-response-size: 2048
+    mime-types: text/html,text/css,application/javascript,application/json
 
 spring:
   application:
@@ -33,8 +39,9 @@ spring:
     default-property-inclusion: non_null
   mvc:
     static-path-pattern: /**
-  # 开发期禁止浏览器缓存静态资源（HTML/JS/CSS），避免「软刷新仍吃旧页面」的缓存坑。
-  # 生产部署可删除这段，改回带 hash 的版本戳方案。
+  # 静态资源缓存策略：HTML 仍 no-store（改了立刻生效）；
+  # css/js/vendor 由 StaticCacheConfig 单独放行缓存 7 天（URL 带版本戳，发版即失效），
+  # 否则 1MB 的 echarts 在 ~1Mbps 带宽下每次开页都要重下 8 秒。
   web:
     resources:
       cache:
