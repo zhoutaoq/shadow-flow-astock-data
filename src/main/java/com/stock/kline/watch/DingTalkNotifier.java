@@ -17,6 +17,9 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>实际推送仍是 POST 一段 JSON 到 webhook，body 形如
  * <code>{"msgtype":"text","text":{"content":"..."}}</code>。
+ *
+ * <p>两个入口：{@link #send(String)} 走盯盘自己的 webhook（自动补关键词前缀），
+ * {@link #post(String, String)} 是通用入口，供用户反馈等模块指定 webhook 复用。
  */
 public class DingTalkNotifier {
 
@@ -36,29 +39,41 @@ public class DingTalkNotifier {
     }
 
     /**
-     * 推送一条文本消息。
+     * 推送一条盯盘文本消息：用 {@code watch.dingtalk.webhook}，并自动补上
+     * <code>[智能盯盘]</code> 前缀满足机器人关键词校验。
      *
      * @return 是否推送成功（webhook 未配置时返回 false，由调用方决定是否记日志）
      */
     public boolean send(String content) {
-        content = "[智能盯盘] " + content;
-        WatchProperties.DingTalk dt = props.getDingtalk();
-        if (!dt.configured()) {
+        return post(props.getDingtalk().getWebhook(), "[智能盯盘] " + content);
+    }
+
+    /**
+     * 通用文本推送：把 content <b>原样</b> POST 到指定 webhook。
+     *
+     * <p>用户反馈等其它模块复用它，避免各自再写一遍 HTTP + JSON 转义。
+     * 注意钉钉「自定义关键词」模式下消息文本必须含机器人后台配的关键词，
+     * 这个前缀由调用方自己拼（盯盘那边是 {@code [智能盯盘] }）。
+     *
+     * @param webhook 目标机器人地址，空白视为未配置、直接返回 false
+     * @return 是否推送成功（HTTP 2xx 且响应体已读取）
+     */
+    public boolean post(String webhook, String content) {
+        if (webhook == null || webhook.trim().isEmpty()) {
             return false;
         }
         try {
-            String url = dt.getWebhook().trim();
             String body = "{\"msgtype\":\"text\",\"text\":{\"content\":" + json(content) + "}}";
-            String resp = post(url, body);
-            log.info("[watch] 钉钉推送返回 {}", resp);
+            String resp = postHttp(webhook.trim(), body);
+            log.info("[dingtalk] 钉钉推送返回 {}", resp);
             return true;
         } catch (Exception e) {
-            log.error("[watch] 钉钉推送失败: {}", e.getMessage());
+            log.error("[dingtalk] 钉钉推送失败: {}", e.getMessage());
             return false;
         }
     }
 
-    private String post(String urlStr, String body) throws IOException {
+    private String postHttp(String urlStr, String body) throws IOException {
         HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(5000);

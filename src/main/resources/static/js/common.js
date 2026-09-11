@@ -4,7 +4,7 @@
 /**
  * 由 /api/mode 填充。两种模式共用一套页面，导航按「是否依赖库表」裁剪：
  * 无数据库模式下不生成「数据更新」整组与「调用日志」「接口调试」，
- * 只剩 概览 / 分析回测（股票列表 · K线分析 · 策略回测）/ 系统配置。
+ * 只剩 概览 / 分析回测（股票列表 · K线分析 · 策略回测）/ 系统（系统配置 · 用户反馈）。
  * 取不到接口时按「数据库模式」渲染，避免一次请求失败导致整页没导航。
  */
 const MODE = {
@@ -350,9 +350,9 @@ function renderThemeToggle() {
  * <p>两种模式共用同一套页面：<code>db: true</code> 的项只在数据库模式显示
  * （「数据更新」整组依赖库表，「调用日志」「接口调试」也只记在库里）；
  * 一级菜单下所有子项都被隐藏时，一级菜单本身也不显示，
- * 所以数据库模式下是 概览 / 分析回测（3 项）/ 系统（系统配置）。
+ * 所以数据库模式下是 概览 / 分析回测（3 项）/ 系统（系统配置 · 用户反馈）。
  *
- * <p>无数据库模式不走这套过滤，直接用下面的 {@link NAV_NO_DB} 铺平 6 个一级菜单。
+ * <p>无数据库模式不走这套过滤，直接用下面的 {@link NAV_NO_DB} 铺平 7 个一级菜单。
  */
 const NAV = [
     {text: '概览', href: '/'},
@@ -374,7 +374,8 @@ const NAV = [
         text: '系统', children: [
             {text: '调用日志', href: '/pages/api-log.html', db: true},
             {text: '接口调试', href: '/pages/debug.html', db: true},
-            {text: '系统配置', href: '/pages/config.html'}
+            {text: '系统配置', href: '/pages/config.html'},
+            {text: '用户反馈', href: '/pages/feedback.html'}
         ]
     }
 ];
@@ -387,7 +388,7 @@ function navVisible(item) {
 /**
  * 无数据库模式的一级菜单：全部平级、不分组。
  *
- * <p>这套模式下没有库表，能用的一共就这 6 个入口，
+ * <p>这套模式下没有库表，能用的一共就这 7 个入口，
  * 再按「分析回测 / 系统」分组只会多点一次鼠标、还容易被误读成还有别的隐藏功能。
  */
 const NAV_NO_DB = [
@@ -396,7 +397,8 @@ const NAV_NO_DB = [
     {text: 'K线查看', href: '/pages/chart.html'},
     {text: '策略回测', href: '/pages/backtest.html'},
     {text: '盯盘', href: '/pages/watch.html'},
-    {text: 'token配置', href: '/pages/config.html'}
+    {text: 'token配置', href: '/pages/config.html'},
+    {text: '用户反馈', href: '/pages/feedback.html'}
 ];
 
 /** 渲染导航并高亮当前页面（命中二级时一级也点亮） */
@@ -527,7 +529,7 @@ function whenTokenReady() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260910b（v1.3：亮/暗主题 / 设计令牌统一 / 数字等宽）');
+    console.info('[金牛数据] 前端版本 20260911b（v1.3：亮/暗主题 / 设计令牌统一 / 数字等宽；v1.2.1：用户反馈）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();

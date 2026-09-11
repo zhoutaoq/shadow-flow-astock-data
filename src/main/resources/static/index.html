@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260911a">
+    <link rel="stylesheet" href="/css/common.css?v=20260911b">
     <link rel="stylesheet" href="/css/home.css?v=20260910d">
 </head>
 <body>
@@ -229,7 +229,7 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260911a"></script>
+<script src="/js/common.js?v=20260911b"></script>
 <script src="/js/date-picker.js"></script>
 <script src="/js/home.js?v=20260910d"></script>
 <script>
@@ -247,6 +247,8 @@
             '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>'],
         ['条件更新', '/pages/update-filter.html', '按市场/关键字筛选后批量同步',
             '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>'],
+        ['用户反馈', '/pages/feedback.html', '写下问题或建议，提交即实时推送钉钉',
+            '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.3 9.3 0 0 1-2.6-.4L4 21l1.4-4.2A8.4 8.4 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/>'],
         ['接口调试', '/pages/debug.html', '测试菜单：直连供应商接口（收在「系统」下）',
             '<path d="M4 17l6-5-6-5"/><path d="M13 19h7"/>']
     ];
@@ -262,7 +264,9 @@
         ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值（需密码）',
             '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 8-3 8h18s-3-2-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'],
         ['token配置', '/pages/config.html', '维护 waizao 令牌（内容不支持查看）',
-            '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 3h3v3"/>']
+            '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 3h3v3"/>'],
+        ['用户反馈', '/pages/feedback.html', '写下问题或建议，提交即实时推送钉钉',
+            '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.3 9.3 0 0 1-2.6-.4L4 21l1.4-4.2A8.4 8.4 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/>']
     ];
 
     function renderQuick(list) {
@@ -285,7 +289,7 @@
     function renderModeDesc() {
         document.getElementById('modeDesc').innerHTML =
             '后端没有连数据库：日K每次向供应商现取，回测跑完只返回结果、不留存历史。'
-            + '可用功能：<b>概览</b> / <b>股票列表</b> / <b>K线查看</b> / <b>策略回测</b> / <b>盯盘</b> / <b>token配置</b>；'
+            + '可用功能：<b>概览</b> / <b>股票列表</b> / <b>K线查看</b> / <b>策略回测</b> / <b>盯盘</b> / <b>token配置</b> / <b>用户反馈</b>；'
             + '单次查询跨度上限 <b>' + MODE.maxSpanDays + '</b> 个自然日。'
             + (hasCustomWaizaoToken()
                 ? '已使用自定义令牌（内容不可查看，30 天有效）。'

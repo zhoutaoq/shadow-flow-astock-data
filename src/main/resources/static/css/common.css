@@ -848,6 +848,27 @@ input.sp-input {
     animation: shimmer 1.4s linear infinite;
 }
 
+/* ============ 用户反馈 ============ */
+/* 反馈用多行输入，比普通 input 高得多，这里只补宽度与高度，配色仍走上面的 textarea 规则 */
+.fb-field textarea {
+    width: 100%;
+    min-height: 170px;
+    line-height: 1.65;
+    resize: vertical;
+    box-sizing: border-box;
+}
+.fb-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+    margin-top: var(--sp-3);
+}
+.fb-count { font-size: var(--fs-12); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.fb-count.over { color: var(--danger); }
+.fb-actions { display: flex; gap: var(--sp-2); }
+
 /* 尊重系统"减少动态效果"设置 */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

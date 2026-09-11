@@ -51,10 +51,8 @@ public class WatchConfig {
         return new SinaQuoteClient(props);
     }
 
-    @Bean
-    public DingTalkNotifier dingTalkNotifier() {
-        return new DingTalkNotifier(props);
-    }
+    // DingTalkNotifier 的装配挪到了 NotifyConfig（不受 watch.enabled 约束），
+    // 这样关掉盯盘时用户反馈仍能推钉钉。
 
     /** 并发查行情的线程池，线程名统一 watch-quote-* 便于排查 */
     @Bean("watchExecutor")

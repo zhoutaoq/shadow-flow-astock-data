@@ -121,6 +121,21 @@ watch:
     # 不再支持「加签」，所以也不需要 secret 字段。
     webhook: "https://oapi.dingtalk.com/robot/send?access_token=ebcfa7713cec091fcbabaff738f68e3453365b47bf43d8e65894a9793fc33317"
 
+# 用户使用反馈：页面提交后推一条钉钉，消息含提交人 IP、提交时间与反馈内容。
+# 反馈不落库（无数据库模式没有表），留痕靠两处：app.log 的 [feedback] 日志 + 钉钉消息。
+feedback:
+  # 总开关：false 时接口直接拒绝，页面提交会提示"反馈入口已关闭"
+  enabled: true
+  # 钉钉机器人 Webhook；留空 = 复用上面的 watch.dingtalk.webhook（反馈与盯盘告警进同一个群，不用重复配）
+  webhook: ""
+  # 机器人「自定义关键词」模式下必须命中的词（消息首行拼成 [关键词] ...）。
+  # 复用盯盘机器人时保持"智能盯盘"别改；换别的机器人就改成对方后台配的那个词。
+  keyword: "智能盯盘"
+  # 单条反馈的内容上限（字符）
+  max-length: 500
+  # 同一 IP 两次提交的最小间隔（秒）：挡误连点与刷屏
+  cooldown-seconds: 30
+
 logging:
   level:
     root: INFO
