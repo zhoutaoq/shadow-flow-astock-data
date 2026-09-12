@@ -140,11 +140,25 @@ cython_debug/
 # IDE 与助手本地目录（不入库）
 .idea/
 .workbuddy/
-sh
+.workbuddy_verify*
+.vscode/
 
-curl -X POST "http://localhost:5061/getHistoryBondResidualMaturityByBondKeyAndListedMarket2" -H "Content-Type: application/json" -d "{\"date\":\"2026-09-10\",\"bondKeyListedMarketList\":[\"W0000892023CORLMN02CIB\"]}"
+# 根目录临时截图 / 验证产物：一律不入库（曾误入 .workbuddy_verify2.png、shot_*.png）
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+
+# 本机运行期盯盘配置：含钉钉 webhook 与个人盯盘名单，不入库
+/watch-config.json
+
 # v1.3 数据文件根目录：运行期生成，不入库
 data/
 
 # 发布配置：含服务器地址与口令，不入库
 stock-kline-deploy-config.yaml
+
+# 构建产物 / 日志
+target/
+*.log
+*.jar.new
