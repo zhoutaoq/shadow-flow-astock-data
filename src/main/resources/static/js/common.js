@@ -839,6 +839,59 @@ function renderUserArea() {
     paintUserArea();
 }
 
+/* ============ 全站页脚 ============ */
+
+/** 页脚署名。改这里即可，全站 14 个页面同步（页脚是注入的，页面里没有副本） */
+const SITE_AUTHOR = 'zhoutaoqiang';
+
+/**
+ * 注入页脚：署名 + 版本号 + 发布时间。
+ *
+ * <p>版本号与发布时间来自 {@code /api/version} 而不是写死在前端 —— 打包时
+ * Maven 会把 pom 的 version 与构建时间写进 {@code build-info.properties}，
+ * 所以升级版本只需改 pom，页脚自动跟着变，不会再出现「页面写着 1.3.6、
+ * 实际跑的是 1.3.7」这种对不上的情况。
+ *
+ * <p>接口拿不到时（老版本后端、网络异常、IDE 直跑未过滤资源）退化成只显示
+ * 署名与一个占位版本，绝不把 undefined / null 打到页面上。
+ */
+async function renderFooter() {
+    if (document.querySelector('.site-footer')) {
+        return;
+    }
+    const foot = document.createElement('footer');
+    foot.className = 'site-footer';
+    foot.id = 'siteFooter';
+    foot.innerHTML = '<div class="site-footer-inner">'
+        + '<span>Powered by <span class="sf-author">' + esc(SITE_AUTHOR) + '</span></span>'
+        + '<i class="sf-sep"></i>'
+        + '<span class="sf-ver" id="sfVer">v—</span>'
+        + '<i class="sf-sep"></i>'
+        + '<span id="sfTime">发布时间 —</span>'
+        + '</div>';
+    document.body.appendChild(foot);
+
+    let version = '';
+    let buildTime = '';
+    try {
+        const r = await get('/api/version');
+        if (r && r.success && r.data) {
+            version = r.data.version || '';
+            buildTime = r.data.buildTime || '';
+        }
+    } catch (e) {
+        // 拿不到就留空，下面按占位显示
+    }
+    const verEl = document.getElementById('sfVer');
+    const timeEl = document.getElementById('sfTime');
+    if (verEl) {
+        verEl.textContent = 'v' + (version || '—');
+    }
+    if (timeEl) {
+        timeEl.textContent = '发布于 ' + (buildTime || '—');
+    }
+}
+
 function paintUserArea() {
     const box = document.getElementById('userArea');
     if (!box) {
@@ -1081,7 +1134,7 @@ function whenTokenReady() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260912g（v1.3.6：盯盘页下拉遮挡修复 / 非交易时段静默）');
+    console.info('[金牛数据] 前端版本 20260912h（v1.3.7：全站页脚 署名 / 版本号 / 发布时间）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();
@@ -1091,6 +1144,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     await loadMe();
     renderNav();
     renderUserArea();
+    // 页脚放最后注入：它是 appendChild 到 body 末尾的，若前面的脚本中途抛错也不会连累它
+    renderFooter();
     if (typeof initDatePickers === 'function') {
         initDatePickers(document);
     }

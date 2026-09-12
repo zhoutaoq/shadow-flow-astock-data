@@ -1307,6 +1307,49 @@ button:disabled { box-shadow: none; }
     color: var(--msg-ok-fg);
 }
 
+/* ============ 全站页脚 ============
+   由 common.js 统一注入到 body 末尾，页面里不用写；版本号与发布时间来自
+   /api/version（打包时写进 build-info.properties），所以改 pom 的 version 即同步。 */
+.site-footer {
+    margin-top: var(--sp-8);
+    padding: var(--sp-5) var(--sp-4) calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border-soft);
+    color: var(--text-dim);
+    font-size: var(--fs-12);
+    line-height: 1.7;
+    text-align: center;
+}
+.site-footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px var(--sp-3);
+}
+/* 分隔点：flex 之外单独画，避免文案里塞字符影响复制 */
+.site-footer .sf-sep {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    opacity: .55;
+    flex: 0 0 auto;
+}
+.site-footer .sf-author {
+    font-weight: 600;
+    color: var(--text);
+}
+/* 版本号做成小徽标，扫一眼就能确认跑的是哪一版 */
+.site-footer .sf-ver {
+    display: inline-block;
+    padding: 1px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    background: var(--bg-panel);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
 /* 尊重系统"减少动态效果"设置 */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
