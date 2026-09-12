@@ -3,6 +3,7 @@ package com.stock.kline.service;
 import com.stock.kline.config.WaizaoProperties;
 import com.stock.kline.model.ApiCallLog;
 import com.stock.kline.model.FetchJob;
+import com.stock.kline.repo.StockListRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -30,7 +31,7 @@ public class KlineFetchJobService {
     private static final Logger log = LoggerFactory.getLogger(KlineFetchJobService.class);
 
     private final KlineFetchService fetchService;
-    private final StockListService stockListService;
+    private final StockListRepository stockListRepository;
     private final WaizaoProperties props;
     private final ThreadPoolTaskExecutor executor;
     private final Map<String, FetchJob> jobs = new ConcurrentHashMap<>();
@@ -38,10 +39,10 @@ public class KlineFetchJobService {
     private static final int MAX_JOBS = 200;
 
     public KlineFetchJobService(KlineFetchService fetchService,
-                                StockListService stockListService,
+                                StockListRepository stockListRepository,
                                 WaizaoProperties props) {
         this.fetchService = fetchService;
-        this.stockListService = stockListService;
+        this.stockListRepository = stockListRepository;
         this.props = props;
         this.executor = buildExecutor(props.getApi().getFetchConcurrency());
     }
@@ -68,7 +69,7 @@ public class KlineFetchJobService {
             throw new IllegalArgumentException("开始日期不能晚于结束日期");
         }
 
-        List<String> codes = stockListService.findCodesByFilter(keyword, market, enabled, limit);
+        List<String> codes = stockListRepository.findCodesByFilter(keyword, market, enabled, limit);
         if (codes.isEmpty()) {
             throw new IllegalArgumentException("筛选条件未命中任何股票");
         }

@@ -4,10 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stock.kline.config.WaizaoProperties;
 import com.stock.kline.model.StockListItem;
+import com.stock.kline.repo.StockListRepository;
 import com.stock.kline.support.AShareCodes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -18,19 +18,23 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 从 resources/stock-list.json 导入股票列表到 waizao_stock_list */
+/**
+ * 从 resources/stock-list.json 导入股票列表。
+ *
+ * <p>v1.3：两种运行模式下都可用 —— 数据库模式写 waizao_stock_list，
+ * 无数据库模式写 {@code ./data/stock-list.json}。
+ */
 @Service
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
 public class StockListImportService {
 
     private static final Logger log = LoggerFactory.getLogger(StockListImportService.class);
 
-    private final StockListService stockListService;
+    private final StockListRepository stockListRepository;
     private final WaizaoProperties properties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public StockListImportService(StockListService stockListService, WaizaoProperties properties) {
-        this.stockListService = stockListService;
+    public StockListImportService(StockListRepository stockListRepository, WaizaoProperties properties) {
+        this.stockListRepository = stockListRepository;
         this.properties = properties;
     }
 
@@ -66,7 +70,7 @@ public class StockListImportService {
                 }
                 items.add(new StockListItem(trimmed, name == null ? "" : name.trim(), "stock"));
             }
-            int affected = stockListService.upsertBatch(items);
+            int affected = stockListRepository.upsertBatch(items);
             log.info("[import] file={} parsed={} affected={} skippedNotAShare={}",
                     path, items.size(), affected, skipped);
             return items.size();

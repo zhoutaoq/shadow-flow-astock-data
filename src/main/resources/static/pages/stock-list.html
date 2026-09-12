@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>股票列表 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260911b">
+    <link rel="stylesheet" href="/css/common.css?v=20260912f">
 </head>
 <body>
 <header class="topbar">
@@ -81,7 +81,7 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=20260911b"></script>
+<script src="/js/common.js?v=20260912f"></script>
 <script>
     /**
      * 两种模式共用一页，差别只在数据来源与写操作：
@@ -121,18 +121,20 @@
         if (!r || !r.success) {
             return;
         }
-        const rows = r.data.rows || [];
+        // 接口成功但没带数据（如后端异常返回空壳）时按空列表渲染，别让整页崩掉
+        const page = r.data || {};
+        const rows = page.rows || [];
         const tbody = document.getElementById('tbody');
         if (!rows.length) {
             tbody.innerHTML = `<tr><td class="empty" colspan="${MODE.noDb ? 3 : 7}">没有匹配的股票</td></tr>`;
         } else {
             tbody.innerHTML = MODE.noDb ? rows.map(rowNoDb).join('') : rows.map(rowDb).join('');
         }
-        const total = r.data.total || 0;
+        const total = page.total || 0;
         document.getElementById('stat').textContent =
             `共 ${total} 条${kw ? '（已按关键字过滤）' : ''}`;
-        renderPager(document.getElementById('pager'), r.data.page || state.page,
-            r.data.size || state.size, total, p => {
+        renderPager(document.getElementById('pager'), page.page || state.page,
+            page.size || state.size, total, p => {
                 state.page = p;
                 load();
             });

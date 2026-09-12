@@ -1,6 +1,5 @@
 package com.stock.kline.service;
 
-import com.stock.kline.client.RawKline;
 import com.stock.kline.model.PageResult;
 import com.stock.kline.model.StockKlineDaily;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -15,7 +14,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** waizao_stock_kline_daily 增删改查 + 落盘（主键即业务键 stock_code + trade_date，无自增 id） */
+/**
+ * waizao_stock_kline_daily 的后台管理（分页 / 单条增删改 / 区间删除 / 图数据）。
+ *
+ * <p>v1.3：K线的<b>落库</b>动作统一走 {@code KlineRepository#save}（抓取链路），
+ * 这里只保留「库里已有数据的管理」—— 无数据库模式下K线现取现用、不落盘，
+ * 也就没有可管理的数据，所以本类仍只在数据库模式装配。
+ */
 @Service
 @ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
 public class StockKlineService {
@@ -152,57 +157,6 @@ public class StockKlineService {
             args.add(endDate.trim());
         }
         return jdbcTemplate.update(sql.toString(), args.toArray());
-    }
-
-    /**
-     * 批量落盘：同 (code, market, trade_date) 存在则覆盖更新。
-     *
-     * @return 影响行数（MySQL 下 insert 计 1、update 计 2，此处统一按“处理条数”返回）
-     */
-    public int upsertBatch(List<RawKline> rows) {
-        if (rows == null || rows.isEmpty()) {
-            return 0;
-        }
-        String sql = "INSERT INTO " + TABLE
-                + " (stock_code, market, trade_date, open_price, close_price, high_price, low_price,"
-                + " volume, amount, pre_close) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                + "ON DUPLICATE KEY UPDATE open_price = VALUES(open_price), close_price = VALUES(close_price),"
-                + " high_price = VALUES(high_price), low_price = VALUES(low_price), volume = VALUES(volume),"
-                + " amount = VALUES(amount), pre_close = VALUES(pre_close)";
-        int batchSize = 500;
-        int processed = 0;
-        for (int i = 0; i < rows.size(); i += batchSize) {
-            List<RawKline> sub = rows.subList(i, Math.min(i + batchSize, rows.size()));
-            List<Object[]> args = new ArrayList<>(sub.size());
-            for (RawKline r : sub) {
-                args.add(new Object[]{
-                        r.getCode(),
-                        StringUtils.hasText(r.getSymbol()) ? r.getSymbol() : "stock",
-                        r.getTradeDate(),
-                        r.getOpenPrice(),
-                        r.getClosePrice(),
-                        r.getHighPrice(),
-                        r.getLowPrice(),
-                        r.getVolume(),
-                        r.getAmount(),
-                        r.getPreClose()
-                });
-            }
-            int[] res = jdbcTemplate.batchUpdate(sql, args);
-            processed += countAffected(res);
-        }
-        return processed;
-    }
-
-    /** 统计批量执行条数：MySQL 批量返回 SUCCESS_NO_INFO(-2)，不能简单用 >0 判断 */
-    private static int countAffected(int[] res) {
-        int n = 0;
-        for (int x : res) {
-            if (x != java.sql.Statement.EXECUTE_FAILED) {
-                n++;
-            }
-        }
-        return n;
     }
 
     /** 某只股票已入库日K的日期跨度，供图上懒加载判断还有没有更早/更晚的数据 */

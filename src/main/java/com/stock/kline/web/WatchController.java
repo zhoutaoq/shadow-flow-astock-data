@@ -1,5 +1,6 @@
 package com.stock.kline.web;
 
+import com.stock.kline.auth.AuthContext;
 import com.stock.kline.model.ApiResponse;
 import com.stock.kline.watch.WatchConfigStore;
 import com.stock.kline.watch.WatchProperties;
@@ -7,10 +8,8 @@ import com.stock.kline.watch.WatchSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -18,20 +17,18 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
 
 /**
- * 盯盘配置：进入页面先输密码，之后凭短期令牌读写配置。
+ * 盯盘配置：登录后读写<b>自己那份</b>配置。
  *
- * <p>密码只在 yml 里维护（<code>watch.password</code>），不下发给前端；
- * 校验通过后发一个只存在内存里的令牌，页面拿它读配置、保存配置，
- * 令牌到期或进程重启后需要重新输一次密码。
+ * <p>v1.3 起盯盘配置跟账号走（见 {@link WatchConfigStore}）：
+ * 进来的人是谁就读写谁的 <code>./data/watch/watch-{userId}.json</code>；
+ * 超管读写的就是系统默认那份，后台轮询与钉钉推送也只认它。
  *
- * <p>保存动作由 {@link WatchConfigStore} 完成：先改内存（立刻生效）再落盘，
- * 调度器监听到变更会按新的间隔重新排定时任务。
+ * <p>接口面仍然只有「读 / 存」两个动作：保存动作由 store 完成，
+ * 先改内存（立刻生效）再落盘，调度器监听到变更会按新的间隔重新排定时任务。
+ *
+ * <p>原来的「盯盘页面密码」已经取消 —— 需要登录才能进来，密码体系交给了账号。
  */
 @RestController
 @RequestMapping("/api/watch")
@@ -39,11 +36,8 @@ public class WatchController {
 
     private static final Logger log = LoggerFactory.getLogger(WatchController.class);
 
-    /** 令牌有效期：输一次密码管一天，够用了 */
-    private static final long TOKEN_TTL_MS = TimeUnit.HOURS.toMillis(8);
-
     /** 页面要展示的输入范围，与 WatchConfigStore 里的校验保持一致 */
-    private static final long MIN_INTERVAL = 5, MAX_INTERVAL = 3600;
+    private static final long MIN_INTERVAL = 3, MAX_INTERVAL = 3600;
     private static final double MIN_THRESHOLD = 0.01, MAX_THRESHOLD = 20;
     /** 告警规则的"过去时长"用轮询间隔的倍数表示，至少 1 倍、最多 60 倍 */
     private static final int MIN_RULE_INTERVALS = 1, MAX_RULE_INTERVALS = 60;
@@ -55,71 +49,55 @@ public class WatchController {
 
     private final WatchProperties props;
     private final WatchConfigStore store;
-    private final ConcurrentMap<String, Long> tokens = new ConcurrentHashMap<>();
 
     public WatchController(WatchProperties props, WatchConfigStore store) {
         this.props = props;
         this.store = store;
     }
 
-    /** 校验密码，通过则返回短期令牌 */
-    @PostMapping("/unlock")
-    public ApiResponse<Map<String, Object>> unlock(@RequestBody(required = false) Map<String, Object> body) {
-        String input = body == null ? null : String.valueOf(body.get("password"));
-        String expected = props.getPassword();
-        if (input == null || expected == null || !input.equals(expected)) {
-            return ApiResponse.fail("密码不正确");
-        }
-        String token = UUID.randomUUID().toString().replace("-", "");
-        tokens.put(token, System.currentTimeMillis() + TOKEN_TTL_MS);
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("token", token);
-        data.put("expiresInSeconds", TOKEN_TTL_MS / 1000);
-        log.info("[watch] 盯盘页面已解锁（令牌有效期 {} 小时）", TOKEN_TTL_MS / 3600000);
-        return ApiResponse.ok(data);
-    }
-
-    /** 读取当前配置（需要令牌） */
+    /** 读取当前登录用户的配置 */
     @GetMapping("/config")
-    public ApiResponse<Map<String, Object>> get(
-            @RequestHeader(value = "X-Watch-Token", required = false) String token) {
-        if (!valid(token)) {
-            return ApiResponse.fail("请先输入盯盘密码");
-        }
-        return ApiResponse.ok(buildData(store.snapshot()));
+    public ApiResponse<Map<String, Object>> get() {
+        long userId = requireUserId();
+        return ApiResponse.ok(buildData(store.snapshot(userId), userId));
     }
 
-    /** 保存配置（需要令牌）：先写内存再落盘 */
+    /** 保存当前登录用户的配置：先写内存再落盘 */
     @PutMapping("/config")
-    public ApiResponse<Map<String, Object>> save(
-            @RequestHeader(value = "X-Watch-Token", required = false) String token,
-            @RequestBody(required = false) WatchSettings body) {
-        if (!valid(token)) {
-            return ApiResponse.fail("请先输入盯盘密码");
-        }
+    public ApiResponse<Map<String, Object>> save(@RequestBody(required = false) WatchSettings body) {
+        long userId = requireUserId();
         if (body == null) {
             return ApiResponse.fail("配置内容为空");
         }
-        return ApiResponse.ok(buildData(store.update(body)), "已保存并生效");
+        return ApiResponse.ok(buildData(store.update(userId, body), userId), "已保存并生效");
     }
 
-    private boolean valid(String token) {
-        if (token == null || token.trim().isEmpty()) {
-            return false;
-        }
-        Long expireAt = tokens.get(token.trim());
-        if (expireAt == null) {
-            return false;
-        }
-        if (expireAt < System.currentTimeMillis()) {
-            tokens.remove(token.trim());
-            return false;
-        }
-        return true;
-    }
-
-    private Map<String, Object> buildData(WatchSettings s) {
+    /** 盯盘总开关的当前状态：整块功能被 yml 关掉时页面要给出说明而不是白屏 */
+    @GetMapping("/status")
+    public ApiResponse<Map<String, Object>> status() {
         Map<String, Object> data = new LinkedHashMap<>();
+        data.put("moduleEnabled", props.isEnabled());
+        return ApiResponse.ok(data);
+    }
+
+    /**
+     * 当前登录用户。
+     *
+     * <p>接口走的是 {@link AuthContext}（拦截器已保证登录），
+     * 这里再判一次是为了防止以后有人把路径从拦截器里摘掉后拿到「0 号用户」的配置。
+     */
+    private static long requireUserId() {
+        long userId = AuthContext.currentUserId();
+        if (userId <= 0) {
+            throw new IllegalArgumentException("请先登录");
+        }
+        return userId;
+    }
+
+    private Map<String, Object> buildData(WatchSettings s, long userId) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("ownerId", userId);
+        data.put("isSystemDefault", AuthContext.isAdmin());
         data.put("enabled", s.isEnabled());
         data.put("intervalSeconds", s.getIntervalSeconds());
         // 多规则（每条：intervals 倍的轮询间隔 + percent）
@@ -139,7 +117,7 @@ public class WatchController {
         // 涨跌停放量阈值（页面回显）：amountWan 单位万元，times 是相对上一间隔的倍数
         data.put("surge", s.getSurge() == null ? new WatchSettings.SurgeCfg() : s.getSurge());
         data.put("stocks", s.getStocks());
-        data.put("configFile", store.getFile() == null ? "" : store.getFile().toString());
+        data.put("configFile", store.getFile(userId) == null ? "" : store.getFile(userId).toString());
         Map<String, Object> limits = new LinkedHashMap<>();
         limits.put("minInterval", MIN_INTERVAL);
         limits.put("maxInterval", MAX_INTERVAL);

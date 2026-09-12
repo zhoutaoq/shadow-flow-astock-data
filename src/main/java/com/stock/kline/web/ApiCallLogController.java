@@ -3,7 +3,7 @@ package com.stock.kline.web;
 import com.stock.kline.model.ApiCallLog;
 import com.stock.kline.model.ApiResponse;
 import com.stock.kline.model.PageResult;
-import com.stock.kline.service.ApiCallLogService;
+import com.stock.kline.repo.ApiCallLogRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,10 +18,10 @@ import java.util.Map;
 @RequestMapping("/api/call-logs")
 public class ApiCallLogController {
 
-    private final ApiCallLogService service;
+    private final ApiCallLogRepository repository;
 
-    public ApiCallLogController(ApiCallLogService service) {
-        this.service = service;
+    public ApiCallLogController(ApiCallLogRepository repository) {
+        this.repository = repository;
     }
 
     /**
@@ -54,13 +54,13 @@ public class ApiCallLogController {
         if (size > 5000) {
             size = 5000;
         }
-        return ApiResponse.ok(service.page(code, market, scene, reqStartDate, reqEndDate,
+        return ApiResponse.ok(repository.page(code, market, scene, reqStartDate, reqEndDate,
                 requestTimeFrom, requestTimeTo, success, page, size));
     }
 
     /** 调用次数与耗时概览（含按场景拆分） */
     @GetMapping("/summary")
     public ApiResponse<Map<String, Object>> summary() {
-        return ApiResponse.ok(service.summary());
+        return ApiResponse.ok(repository.summary());
     }
 }

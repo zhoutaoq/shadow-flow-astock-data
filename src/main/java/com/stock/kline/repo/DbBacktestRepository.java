@@ -1,4 +1,4 @@
-package com.stock.kline.support;
+package com.stock.kline.repo;
 
 import com.stock.kline.model.Backtest;
 import com.stock.kline.model.BacktestDaily;
@@ -12,17 +12,15 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Repository;
 
-import java.util.ArrayList;
 import java.util.List;
 
-/** 数据库模式：回测结果落 waizao_backtest / _daily / _trade 三张表 */
-@Component
+/** 数据库模式：回测落 waizao_backtest / _daily / _trade 三张表 */
+@Repository
 @ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
-public class DbBacktestStore implements BacktestStore {
+public class DbBacktestRepository implements BacktestRepository {
 
-    private static final String KLINE = "waizao_stock_kline_daily";
     private static final String BT = "waizao_backtest";
     private static final String BT_DAILY = "waizao_backtest_daily";
     private static final String BT_TRADE = "waizao_backtest_trade";
@@ -35,9 +33,11 @@ public class DbBacktestStore implements BacktestStore {
             + " DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') AS create_time";
 
     private final NamedParameterJdbcTemplate named;
+    private final KlineRepository klineRepository;
 
-    public DbBacktestStore(NamedParameterJdbcTemplate named) {
+    public DbBacktestRepository(NamedParameterJdbcTemplate named, KlineRepository klineRepository) {
         this.named = named;
+        this.klineRepository = klineRepository;
     }
 
     @Override
@@ -153,22 +153,15 @@ public class DbBacktestStore implements BacktestStore {
                         + " WHERE backtest_id = :id ORDER BY trade_date ASC, id ASC",
                 new MapSqlParameterSource("id", id), new BeanPropertyRowMapper<>(BacktestTrade.class));
 
-        List<StockKlineDaily> klines = named.query("SELECT trade_date, open_price, close_price, high_price,"
-                        + " low_price, volume, amount, pre_close FROM " + KLINE
-                        + " WHERE stock_code = :code AND market = :market"
-                        + " AND trade_date BETWEEN :start AND :end ORDER BY trade_date ASC",
-                new MapSqlParameterSource()
-                        .addValue("code", bt.getStockCode())
-                        .addValue("market", bt.getMarket())
-                        .addValue("start", bt.getStartDate())
-                        .addValue("end", bt.getEndDate()),
-                new BeanPropertyRowMapper<>(StockKlineDaily.class));
+        // 区间K线用于画图；K线属于「不落库但有落点」的数据，统一走 KlineRepository 取
+        List<StockKlineDaily> klines = klineRepository.list(bt.getMarket(), bt.getStockCode(),
+                bt.getStartDate(), bt.getEndDate());
 
         BacktestResult result = new BacktestResult();
         result.setBacktest(bt);
         result.setDailies(dailies);
         result.setTrades(trades);
-        result.setKlines(klines);
+        result.setKlines(klines == null ? new java.util.ArrayList<>() : klines);
         return result;
     }
 

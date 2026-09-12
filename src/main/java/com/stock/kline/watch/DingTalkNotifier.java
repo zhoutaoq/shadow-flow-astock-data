@@ -59,6 +59,12 @@ public class DingTalkNotifier {
      * @return 是否推送成功（HTTP 2xx 且响应体已读取）
      */
     public boolean post(String webhook, String content) {
+        // 总开关：开发环境默认关，一条都发不出去，避免本地反复启停往群里刷消息
+        if (!props.getDingtalk().isEnabled()) {
+            log.info("[dingtalk] 钉钉推送总开关已关闭（--watch.dingtalk.enabled=true 打开），本次不发送：{}",
+                    oneLine(content));
+            return false;
+        }
         if (webhook == null || webhook.trim().isEmpty()) {
             return false;
         }
@@ -96,6 +102,15 @@ public class DingTalkNotifier {
             }
             return new String(out.toByteArray(), StandardCharsets.UTF_8);
         }
+    }
+
+    /** 日志里只留一行摘要，避免整条消息刷屏 */
+    private static String oneLine(String s) {
+        if (s == null) {
+            return "";
+        }
+        String v = s.replace('\n', ' ').trim();
+        return v.length() <= 80 ? v : v.substring(0, 80) + "...";
     }
 
     /**

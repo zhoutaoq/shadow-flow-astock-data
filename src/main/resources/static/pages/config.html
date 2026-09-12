@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>系统配置</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260911b">
+    <link rel="stylesheet" href="/css/common.css?v=20260912f">
 </head>
 <body>
 <header class="topbar">
@@ -17,35 +17,24 @@
 
     <!-- 无数据库模式：没有配置表，整页就是一个令牌输入框 -->
     <section class="panel" id="tokenPanel" style="display:none">
-        <h2>waizao 令牌 <span class="dim" style="font-weight:400;font-size:12px">存本机 cookie，后端不保存</span></h2>
-        <div class="msg msg-info" style="display:block">
-            当前是<b>无数据库模式</b>：后端不保存任何参数。系统已<b>内置默认令牌</b>，开箱即用，
-            <b>令牌内容不支持查看</b>；如需换用自己的令牌，在下方输入并保存即可覆盖
-            （写入本机浏览器 cookie，<b>30 天有效</b>），之后每个请求自动带上
-            <code>X-Waizao-Token</code> 请求头，点「恢复默认令牌」即回到内置令牌。
-        </div>
+        <h2 style="margin:0 0 12px">数据接口令牌</h2>
         <div class="form-row">
             <div class="field grow">
-                <label>新令牌（覆盖内置默认）</label>
+                <label>新令牌</label>
                 <input type="password" id="fToken" autocomplete="off" spellcheck="false"
-                       placeholder="粘贴新的 waizao token（留空 = 使用当前令牌）">
-                <div class="sp-hint">令牌属按次计费的凭据，自定义令牌只写在本机，不会上传也不会写进日志。</div>
+                       placeholder="粘贴新的令牌">
             </div>
-            <button onclick="saveToken()" id="btnSave">保存并覆盖</button>
+            <button onclick="saveToken()" id="btnSave">保存</button>
             <button class="btn-ghost" onclick="resetToDefault()">恢复默认令牌</button>
         </div>
         <div class="sp-hint" id="tokenState"></div>
     </section>
 
     <section class="panel" id="tablePanel">
-        <h2>配置变量 <span class="dim" style="font-weight:400;font-size:12px">保存后立即生效，无需重启</span></h2>
-        <div class="msg msg-info" style="display:block">
-            这里只放运行期会变的变量，按「场景 + 键」维护。目前只有供应商的令牌（场景 <code>waizao</code> / 键 <code>token</code>）；
-            接口地址、超时、并发度、启用开关等稳定参数写在配置文件里，改了重启生效。
-        </div>
+        <h2 style="margin:0 0 4px">配置变量</h2>
         <div class="form-row">
             <button onclick="openEdit(null)">新增配置</button>
-            <button class="btn-ghost" onclick="reload()" title="手工改了数据库时用它，从库里重新加载">从数据库重载</button>
+            <button class="btn-ghost" onclick="reload()">从数据库重载</button>
         </div>
         <div style="overflow:auto;max-height:620px;margin-top:10px">
             <table class="grid">
@@ -65,18 +54,6 @@
         </div>
     </section>
 
-    <section class="panel" id="docPanel">
-        <h2>说明</h2>
-        <table class="grid">
-            <thead><tr><th style="width:180px">项</th><th>说明</th></tr></thead>
-            <tbody>
-            <tr><td><b>场景</b></td><td>变量归属的场景/分组，如 <code>waizao</code>；同一场景下配置键不能重复</td></tr>
-            <tr><td><b>配置键</b></td><td>变量名，如 <code>token</code>。键名里含 token / password / secret / key 的值在列表里默认打码</td></tr>
-            <tr><td><b>生效方式</b></td><td>保存时同步刷新内存缓存，下一次请求即用新值；直接改数据库需点「从数据库重载」</td></tr>
-            <tr><td><b>令牌安全</b></td><td>令牌属按次计费凭据，页面默认遮蔽，点「显示」才展开；不要暴露到公网</td></tr>
-            </tbody>
-        </table>
-    </section>
 </main>
 
 <!-- 新增/编辑弹窗 -->
@@ -107,7 +84,7 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=20260911b"></script>
+<script src="/js/common.js?v=20260912f"></script>
 <script src="/js/date-picker.js"></script>
 <script>
     /** 需要遮蔽显示的键：值里是令牌/口令 */
@@ -231,28 +208,28 @@
 
     function renderTokenState() {
         document.getElementById('tokenState').innerHTML = hasCustomWaizaoToken()
-            ? '当前：<b>自定义令牌</b>（内容不可查看，30 天有效）；点「恢复默认令牌」可回到系统内置令牌。'
-            : '当前：<b>系统内置默认令牌</b>（内容不支持查看）；在上方输入新令牌并保存即可覆盖。';
+            ? '当前：<b>自定义令牌</b>（有效期 30 天）'
+            : '当前：<b>系统内置令牌</b>';
     }
 
     function saveToken() {
         const v = document.getElementById('fToken').value.trim();
         if (!v) {
-            return toast('请先输入新的令牌', 'err');
+            return toast('先粘贴一个令牌再保存', 'err');
         }
         setWaizaoToken(v);
         document.getElementById('fToken').value = '';
         renderTokenState();
-        toast('已覆盖为自定义令牌（30 天有效）', 'ok');
+        toast('令牌已更新', 'ok');
     }
 
     /** 清掉本机自定义值，立即回到内置默认令牌（默认令牌恒存在，不会再弹填写框） */
     function resetToDefault() {
-        if (hasCustomWaizaoToken() && !confirm('恢复后将使用系统内置默认令牌，确认？')) return;
+        if (hasCustomWaizaoToken() && !confirm('恢复后将使用系统内置令牌，确认？')) return;
         setWaizaoToken('');
         document.getElementById('fToken').value = '';
         renderTokenState();
-        toast('已恢复为系统内置默认令牌', 'ok');
+        toast('已恢复为系统内置令牌', 'ok');
     }
 
     (async function init() {
@@ -260,7 +237,6 @@
         if (MODE.noDb) {
             // 配置表在这个模式下根本不存在，别去调接口也别显示表格
             document.getElementById('tablePanel').style.display = 'none';
-            document.getElementById('docPanel').style.display = 'none';
             document.getElementById('tokenPanel').style.display = '';
             renderTokenState();
             return;

@@ -27,9 +27,6 @@ public class WatchProperties {
      */
     private String configFile = "/home/stock-backtesting/watch-config.json";
 
-    /** 盯盘页面的进入密码：只在这里维护，后端校验，不下发给前端 */
-    private String password = "1";
-
     /** 名称 → 代码 索引的数据文件 */
     private String stockListFile = "resources/stock-list.json";
 
@@ -72,14 +69,6 @@ public class WatchProperties {
 
     public void setConfigFile(String configFile) {
         this.configFile = configFile;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
     }
 
     public String getStockListFile() {
@@ -221,12 +210,32 @@ public class WatchProperties {
     /** 钉钉机器人 */
     public static class DingTalk {
         /**
+         * <b>钉钉推送总开关</b>：false 时一条消息都发不出去（盯盘告警、启动通知、用户反馈全部拦下），
+         * 只在应用日志里留痕。
+         *
+         * <p><b>默认 false</b> —— 本地开发反复启停，不该往群里刷消息。
+         * 需要真推送时用 yml 或启动参数显式打开：<code>--watch.dingtalk.enabled=true</code>。
+         *
+         * <p>它和 {@code watch.startup-notify.enabled} 是两道独立的闸：
+         * 启动通知还要再过一道「只在生产发布时发」的判断。
+         */
+        private boolean enabled = false;
+
+        /**
          * Webhook 地址（含 access_token）；为空则不推送。
          *
          * <p>v1.4 起钉钉机器人只用"自定义关键词"模式（消息必须含特定关键词才会被服务端放行），
          * 不再支持「加签」，所以本类不再暴露 secret 字段。
          */
         private String webhook = "";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
 
         public String getWebhook() {
             return webhook;
@@ -238,6 +247,11 @@ public class WatchProperties {
 
         public boolean configured() {
             return webhook != null && !webhook.trim().isEmpty();
+        }
+
+        /** 是否真的能发：总开关打开 + webhook 已配置 */
+        public boolean pushEnabled() {
+            return enabled && configured();
         }
     }
 }

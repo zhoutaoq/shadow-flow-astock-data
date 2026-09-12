@@ -1,40 +1,46 @@
-package com.stock.kline.service;
+package com.stock.kline.repo;
 
 import com.stock.kline.model.ApiCallLog;
 import com.stock.kline.model.PageResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
+import java.sql.Timestamp;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** waizao_api_call_log 写入与查询 */
-@Service
+/** 数据库模式：调用日志落 {@code waizao_api_call_log} */
+@Repository
 @ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
-public class ApiCallLogService {
+public class DbApiCallLogRepository implements ApiCallLogRepository {
+
+    private static final Logger log = LoggerFactory.getLogger(DbApiCallLogRepository.class);
 
     private static final String TABLE = "waizao_api_call_log";
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ApiCallLogService.class);
 
     private final NamedParameterJdbcTemplate named;
 
-    public ApiCallLogService(NamedParameterJdbcTemplate named) {
+    public DbApiCallLogRepository(NamedParameterJdbcTemplate named) {
         this.named = named;
+    }
+
+    @Override
+    public boolean persistent() {
+        return true;
     }
 
     /**
      * 记录一次接口调用；记录失败不得影响抓取主流程。
-     *
-     * @param item              日志内容
-     * @param requestBeginMillis 请求发起时刻（毫秒），request_time 用它而非写日志时刻，
-     *                            否则慢请求/超时请求记到的是结束时间
      */
+    @Override
     public void record(ApiCallLog item, long requestBeginMillis) {
         if (item == null) {
             return;
@@ -50,7 +56,7 @@ public class ApiCallLogService {
                             .addValue("market", nvl(item.getMarket()))
                             .addValue("sd", blankToNull(item.getReqStartDate()))
                             .addValue("ed", blankToNull(item.getReqEndDate()))
-                            .addValue("rt", new java.sql.Timestamp(requestBeginMillis))
+                            .addValue("rt", new Timestamp(requestBeginMillis))
                             .addValue("status", item.getHttpStatus())
                             .addValue("cost", item.getCostMs())
                             .addValue("rows", item.getRowCount())
@@ -63,8 +69,9 @@ public class ApiCallLogService {
 
     /**
      * 分页查询调用日志。
-     * 日期参数（reqStartDate/reqEndDate）按“与传入区间有交集”筛选；请求时间按发生时间区间筛选。
+     * 日期参数（reqStartDate/reqEndDate）按"与传入区间有交集"筛选；请求时间按发生时间区间筛选。
      */
+    @Override
     public PageResult<ApiCallLog> page(String code, String market, String scene,
                                        String reqStartDate, String reqEndDate,
                                        String requestTimeFrom, String requestTimeTo, Integer success,
@@ -84,7 +91,6 @@ public class ApiCallLogService {
             where.append(" AND l.scene = :scene ");
             params.put("scene", normalizeScene(scene));
         }
-        // 日期参数：与传入区间相交的调用
         if (StringUtils.hasText(reqStartDate)) {
             where.append(" AND l.req_end_date >= :reqStartDate ");
             params.put("reqStartDate", reqStartDate.trim());
@@ -109,7 +115,7 @@ public class ApiCallLogService {
         Long total = named.queryForObject("SELECT COUNT(1) " + where, params, Long.class);
         params.put("offset", (long) Math.max(page - 1, 0) * size);
         params.put("limit", size);
-        java.util.List<ApiCallLog> rows = named.query(
+        List<ApiCallLog> rows = named.query(
                 "SELECT l.id, l.scene, l.stock_code, l.market, l.req_start_date, l.req_end_date,"
                         + " DATE_FORMAT(l.request_time, '%Y-%m-%d %H:%i:%s') AS request_time,"
                         + " l.http_status, l.cost_ms, l.row_count, l.success, l.error_msg "
@@ -120,9 +126,11 @@ public class ApiCallLogService {
     }
 
     /** 统计调用次数与耗时（用于日志页顶部概览） */
+    @Override
     public Map<String, Object> summary() {
         Map<String, Object> data = new HashMap<>();
-        Long total = named.queryForObject("SELECT COUNT(1) FROM " + TABLE, new MapSqlParameterSource(), Long.class);
+        Long total = named.queryForObject("SELECT COUNT(1) FROM " + TABLE,
+                new MapSqlParameterSource(), Long.class);
         Long failed = named.queryForObject("SELECT COUNT(1) FROM " + TABLE + " WHERE success = 0",
                 new MapSqlParameterSource(), Long.class);
         data.put("total", total == null ? 0L : total);

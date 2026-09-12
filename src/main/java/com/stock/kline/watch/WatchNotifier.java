@@ -102,8 +102,9 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
                     + "--watch.startup-notify.enabled=true 打开），本轮跳过");
             return;
         }
-        if (!props.getDingtalk().configured()) {
-            log.warn("[watch] 启动通知已开启，但没有配置钉钉 webhook，跳过");
+        if (!props.getDingtalk().pushEnabled()) {
+            log.warn("[watch] 启动通知已开启，但钉钉推送总开关未打开或没有配置 webhook，跳过"
+                    + "（--watch.dingtalk.enabled=true 打开总开关）");
             return;
         }
         WatchSettings snap = store.snapshot();

@@ -1,6 +1,6 @@
 package com.stock.kline.support;
 
-import com.stock.kline.service.SysConfigService;
+import com.stock.kline.repo.SysConfigRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -9,9 +9,9 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
 public class DbTokenProvider implements TokenProvider {
 
-    private final SysConfigService sysConfig;
+    private final SysConfigRepository sysConfig;
 
-    public DbTokenProvider(SysConfigService sysConfig) {
+    public DbTokenProvider(SysConfigRepository sysConfig) {
         this.sysConfig = sysConfig;
     }
 

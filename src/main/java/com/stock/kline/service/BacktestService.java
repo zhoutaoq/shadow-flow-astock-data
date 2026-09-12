@@ -11,8 +11,8 @@ import com.stock.kline.model.BacktestRule;
 import com.stock.kline.model.BacktestRunRequest;
 import com.stock.kline.model.BacktestTrade;
 import com.stock.kline.model.StockKlineDaily;
-import com.stock.kline.support.BacktestStore;
-import com.stock.kline.support.KlineSource;
+import com.stock.kline.repo.BacktestRepository;
+import com.stock.kline.repo.KlineRepository;
 import com.stock.kline.support.KlineWindow;
 import com.stock.kline.support.StockDirectory;
 import org.springframework.stereotype.Service;
@@ -34,8 +34,9 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 回测引擎。
  *
- * <p>数据源由 KlineSource 决定：数据库模式读日K表，无数据库模式向供应商现取；
- * 结果落点由 BacktestStore 决定：数据库模式落三张表，无数据库模式只返回不留存。
+ * <p>数据源由 KlineRepository 决定：数据库模式读日K表（缺的日期先同步再读），
+ * 无数据库模式向供应商现取；结果落点由 BacktestRepository 决定：数据库模式落三张表，
+ * 无数据库模式落 {@code ./data/backtest/}。两种模式都留存，回测是主流程。
  *
  * <p>执行约定（与需求一致）：
  * <ul>
@@ -63,8 +64,8 @@ public class BacktestService {
     /** 涨跌停策略 3：次日开盘非涨跌停、且相对信号日收盘涨跌幅达阈值才成交 */
     private static final int STRATEGY_NEXT_COND = 3;
 
-    private final KlineSource klineSource;
-    private final BacktestStore store;
+    private final KlineRepository klineRepository;
+    private final BacktestRepository backtestRepository;
     private final WaizaoProperties props;
     /** 只用来把股票代码翻译成名称：结果里的「标的」要能直接看出是哪只票 */
     private final StockDirectory directory;
@@ -77,17 +78,17 @@ public class BacktestService {
      */
     private final Map<String, BacktestProgress> progressMap = new ConcurrentHashMap<>();
 
-    public BacktestService(KlineSource klineSource, BacktestStore store,
+    public BacktestService(KlineRepository klineRepository, BacktestRepository backtestRepository,
                            WaizaoProperties props, StockDirectory directory) {
-        this.klineSource = klineSource;
-        this.store = store;
+        this.klineRepository = klineRepository;
+        this.backtestRepository = backtestRepository;
         this.props = props;
         this.directory = directory;
     }
 
     /** 回测结果是否落盘；前端据此决定要不要展示「历史回测」 */
     public boolean persistent() {
-        return store.persistent();
+        return backtestRepository.persistent();
     }
 
     // ============ 执行回测 ============
@@ -133,7 +134,7 @@ public class BacktestService {
 
         // 取数：预热段 + 回测区间
         int warmup = warmupDays(req.getBuyRule(), req.getSellRule());
-        KlineWindow window = klineSource.load(market, code, start, end, warmup);
+        KlineWindow window = klineRepository.load(market, code, start, end, warmup);
         List<StockKlineDaily> all = window.getRows();
         int preSize = window.getPreSize();
         if (all.size() - preSize <= 0) {
@@ -235,10 +236,10 @@ public class BacktestService {
         bt.setProfitRatio(last.getProfitRatio());
         bt.setTradeCount(trades.size());
         bt.setTradeDays(dailies.size());
-        long id = store.insert(bt);
+        long id = backtestRepository.insert(bt);
         bt.setId(id);
-        store.saveDailies(id, dailies);
-        store.saveTrades(id, trades);
+        backtestRepository.saveDailies(id, dailies);
+        backtestRepository.saveTrades(id, trades);
 
         BacktestResult result = new BacktestResult();
         result.setBacktest(bt);
@@ -271,7 +272,7 @@ public class BacktestService {
      * 免得填了个十年区间把请求发出去才发现要等半天。
      */
     private void checkSpan(String start, String end) {
-        if (store.persistent()) {
+        if (backtestRepository.persistent()) {
             return;
         }
         long span = ChronoUnit.DAYS.between(LocalDate.parse(start, DF), LocalDate.parse(end, DF)) + 1;
@@ -552,17 +553,17 @@ public class BacktestService {
 
     /** 历史回测列表（无数据库模式恒为空） */
     public List<Backtest> list(int limit) {
-        return store.list(limit);
+        return backtestRepository.list(limit);
     }
 
     /** 回看某次回测（汇总 + 每日快照 + 交易明细 + 区间K线） */
     public BacktestResult detail(long id) {
-        return store.detail(id);
+        return backtestRepository.detail(id);
     }
 
     /** 删除一次回测（连带快照与明细） */
     public void delete(long id) {
-        store.delete(id);
+        backtestRepository.delete(id);
     }
 
     // ============ 数据校验与取数 ============
@@ -573,7 +574,7 @@ public class BacktestService {
      * <p>无数据库模式不走这里 —— 数据现取，取不到就是供应商没有，补也没用。
      */
     private void ensureBoundaryData(String taskId, String code, String market, String start, String end) {
-        List<String> miss = klineSource.missing(market, code, start, end);
+        List<String> miss = klineRepository.missing(market, code, start, end);
         if (miss.isEmpty()) {
             return;
         }
@@ -581,13 +582,13 @@ public class BacktestService {
                 "正在从供应商同步缺失的日K数据: " + String.join("、", miss));
         int done = 0;
         for (String d : miss) {
-            klineSource.prepareOne(market, code, d);
+            klineRepository.prepareOne(market, code, d);
             done++;
             updateProgress(taskId, BacktestProgress.STAGE_FETCH, done, miss.size(),
                     "已同步 " + d + "（" + done + "/" + miss.size() + "）");
         }
         // 补完再判一次：仍缺说明供应商那边也没有（非交易日 / 停牌 / 超出数据范围）
-        List<String> still = klineSource.missing(market, code, start, end);
+        List<String> still = klineRepository.missing(market, code, start, end);
         if (!still.isEmpty()) {
             throw new IllegalStateException("已从供应商同步，但仍缺少 " + String.join("、", still)
                     + " 的日K数据（可能是非交易日或供应商无该日数据），无法回测");

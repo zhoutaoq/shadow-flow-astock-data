@@ -3,9 +3,8 @@ package com.stock.kline.web;
 import com.stock.kline.model.ApiResponse;
 import com.stock.kline.model.PageResult;
 import com.stock.kline.model.StockListItem;
+import com.stock.kline.repo.StockListRepository;
 import com.stock.kline.service.StockListImportService;
-import com.stock.kline.service.StockListService;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,18 +21,17 @@ import java.util.Map;
 
 /** 股票列表 waizao_stock_list 管理接口 */
 @RestController
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
 @RequestMapping("/api/stocks")
 public class StockListController {
 
     /** 系统只关注沪深A股：市场维度不对外暴露，所有查询默认锚在 stock 上 */
     private static final String MARKET = "stock";
 
-    private final StockListService service;
+    private final StockListRepository repository;
     private final StockListImportService importService;
 
-    public StockListController(StockListService service, StockListImportService importService) {
-        this.service = service;
+    public StockListController(StockListRepository repository, StockListImportService importService) {
+        this.repository = repository;
         this.importService = importService;
     }
 
@@ -49,7 +47,7 @@ public class StockListController {
         if (size > 2000) {
             size = 2000;
         }
-        return ApiResponse.ok(service.page(keyword, market, page, size));
+        return ApiResponse.ok(repository.page(keyword, market, page, size));
     }
 
     /**
@@ -68,7 +66,7 @@ public class StockListController {
         if (limit > 50) {
             limit = 50;
         }
-        return ApiResponse.ok(service.search(keyword, market, limit));
+        return ApiResponse.ok(repository.search(keyword, market, limit));
     }
 
     /** 按筛选条件统计命中只数，供批量抓取前预览规模 */
@@ -78,19 +76,19 @@ public class StockListController {
             @RequestParam(defaultValue = MARKET) String market,
             @RequestParam(required = false) Integer enabled) {
         Map<String, Object> data = new HashMap<>();
-        data.put("count", service.countByFilter(keyword, market, enabled));
+        data.put("count", repository.countByFilter(keyword, market, enabled));
         return ApiResponse.ok(data);
     }
 
     /** 不分页全量，供下拉/多选选择器使用 */
     @GetMapping("/all")
     public ApiResponse<List<StockListItem>> all(@RequestParam(defaultValue = MARKET) String market) {
-        return ApiResponse.ok(service.findAll(market));
+        return ApiResponse.ok(repository.findAll(market));
     }
 
     @GetMapping("/{id}")
     public ApiResponse<StockListItem> get(@PathVariable Long id) {
-        StockListItem item = service.findById(id);
+        StockListItem item = repository.findById(id);
         if (item == null) {
             return ApiResponse.fail("记录不存在, id=" + id);
         }
@@ -103,7 +101,7 @@ public class StockListController {
             return ApiResponse.fail("股票代码不能为空");
         }
         try {
-            long id = service.insert(item);
+            long id = repository.insert(item);
             return ApiResponse.ok(id, "新增成功");
         } catch (Exception e) {
             return ApiResponse.fail("新增失败: " + rootMsg(e));
@@ -116,7 +114,7 @@ public class StockListController {
             return ApiResponse.fail("请求体不能为空");
         }
         item.setId(id);
-        int rows = service.update(item);
+        int rows = repository.update(item);
         if (rows == 0) {
             return ApiResponse.fail("更新失败, 记录不存在 id=" + id);
         }
@@ -125,7 +123,7 @@ public class StockListController {
 
     @DeleteMapping("/{id}")
     public ApiResponse<Integer> delete(@PathVariable Long id) {
-        return ApiResponse.ok(service.delete(id), "删除成功");
+        return ApiResponse.ok(repository.delete(id), "删除成功");
     }
 
     /** 从 resources/stock-list.json 导入；只导入沪深A股（6 位且 60/68/00/30 开头） */
@@ -134,12 +132,12 @@ public class StockListController {
             @RequestBody(required = false) Map<String, String> body) {
         String file = body == null ? null : body.get("file");
         try {
-            long before = service.count();
+            long before = repository.count();
             int parsed = importService.importFromFile(file);
             Map<String, Object> data = new HashMap<>();
             data.put("parsed", parsed);
             data.put("before", before);
-            data.put("after", service.count());
+            data.put("after", repository.count());
             return ApiResponse.ok(data, "导入完成，解析 " + parsed + " 条");
         } catch (Exception e) {
             return ApiResponse.fail("导入失败: " + rootMsg(e));

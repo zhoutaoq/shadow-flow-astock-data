@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="LGSs8Dnqfz7rF7IfrNxwbV">
+<head data-page-node-id="eVGqOhYsGEoHVE8VXGBDaq">
+    <meta charset="UTF-8" data-page-node-id="cJnZtAOHAFcSuOhmFHQ3bR">
+    <meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="9tFvSYDlcAO83tlA6ZdnMc">
+    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>用户管理</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260912f" data-page-node-id="SWdqXq14OX31AokLLilU5o">
+    <style>
+        .u-toolbar { display: flex; gap: var(--sp-2); align-items: flex-end; flex-wrap: wrap; }
+        .u-toolbar .field { margin-bottom: 0; }
+        .u-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+        .u-head h2 { margin: 0; }
+        .u-count {
+            margin-left: auto; font-size: var(--fs-12); color: var(--text-dim);
+            font-variant-numeric: tabular-nums;
+        }
+        /* 邮箱列：头像 + 邮箱，超管再挂一枚角色标 */
+        .u-user { display: inline-flex; align-items: center; gap: 9px; }
+        .u-avatar {
+            width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto;
+            background: var(--grad-primary); color: #fff;
+            font-size: var(--fs-11); font-weight: 600;
+            display: inline-flex; align-items: center; justify-content: center;
+            text-transform: uppercase; box-shadow: inset 0 1px 0 var(--sheen);
+        }
+        .u-me { font-size: var(--fs-11); color: var(--text-dim); }
+        .u-role {
+            font-size: var(--fs-11); border-radius: var(--r-pill); padding: 1px 8px;
+            border: 1px solid var(--border); color: var(--text-dim); white-space: nowrap;
+        }
+        .u-role.admin { color: var(--msg-info-fg); border-color: var(--primary); background: var(--bg-tint); }
+        /* 状态：小圆点 + 文案，比纯文字更快扫 */
+        .u-state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-12); }
+        .u-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex: 0 0 auto; }
+        .u-state.off .u-dot { background: var(--disabled-fg); }
+        .u-time { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+<body data-page-node-id="CS6lGRdKriQtazHnRmwylU">
+<header class="topbar" data-page-node-id="e18Fntm08R3rswPJIqlPwy">
+    <a class="brand" href="/" data-page-node-id="xmQKrG4YERcZLwowAK0qyA">金牛数据</a>
+    <nav class="nav" id="nav" data-page-node-id="wtDM8oRWkifwurBGa04klQ"></nav>
+</header>
+
+<main class="container" data-page-node-id="okG3EmkYXA0ozRIuiIYS59">
+    <div id="msgBox" class="msg" data-page-node-id="tkPf4ale8ktR6TVxTht1YX"></div>
+
+    <section class="panel" id="denyPanel" style="display:none" data-page-node-id="kVwQi2czPr54HZd1WEHqu1">
+        <h2 data-page-node-id="GKKTIOwREsEQydFiBVoGac">用户管理</h2>
+        <div class="msg msg-err" style="display:block" id="denyMsg" data-page-node-id="42dAZsuiegPaLD6Uj4iFc0"></div>
+    </section>
+
+    <section class="panel" id="mainPanel" style="display:none" data-page-node-id="G25LYPZjnqQKTSPA9UpbsO">
+        <div class="u-head" data-page-node-id="a1CddjbeUcHdGvSyGcsWFe">
+            <h2>用户管理</h2>
+            <span class="u-count" id="uCount"></span>
+        </div>
+
+        <div class="u-toolbar" data-page-node-id="4Z673S5GcVmr2vCy9OmjEe">
+            <div class="field grow" data-page-node-id="QttzHng4bMaqGdjrkRP63D">
+                <input type="text" id="fKw" spellcheck="false" placeholder="搜索邮箱"
+                       data-page-node-id="7YYPQ8hWgWDqsfOOVVytGB">
+            </div>
+            <button onclick="searchUsers()" data-page-node-id="9GiZ2kqFCuWYOErFYagrwF">查询</button>
+            <button class="btn-ghost" onclick="resetKw()" data-page-node-id="vgB59XJelA4OpGp5K66hHC">重置</button>
+        </div>
+
+        <table class="grid" style="margin-top:var(--sp-4)" data-page-node-id="OPehaeuCYEyZ7jpBC6bFqT">
+            <thead data-page-node-id="MrVnSO5XEJmVEdMPCMXCvu">
+            <tr data-page-node-id="iRlHqZP4dE4vV48aLc9i4L">
+                <th style="width:70px" data-page-node-id="EFWFdm2zqFVxr9NlOaXDKT">ID</th>
+                <th data-page-node-id="aNbPeUfEftdCV5bXqdDWmF">邮箱</th>
+                <th style="width:90px" data-page-node-id="4M1Oh7hJibvB5pamo1elTC">角色</th>
+                <th style="width:80px" data-page-node-id="VEMiuKc3P0y4b7me8XXicy">状态</th>
+                <th style="width:170px" data-page-node-id="D1bFUGwXbAeHv4WdDIxOrG">创建时间</th>
+                <th style="width:170px" data-page-node-id="vqYUrzMF7FAuY5624VXyJ2">最近登录</th>
+                <th style="width:110px" data-page-node-id="7AQPuPIUpeGBaCZzsSYbOX">操作</th>
+            </tr>
+            </thead>
+            <tbody id="uBody" data-page-node-id="m0u6CDsFojbeOiKvmFwfch"></tbody>
+        </table>
+        <div class="pager" id="uPager" data-page-node-id="UXVSh3xJLber2V0lnLRTEw"></div>
+    </section>
+</main>
+
+<script src="/js/common.js?v=20260912f"></script>
+<script>
+    var page = 1, size = 20, keyword = '';
+
+    async function loadUsers(p) {
+        page = p || page;
+        var r = await get('/api/admin/users?page=' + page + '&size=' + size
+            + '&keyword=' + encodeURIComponent(keyword));
+        if (!r || !r.success) {
+            return;
+        }
+        var data = r.data || {rows: [], total: 0};
+        renderUsers(data);
+    }
+
+    function renderUsers(data) {
+        var rows = data.rows || [];
+        var body = document.getElementById('uBody');
+        document.getElementById('uCount').textContent = '共 ' + (data.total || 0) + ' 个账号';
+        if (!rows.length) {
+            body.innerHTML = '<tr><td class="empty" colspan="7">没有匹配的账号</td></tr>';
+        } else {
+            body.innerHTML = rows.map(function (u) {
+                var mine = ME.user && ME.user.id === u.id;
+                return '<tr>'
+                    + '<td class="u-time">' + u.id + '</td>'
+                    + '<td><span class="u-user"><span class="u-avatar">'
+                    + esc((u.username || '?').charAt(0)) + '</span>'
+                    + esc(u.username) + (mine ? '<span class="u-me">当前账号</span>' : '')
+                    + '</span></td>'
+                    + '<td><span class="u-role' + (u.admin ? ' admin' : '') + '">'
+                    + (u.admin ? '超管' : '成员') + '</span></td>'
+                    + '<td><span class="u-state' + (u.enabled ? '' : ' off') + '">'
+                    + '<i class="u-dot"></i>' + (u.enabled ? '正常' : '已停用') + '</span></td>'
+                    + '<td class="u-time">' + esc(u.createTime || '—') + '</td>'
+                    + '<td class="u-time">' + esc(u.lastLoginTime || '—') + '</td>'
+                    + '<td><button class="btn-sm btn-ghost" onclick="openReset(' + u.id
+                    + ',\'' + esc(u.username) + '\')">重置密码</button></td>'
+                    + '</tr>';
+            }).join('');
+        }
+        renderPager(document.getElementById('uPager'), data.page || 1, data.size || size,
+            data.total || 0, loadUsers);
+    }
+
+    function searchUsers() {
+        keyword = document.getElementById('fKw').value.trim();
+        loadUsers(1);
+    }
+
+    function resetKw() {
+        document.getElementById('fKw').value = '';
+        keyword = '';
+        loadUsers(1);
+    }
+
+    /** 重置密码弹窗：新密码规则与注册一致 */
+    var resetId = 0;
+    function openReset(id, username) {
+        resetId = id;
+        var mask = document.getElementById('resetMask');
+        if (!mask) {
+            mask = document.createElement('div');
+            mask.className = 'mask';
+            mask.id = 'resetMask';
+            mask.innerHTML = '<div class="modal modal-auth">'
+                + '<div class="auth-head">'
+                + '<span class="auth-brand"><span class="mark">' + ICON.pwd + '</span>重置密码</span>'
+                + '<span class="auth-sub" id="resetWho"></span>'
+                + '</div>'
+                + '<div class="auth-alert" id="resetErr">' + ICON.err + '<span id="resetErrTxt"></span></div>'
+                + '<div class="auth-field"><label for="resetPwd">新密码</label>'
+                + '<div class="auth-input-wrap has-toggle">'
+                + '<input type="password" id="resetPwd" autocomplete="new-password">'
+                + '<button class="auth-eye" type="button" data-for="resetPwd" aria-label="显示密码">' + ICON.eye + '</button>'
+                + '</div></div>'
+                + '<div class="auth-field"><label for="resetPwd2">确认新密码</label>'
+                + '<div class="auth-input-wrap has-toggle">'
+                + '<input type="password" id="resetPwd2" autocomplete="new-password">'
+                + '<button class="auth-eye" type="button" data-for="resetPwd2" aria-label="显示密码">' + ICON.eye + '</button>'
+                + '</div></div>'
+                + '<button class="auth-submit" id="resetSave" type="button">保存新密码</button>'
+                + '</div>';
+            document.body.appendChild(mask);
+            var hide = function () { mask.classList.remove('show'); };
+            mask.querySelectorAll('.auth-eye').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var input = mask.querySelector('#' + btn.getAttribute('data-for'));
+                    var show = input.type === 'password';
+                    input.type = show ? 'text' : 'password';
+                    btn.innerHTML = show ? ICON.eyeOff : ICON.eye;
+                });
+            });
+            mask.addEventListener('mousedown', function (e) { if (e.target === mask) hide(); });
+            mask.querySelector('#resetSave').addEventListener('click', submitReset);
+            ['resetPwd', 'resetPwd2'].forEach(function (id2) {
+                mask.querySelector('#' + id2).addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submitReset();
+                    }
+                });
+            });
+        }
+        mask.querySelector('#resetWho').textContent = '为 ' + username + ' 设置一个新密码';
+        mask.querySelector('#resetPwd').value = '';
+        mask.querySelector('#resetPwd2').value = '';
+        mask.querySelector('#resetPwd').type = 'password';
+        mask.querySelector('#resetPwd2').type = 'password';
+        mask.querySelectorAll('.auth-eye').forEach(function (b) { b.innerHTML = ICON.eye; });
+        setResetError('');
+        mask.classList.add('show');
+        setTimeout(function () { mask.querySelector('#resetPwd').focus(); }, 60);
+    }
+
+    function setResetError(text) {
+        var mask = document.getElementById('resetMask');
+        mask.querySelector('#resetErrTxt').textContent = text || '';
+        mask.querySelector('#resetErr').classList.toggle('show', !!text);
+    }
+
+    async function submitReset() {
+        var mask = document.getElementById('resetMask');
+        var pwd = mask.querySelector('#resetPwd').value.trim();
+        var pwd2 = mask.querySelector('#resetPwd2').value.trim();
+        var min = (ME.rules && ME.rules.minPasswordLength) || 6;
+        if (pwd.length < min) {
+            setResetError('密码至少 ' + min + ' 位');
+            return;
+        }
+        if (!/[A-Za-z]/.test(pwd) || !/\d/.test(pwd)) {
+            setResetError('密码需要同时包含字母和数字');
+            return;
+        }
+        if (pwd !== pwd2) {
+            setResetError('两次输入的密码不一致');
+            return;
+        }
+        setResetError('');
+        var btn = mask.querySelector('#resetSave');
+        btn.classList.add('loading');
+        btn.innerHTML = '<span class="auth-spin"></span>保存中…';
+        try {
+            var r = await put('/api/admin/users/' + resetId + '/password', {password: pwd});
+            if (!r || !r.success) {
+                setResetError((r && r.message) || '重置失败，请稍后再试');
+                return;
+            }
+            mask.classList.remove('show');
+            toast('密码已重置', 'ok');
+        } finally {
+            btn.classList.remove('loading');
+            btn.textContent = '保存新密码';
+        }
+    }
+
+    document.getElementById('fKw').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            searchUsers();
+        }
+    });
+
+    (async function init() {
+        var ok = await requireLogin();
+        if (!ok) {
+            return;
+        }
+        if (!isAdmin()) {
+            document.getElementById('mainPanel').style.display = 'none';
+            document.getElementById('denyPanel').style.display = '';
+            document.getElementById('denyMsg').textContent =
+                '只有超管能进用户管理，当前账号是 ' + (ME.user && ME.user.username) + '。';
+            return;
+        }
+        document.getElementById('mainPanel').style.display = '';
+        await loadUsers(1);
+    })();
+</script>
+</body>
+</html>

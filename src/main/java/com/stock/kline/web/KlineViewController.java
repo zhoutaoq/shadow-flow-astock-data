@@ -3,7 +3,7 @@ package com.stock.kline.web;
 import com.stock.kline.config.WaizaoProperties;
 import com.stock.kline.model.ApiResponse;
 import com.stock.kline.model.StockKlineDaily;
-import com.stock.kline.support.KlineSource;
+import com.stock.kline.repo.KlineRepository;
 import com.stock.kline.support.KlineWindow;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,11 +33,11 @@ public class KlineViewController {
     /** 系统只做沪深A股，供应商的 symbol 参数恒定是这个值 */
     private static final String MARKET = "stock";
 
-    private final KlineSource klineSource;
+    private final KlineRepository klineRepository;
     private final WaizaoProperties props;
 
-    public KlineViewController(KlineSource klineSource, WaizaoProperties props) {
-        this.klineSource = klineSource;
+    public KlineViewController(KlineRepository klineRepository, WaizaoProperties props) {
+        this.klineRepository = klineRepository;
         this.props = props;
     }
 
@@ -63,7 +63,7 @@ public class KlineViewController {
                         + " 个自然日，当前 " + span + " 天");
             }
         }
-        KlineWindow w = klineSource.load(MARKET, code.trim(), start, end, 0);
+        KlineWindow w = klineRepository.load(MARKET, code.trim(), start, end, 0);
         List<StockKlineDaily> rows = w.getRows();
         Map<String, Object> data = new HashMap<>();
         data.put("code", code);
@@ -76,6 +76,6 @@ public class KlineViewController {
     /** 可查范围的日期跨度；无数据库模式返回 count=0，页面改由用户给起止日期 */
     @GetMapping("/span")
     public ApiResponse<Map<String, Object>> span(@RequestParam String code) {
-        return ApiResponse.ok(klineSource.span(MARKET, code.trim()));
+        return ApiResponse.ok(klineRepository.span(MARKET, code.trim()));
     }
 }

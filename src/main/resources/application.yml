@@ -48,13 +48,39 @@ spring:
         cachecontrol:
           no-store: true
 
+# ============================================================
+# 账号体系（v1.3 SaaS 基础）
+# ============================================================
+app:
+  admin:
+    # 超管用户名固定 admin；初始密码只在「账号还不存在」时用于初始化，
+    # 之后一律以页面改过的为准（否则每次重启都会把密码打回初始值）。
+    # 用环境变量覆盖，别把口令写进仓库：ADMIN_PASSWORD=xxx java -jar xxx.jar
+    username: admin
+    password: ${ADMIN_PASSWORD:1}
+  auth:
+    # 登录态有效时长（小时），到期重新登录
+    session-hours: 12
+    # 是否开放注册；false 时只能由超管建账号
+    registration-enabled: true
+
 waizao:
-  # 是否启用数据库
-  # false（默认）= 无数据库单机模式：不连库，数据从供应商现取现用，回测不落盘，
-  #              只保留K线查看与回测，必要参数由用户在浏览器填写后复用
-  # true        = 数据库模式：完整逻辑，数据落库、支持股票列表/数据更新/调用日志/配置表
+  # 是否启用数据库（决定各仓储装配哪种持久化策略）
+  # false（默认）= 无数据库模式：不连库，数据以 JSON 文件落在 waizao.store.data-dir 下，
+  #              启动时全部载入内存；K线不落盘，每次向供应商现取现用
+  # true        = 数据库模式：数据落 MySQL
+  # 两种模式共用同一套模型与业务代码，差别只在策略实现
   db:
     enabled: false
+  # v1.3 持久化参数
+  store:
+    # 数据文件根目录（相对路径按进程工作目录解析）。
+    # 无数据库模式下：sys-config.json / stock-list.json / backtest/ 都落在这里
+    data-dir: ./data
+    # 单个文件表的行数上限。会无限增长的日志类数据按设计不落盘，这里只兜底防止文件膨胀
+    max-rows: 10000
+    # 历史回测最多保留多少条，超出淘汰最旧的
+    backtest-keep: 500
   api:
     base-url: http://api.waizaowang.com
     # ⚠️ token 是频繁变动的凭据，统一维护在配置表（场景 waizao / 键 token），页面「系统配置」保存即生效。
@@ -87,8 +113,8 @@ watch:
   # 落盘配置文件（开关 / 轮询间隔 / 阈值 / 盯盘股票集合）。
   # 解析顺序：先工作目录下的 watch-config.json，找不到再用这里的绝对路径。
   config-file: /home/stock-backtesting/watch-config.json
-  # 进入盯盘页面的密码（后端校验，不下发给前端）
-  password: "1"
+  # v1.3：盯盘配置改为按用户隔离，落盘在 ./data/watch/watch-{userId}.json，
+  #      系统默认那份绑定 admin 账号。原来的「盯盘页面密码」已由账号登录取代，不再需要。
   # 名称 → 代码 的索引来源（与 waizao.stock-list-file 同一份文件）
   stock-list-file: resources/stock-list.json
   # 轮询间隔（秒）：每次调度按这个间隔并发查一遍名单里所有标的
@@ -116,6 +142,10 @@ watch:
     connect-timeout-ms: 5000
     read-timeout-ms: 5000
   dingtalk:
+    # 钉钉消息推送总开关：false 时一条都不发（盯盘告警 / 启动通知 / 用户反馈全部拦下），只打日志。
+    # 默认 false —— 开发环境反复启停不该往群里刷消息；
+    # 需要推送时显式打开：--watch.dingtalk.enabled=true
+    enabled: false
     # 机器人 Webhook（含 access_token）；留空则不推送、只打日志
     # v1.4 起钉钉机器人只支持"自定义关键词"模式（消息文本必须含后台配置的关键词），
     # 不再支持「加签」，所以也不需要 secret 字段。

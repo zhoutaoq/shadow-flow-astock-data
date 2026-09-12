@@ -327,6 +327,67 @@ a.nav-item { color: var(--text-dim); }
 [data-theme='light'] .theme-toggle .ico-sun { display: none; }
 [data-theme='light'] .theme-toggle .ico-moon { display: inline-flex; }
 
+/* ============ 顶栏账号区（登录 / 注册 / 已登录邮箱） ============ */
+.user-area {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    font-size: var(--fs-13);
+}
+.user-area .ua-link { color: var(--text-dim); }
+.user-area .ua-link:hover { color: var(--primary); }
+.user-area .ua-sep { color: var(--text-dim); opacity: .5; }
+.ua-group { position: relative; }
+.ua-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: var(--r-md);
+    height: 32px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-13);
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.ua-btn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--primary); }
+.ua-role {
+    font-size: var(--fs-11);
+    color: var(--primary);
+    border: 1px solid var(--primary);
+    border-radius: var(--r-sm);
+    padding: 0 4px;
+    font-weight: 400;
+}
+.ua-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% - 2px);
+    min-width: 116px;
+    padding: 6px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: 0 10px 28px var(--shadow);
+    z-index: 120;
+}
+.ua-group:hover .ua-menu,
+.ua-group:focus-within .ua-menu { display: block; }
+.ua-menu a {
+    display: block;
+    color: var(--text-dim);
+    padding: 7px 10px;
+    border-radius: var(--r-md);
+    font-size: var(--fs-13);
+    white-space: nowrap;
+}
+.ua-menu a:hover { background: var(--bg-hover); color: var(--text); }
+
 /* ============ 容器 ============ */
 .container {
     padding: var(--sp-5) var(--sp-6) 60px;
@@ -409,7 +470,8 @@ a.nav-item { color: var(--text-dim); }
 .field label { font-size: var(--fs-12); color: var(--text-dim); }
 .field.grow { flex: 1 1 160px; }
 
-input[type=text], input[type=number], input[type=date], input[type=password], select, textarea {
+input[type=text], input[type=number], input[type=date], input[type=password],
+input[type=email], input[type=search], input[type=tel], select, textarea {
     background: var(--bg-input);
     border: 1px solid var(--border);
     border-radius: var(--r-md);
@@ -561,6 +623,17 @@ pre.json {
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
 .modal .field { margin-bottom: var(--sp-3); }
 .modal .field input, .modal .field select { width: 100%; }
+
+/* 登录 / 注册弹窗：窄一点，别跟明细弹窗一个尺码 */
+.modal-auth { width: 380px; }
+.auth-tabs { display: flex; gap: 6px; margin-bottom: var(--sp-4); }
+.auth-tab {
+    flex: 1; padding: 7px 0; cursor: pointer; font-size: var(--fs-13);
+    background: transparent; color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.auth-tab:hover { color: var(--text); border-color: var(--primary); }
+.auth-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 
 /* ============ 双栏选择器 ============ */
 .picker { display: flex; gap: var(--sp-3); height: 340px; }
@@ -849,6 +922,7 @@ input.sp-input {
 }
 
 /* ============ 用户反馈 ============ */
+.fb-panel { max-width: 880px; }
 /* 反馈用多行输入，比普通 input 高得多，这里只补宽度与高度，配色仍走上面的 textarea 规则 */
 .fb-field textarea {
     width: 100%;
@@ -868,6 +942,354 @@ input.sp-input {
 .fb-count { font-size: var(--fs-12); color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .fb-count.over { color: var(--danger); }
 .fb-actions { display: flex; gap: var(--sp-2); }
+
+/* =========================================================================
+ * v1.3.2 · 界面现代化
+ *
+ * 老一套 6px 圆角 + 单层边框 + 无阴影的观感偏"工具"，账号相关的界面
+ * （登录 / 注册、顶栏账号区、用户管理、提示条）需要更接近当代产品的样子。
+ * 做法是在既有语义令牌之上加一层「现代层」：更大的圆角、分层的柔和阴影、
+ * 明确的焦点环、有节制的过渡曲线，以及少量渐变高光。
+ * 不引入任何新色值语义 —— 涨红跌绿、主色仍然是上面的令牌。
+ * ========================================================================= */
+
+:root {
+    --r-xl: 14px;          /* 面板 / 弹窗 */
+    --r-lg2: 12px;         /* 卡片 / 下拉 */
+    --r-ctl: 10px;         /* 按钮 / 输入框 */
+    --r-pill: 999px;
+
+    /* 过渡曲线：进来快、收尾稳，比 ease 自然 */
+    --ease-out: cubic-bezier(.16, 1, .3, 1);
+    --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+
+    /* 焦点环 */
+    --ring: 0 0 0 3px rgba(59, 124, 255, .22);
+
+    /* 分层阴影：1 贴地、2 悬浮、3 模态 */
+    --shadow-1: 0 1px 2px var(--shadow-sm), 0 1px 3px var(--shadow-sm);
+    --shadow-2: 0 10px 24px -8px var(--shadow), 0 2px 6px var(--shadow-sm);
+    --shadow-3: 0 28px 64px -16px var(--shadow), 0 6px 16px var(--shadow-sm);
+
+    /* 主按钮渐变：两端都用令牌，两个主题下白字都清晰 */
+    --grad-primary: linear-gradient(180deg, var(--primary-light), var(--primary));
+}
+
+[data-theme='light'],
+:root:not([data-theme]) {
+    --ring: 0 0 0 3px rgba(37, 99, 235, .16);
+}
+
+/* ---- 面板 / 卡片：圆角放大、加一层很浅的落地阴影 ---- */
+.panel {
+    border-radius: var(--r-xl);
+    padding: var(--sp-5) 22px;
+    box-shadow: var(--shadow-1);
+}
+.card { border-radius: var(--r-xl); box-shadow: var(--shadow-1); }
+.quick-item { border-radius: var(--r-lg2); transition: border-color .18s var(--ease-out), background .18s var(--ease-out), transform .18s var(--ease-out), box-shadow .18s var(--ease-out); }
+.quick-item:hover { transform: translateY(-1px); box-shadow: var(--shadow-2); }
+
+/* ---- 表单控件：更大的圆角与内边距，焦点环统一 ---- */
+input[type=text], input[type=number], input[type=date], input[type=password],
+input[type=email], input[type=search], input[type=tel], select, textarea {
+    border-radius: var(--r-ctl);
+    padding: 9px 12px;
+    transition: border-color .16s var(--ease-out), box-shadow .16s var(--ease-out), background .16s var(--ease-out);
+}
+input:hover:not(:focus):not([readonly]), select:hover:not(:focus), textarea:hover:not(:focus) {
+    border-color: var(--bg-strong);
+}
+input:focus, select:focus, textarea:focus {
+    box-shadow: var(--ring);
+}
+
+/* ---- 按钮：主按钮带渐变与轻微浮起，次按钮描边更清晰 ----
+   作用域必须精确：只有"没有修饰类的主按钮"和 .btn 走主色，
+   .btn-ghost / .btn-danger / .btn-warn / .auth-tab / .auth-eye 各自覆盖，
+   否则页签、图标按钮会被主按钮的渐变与阴影吃掉。 */
+button, .btn {
+    border-radius: var(--r-ctl);
+    padding: 9px 16px;
+    font-weight: 500;
+    letter-spacing: .2px;
+}
+button:not([class]), .btn, .auth-submit {
+    background: var(--grad-primary);
+    box-shadow: 0 1px 2px var(--shadow-sm), inset 0 1px 0 var(--sheen);
+}
+button:not([class]):hover, .btn:hover, .auth-submit:hover { background: var(--primary-hover); }
+button:not([class]):not(:disabled):hover, .btn:not(.btn-ghost):not(:disabled):hover { transform: translateY(-1px); }
+button:active:not(:disabled), .btn:active { transform: translateY(0) scale(.99); }
+button:disabled { box-shadow: none; }
+.btn-ghost, .btn-danger, .btn-warn, .auth-tab, .auth-eye {
+    background: transparent;
+    box-shadow: none;
+}
+.btn-danger { background: var(--danger); }
+.btn-warn { background: var(--warn); }
+.btn-ghost { border-radius: var(--r-ctl); border-color: var(--border); }
+.btn-ghost:hover { background: var(--bg-hover); }
+.btn-sm { padding: 5px 11px; font-size: var(--fs-12); border-radius: 8px; }
+
+/* 全局提示条（#msgBox）做成右下角浮层：不占页面布局，也不会和顶栏账号下拉打架。
+   页面内联的 <div class="msg msg-info"> 说明块不受影响，仍在原位置。 */
+#msgBox {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 300;
+    margin: 0;
+    max-width: 400px;
+    box-shadow: var(--shadow-3);
+}
+@media (max-width: 720px) {
+    #msgBox { left: 16px; right: 16px; max-width: none; }
+}
+#msgBox.msg-ok, #msgBox.msg-err, #msgBox.msg-info {
+    animation: msg-slide-in .26s var(--ease-out);
+}
+@keyframes msg-slide-in {
+    from { opacity: 0; transform: translateY(14px) scale(.98); }
+    to { opacity: 1; transform: none; }
+}
+
+/* ---- 提示条：左侧色条 + 图标位 + 柔和阴影 ----
+   只有带类型类（msg-ok / msg-err / msg-info）时才画背景与阴影：
+   #msgBox 这类空占位元素经常是空的，画上阴影会在页面顶部留一条空框。 */
+.msg {
+    border-radius: var(--r-lg2);
+    padding: 11px 14px;
+}
+.msg-ok, .msg-err, .msg-info {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    border-left-width: 3px;
+    box-shadow: var(--shadow-1);
+    animation: msg-in .22s var(--ease-out);
+}
+.msg-ok { border-left-color: var(--success); }
+.msg-err { border-left-color: var(--danger); }
+.msg-info { border-left-color: var(--primary); }
+.msg-ico { flex: 0 0 auto; margin-top: 1px; opacity: .95; }
+.msg-txt { flex: 1 1 auto; min-width: 0; }
+@keyframes msg-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* ---- 弹窗：进场动效 + 分层阴影 + 更大的圆角 ---- */
+.mask { backdrop-filter: blur(3px); }
+.modal {
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: var(--shadow-3);
+    animation: modal-in .24s var(--ease-out);
+}
+@keyframes modal-in {
+    from { opacity: 0; transform: translateY(10px) scale(.98); }
+    to { opacity: 1; transform: none; }
+}
+
+/* ---- 表格：间隔行、悬停高亮更轻 ---- */
+.grid th { font-weight: 500; letter-spacing: .2px; }
+
+/* ============ 顶栏账号区（现代版） ============ */
+.user-area { gap: var(--sp-2); }
+.user-area .ua-link {
+    color: var(--text-dim);
+    padding: 6px 10px;
+    border-radius: var(--r-ctl);
+    transition: color .16s var(--ease-out), background .16s var(--ease-out);
+}
+.user-area .ua-link:hover { color: var(--text); background: var(--bg-hover); }
+.user-area .ua-sep { display: none; }
+.ua-btn {
+    height: 34px;
+    padding: 0 10px 0 6px;
+    border-radius: var(--r-pill);
+    border-color: var(--border);
+    color: var(--text);
+    gap: 8px;
+    transition: background .16s var(--ease-out), border-color .16s var(--ease-out);
+}
+.ua-btn:hover { background: var(--bg-hover); border-color: var(--primary); color: var(--text); transform: none; }
+
+/* 头像：用主色渐变打底，取邮箱首字母 */
+.ua-avatar {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--grad-primary);
+    color: #fff;
+    font-size: var(--fs-11);
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-transform: uppercase;
+    flex: 0 0 auto;
+    box-shadow: inset 0 1px 0 var(--sheen);
+}
+.ua-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.ua-caret {
+    font-style: normal; font-size: 9px; opacity: .6;
+    transition: transform .18s var(--ease-out);
+}
+.ua-group:hover .ua-caret, .ua-group:focus-within .ua-caret { transform: rotate(180deg); }
+.ua-role {
+    border-radius: var(--r-pill);
+    padding: 1px 7px;
+    border-color: var(--primary);
+    background: var(--bg-tint);
+    color: var(--msg-info-fg);
+    font-size: var(--fs-11);
+}
+.ua-menu {
+    min-width: 190px;
+    padding: 6px;
+    border-radius: var(--r-lg2);
+    box-shadow: var(--shadow-3);
+    top: calc(100% + 6px);
+    transform-origin: top right;
+    animation: menu-in .16s var(--ease-out);
+}
+@keyframes menu-in {
+    from { opacity: 0; transform: translateY(-4px) scale(.98); }
+    to { opacity: 1; transform: none; }
+}
+.ua-menu a {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    color: var(--text);
+}
+.ua-menu a + a { margin-top: 2px; }
+.ua-menu a svg { width: 15px; height: 15px; opacity: .75; flex: 0 0 auto; }
+.ua-menu a.danger, .ua-menu a.danger svg { color: var(--danger); opacity: 1; }
+.ua-menu a.danger:hover { background: rgba(229, 72, 77, .12); color: var(--danger); }
+
+/* ============ 登录 / 注册弹窗（现代版） ============ */
+.modal-auth {
+    width: 400px;
+    padding: 28px 28px 22px;
+}
+.auth-head { display: flex; flex-direction: column; gap: 3px; margin-bottom: 18px; }
+.auth-brand {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: var(--fs-16); font-weight: 600; color: var(--text-strong);
+    letter-spacing: .2px;
+}
+.auth-brand .mark {
+    width: 26px; height: 26px; border-radius: 8px;
+    background: var(--grad-primary);
+    box-shadow: inset 0 1px 0 var(--sheen), var(--shadow-1);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff;
+}
+.auth-brand .mark svg { width: 15px; height: 15px; }
+.auth-sub { font-size: var(--fs-12); color: var(--text-dim); }
+
+/* 分段控件式页签：底槽 + 滑块 */
+.auth-tabs {
+    display: flex; gap: 0; margin-bottom: 18px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    padding: 3px;
+}
+.auth-tab {
+    flex: 1; padding: 7px 0; cursor: pointer; font-size: var(--fs-13);
+    background: transparent; border: none; border-radius: var(--r-pill);
+    color: var(--text-dim); font-weight: 500;
+    transition: background .18s var(--ease-out), color .18s var(--ease-out), box-shadow .18s var(--ease-out);
+}
+.auth-tab:hover { color: var(--text); background: transparent; transform: none; }
+.auth-tab.active {
+    background: var(--bg-active); color: var(--text-strong);
+    box-shadow: var(--shadow-1);
+}
+
+/* 字段：右侧带「显示密码」的眼睛按钮 */
+.auth-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 13px; }
+.auth-field > label { font-size: var(--fs-12); color: var(--text-dim); }
+.auth-input-wrap { position: relative; display: flex; align-items: center; }
+.auth-input-wrap input {
+    width: 100%;
+    font-size: var(--fs-13);
+}
+/* 只有带「显示密码」眼睛的字段才给右侧留位，账号框不留空档 */
+.auth-input-wrap.has-toggle input { padding-right: 40px; }
+.auth-eye {
+    position: absolute; right: 5px;
+    width: 30px; height: 30px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: none; border-radius: 8px;
+    color: var(--text-dim); cursor: pointer;
+    box-shadow: none;
+}
+.auth-eye:hover { background: var(--bg-hover); color: var(--text); transform: none; }
+.auth-eye svg { width: 16px; height: 16px; }
+.auth-field.invalid input { border-color: var(--danger); }
+.auth-field.invalid input:focus { box-shadow: 0 0 0 3px rgba(229, 72, 77, .18); }
+.auth-tip { font-size: var(--fs-11); color: var(--text-dim); }
+.auth-field.invalid .auth-tip { color: var(--msg-err-fg); }
+
+/* 密码强度：三段色条，够直白 */
+.auth-strength { display: flex; gap: 4px; margin-top: 7px; }
+.auth-strength[hidden] { display: none; }
+.auth-strength i {
+    flex: 1; height: 3px; border-radius: 2px; background: var(--track);
+    transition: background .22s var(--ease-out);
+}
+.auth-strength.s1 i:nth-child(1) { background: var(--danger); }
+.auth-strength.s2 i:nth-child(-n+2) { background: var(--warn); }
+.auth-strength.s3 i { background: var(--success); }
+
+/* 提交按钮：整宽、带加载态 */
+.auth-submit {    width: 100%;
+    margin-top: 6px;
+    height: 40px;
+    border-radius: var(--r-ctl);
+    font-size: var(--fs-14);
+}
+.auth-submit.loading { opacity: .9; pointer-events: none; }
+.auth-spin {
+    width: 14px; height: 14px; margin-right: 7px;
+    border: 2px solid rgba(255, 255, 255, .45);
+    border-top-color: #fff;
+    border-radius: 50%;
+    display: inline-block;
+    vertical-align: -2px;
+    animation: auth-spin .7s linear infinite;
+}
+@keyframes auth-spin { to { transform: rotate(360deg); } }
+.auth-foot {
+    margin-top: 14px;
+    text-align: center;
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+}
+.auth-foot a { font-weight: 500; }
+.auth-alert {
+    display: none;
+    align-items: flex-start; gap: 8px;
+    margin-bottom: 13px; padding: 10px 12px;
+    border-radius: var(--r-ctl);
+    background: rgba(229, 72, 77, .1);
+    border: 1px solid rgba(229, 72, 77, .35);
+    color: var(--msg-err-fg);
+    font-size: var(--fs-12);
+}
+.auth-alert.show { display: flex; }
+.auth-alert svg { width: 15px; height: 15px; flex: 0 0 auto; margin-top: 1px; }
+.auth-ok {
+    background: rgba(46, 160, 67, .1);
+    border-color: rgba(46, 160, 67, .35);
+    color: var(--msg-ok-fg);
+}
 
 /* 尊重系统"减少动态效果"设置 */
 @media (prefers-reduced-motion: reduce) {

@@ -1,30 +1,292 @@
-        /* ============ 多规则编辑：每条一行，× 号靠右 ============ */
-        .rule-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 0;
-        }
-        /* 周期倍数输入框固定宽度，避免被 % 拉变形 */
-        .rule-row .rule-n {
-            flex: 0 0 80px;
-        }
-        .rule-row .rule-pct {
-            flex: 0 0 96px;
-        }
-        .rule-row .rule-del {
-            margin-left: auto;
-            color: var(--text-dim, #8a93a6);
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            padding: 2px 6px;
-        }
-        .rule-row .rule-del:hover { color: var(--danger); }
+/* =========================================================================
+ * 盯盘页
+ *
+ * 结构：页头（标题 + 实时摘要 + 动作）→ 分组卡片 → 未保存浮动操作条。
+ * 卡片按「运行 / 封板放量 / 推送」三张窄卡一行，再放两张通栏的
+ * 「涨跌幅告警 / 盯盘标的」，让列表区拿到整行宽度。
+ * 颜色与圆角只走 common.css 的令牌。
+ * ========================================================================= */
 
-        /* 涨跌停放量的两个阈值输入框：固定宽度，避免被前后的说明文字挤变形 */
-        .rule-row .surge-amount { flex: 0 0 110px; }
-        .rule-row .surge-times  { flex: 0 0 90px; }
+/* ============ 页头 ============ */
+.whead {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--sp-4);
+    flex-wrap: wrap;
+    margin-bottom: var(--sp-4);
+}
+.whead-l { min-width: 0; }
+.whead-t {
+    margin: 0;
+    font-size: var(--fs-20);
+    font-weight: 600;
+    letter-spacing: -.2px;
+    color: var(--text-strong);
+}
+.whead-r {
+    margin-left: auto;
+    display: flex;
+    gap: var(--sp-2);
+    flex-shrink: 0;
+}
 
-        /* ============ 钉钉区：单字段全宽，与告警规则行视觉一致 ============ */
+/* 实时摘要：运行状态 / 间隔 / 规则数 / 标的数，跟随表单即时刷新 */
+.wsum { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.wchip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    background: var(--bg-panel);
+    color: var(--text-dim);
+    font-size: var(--fs-12);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.wchip .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: 0 0 auto;
+}
+.wchip.on { color: var(--success); }
+.wchip.off { color: var(--text-dim); }
+
+/* ============ 卡片网格 ============ */
+.wgrid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--sp-4);
+}
+.wcard {
+    grid-column: span 12;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-1);
+    overflow: hidden;
+}
+.wcard-q { grid-column: span 4; }
+
+@media (max-width: 1180px) {
+    .wcard-q { grid-column: span 6; }
+}
+@media (max-width: 760px) {
+    .wcard-q { grid-column: span 12; }
+    .whead-r { margin-left: 0; }
+}
+
+/* 卡片头：图标 + 标题 +（右）计数 */
+.wcard-hd {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--border-soft);
+}
+.wcard-hd h2 {
+    margin: 0;
+    font-size: var(--fs-13);
+    font-weight: 600;
+    letter-spacing: .2px;
+    color: var(--text-strong);
+}
+.wcard-ic {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: var(--bg-tint);
+    color: var(--primary);
+    flex: 0 0 auto;
+}
+.wcard-ic svg { width: 15px; height: 15px; }
+.wcard-note {
+    margin-left: auto;
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.wcard-bd {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 18px;
+    flex: 1 1 auto;
+}
+
+/* ============ 开关 ============ */
+.sw {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+.sw input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+.sw-track {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    border-radius: var(--r-pill);
+    background: var(--track);
+    flex: 0 0 auto;
+    transition: background .2s var(--ease-out);
+}
+.sw-track::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+    transition: transform .2s var(--ease-out);
+}
+.sw input:checked + .sw-track { background: var(--primary); }
+.sw input:checked + .sw-track::after { transform: translateX(18px); }
+.sw input:focus-visible + .sw-track { box-shadow: var(--ring); }
+.sw-txt { font-size: var(--fs-13); color: var(--text-dim); }
+.sw input:checked ~ .sw-txt { color: var(--text-strong); font-weight: 500; }
+
+/* ============ 带单位的输入框 ============ */
+.unit-input {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    width: 100%;
+    padding: 0 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--r-ctl);
+    transition: border-color .16s var(--ease-out), box-shadow .16s var(--ease-out);
+}
+.unit-input:focus-within {
+    border-color: var(--primary);
+    box-shadow: var(--ring);
+}
+.unit-input > input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 9px 0;
+    font-size: var(--fs-13);
+    font-variant-numeric: tabular-nums;
+}
+.unit-input > input:hover,
+.unit-input > input:focus {
+    border: 0;
+    box-shadow: none;
+}
+.unit-input .unit {
+    flex: 0 0 auto;
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+}
+.unit-input.unit-sm {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 0 10px;
+}
+.unit-input.unit-sm > input { text-align: right; }
+
+/* ============ 涨跌幅告警规则 ============ */
+/* 限宽：规则本身很短，铺满整行会让删除按钮孤零零飘在卡片最右边 */
+.rule-list { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 620px; }
+.rule-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 8px 12px;
+    background: var(--bg-head);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-lg2);
+}
+.rr-t {
+    font-size: var(--fs-13);
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+/* 周期数 / 百分比输入框固定宽度，避免被中间的说明文字挤变形 */
+.rule-row .rule-n { flex: 0 0 62px; }
+.rule-row .rule-pct { flex: 0 0 68px; }
+
+.rr-del {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: background .16s var(--ease-out), color .16s var(--ease-out);
+}
+.rr-del:hover {
+    background: var(--bg-hover);
+    color: var(--danger);
+    transform: none;
+}
+.rr-add { align-self: flex-start; }
+
+/* ============ 未保存浮动操作条 ============ */
+.save-bar {
+    position: sticky;
+    bottom: 18px;
+    z-index: 60;
+    display: none;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-top: var(--sp-4);
+    padding: 10px 14px 10px 18px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg2);
+    box-shadow: var(--shadow-2);
+}
+.save-bar.show {
+    display: flex;
+    animation: savebar-in .24s var(--ease-out);
+}
+.save-bar-txt {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-right: auto;
+    font-size: var(--fs-13);
+    color: var(--text-dim);
+}
+.save-bar-txt .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--warn);
+    flex: 0 0 auto;
+}
+@keyframes savebar-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+}

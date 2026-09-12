@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260911b">
-    <link rel="stylesheet" href="/css/home.css?v=20260910d">
+    <link rel="stylesheet" href="/css/common.css?v=20260912f">
+    <link rel="stylesheet" href="/css/home.css?v=20260912f">
 </head>
 <body>
 <header class="topbar">
@@ -15,6 +15,8 @@
 </header>
 
 <main class="container">
+    <div id="msgBox" class="msg"></div>
+
     <!-- 品牌带：背景是实时生成的 K 线行情动画 -->
     <section class="hero">
         <canvas class="hero-canvas" id="heroCanvas" aria-hidden="true"></canvas>
@@ -153,7 +155,7 @@
                     <ul class="sc-points">
                         <li>涨幅 / 跌幅 / 量比 / 均线突破等多类阈值</li>
                         <li>轮询间隔可调，按自己的节奏走</li>
-                        <li>告警记录留痕，事后可复盘</li>
+                        <li>每次告警都有记录，事后可复盘</li>
                     </ul>
                     <a class="sc-cta" href="/pages/watch.html">配置盯盘<span class="sc-arrow-r">&rsaquo;</span></a>
                 </div>
@@ -209,59 +211,26 @@
         </div>
     </section>
 
-    <section class="panel" id="modePanel" style="display:none">
-        <h2 id="modeTitle">无数据库模式</h2>
-        <div class="msg msg-info" style="display:block" id="modeDesc"></div>
-    </section>
-
     <section class="panel">
         <h2>功能入口</h2>
         <div class="quick" id="quick"></div>
     </section>
 
-    <section class="panel">
-        <h2>产品说明</h2>
-        <table class="kv">
-            <tr><th>定位</th><td>金牛数据：股票日K 分析与回测工作台</td></tr>
-            <tr><th>数据内容</th><td>日K线：交易日 / 开盘 / 收盘 / 最高 / 最低 / 成交量 / 成交额 / 前收盘</td></tr>
-            <tr><th>查看方式</th><td>先选股票，再看该标的下的 K 线分析与明细</td></tr>
-        </table>
-    </section>
 </main>
 
-<script src="/js/common.js?v=20260911b"></script>
+<script src="/js/common.js?v=20260912f"></script>
 <script src="/js/date-picker.js"></script>
-<script src="/js/home.js?v=20260910d"></script>
+<script src="/js/home.js?v=20260912f"></script>
 <script>
-    /* 有数据库模式：能落库的全量入口（第 4 项是内联图标，不转义） */
-    var QUICK_DB = [
-        ['股票列表', '/pages/stock-list.html', '维护分析标的，进入单只股票的 K 线明细',
-            '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>'],
-        ['K线分析', '/pages/chart.html', '蜡烛图 + 成交量，拖拽缩放回看历史',
-            '<path d="M7 4v3M7 17v3M17 3v3M17 15v5"/><rect x="4" y="7" width="6" height="10"/><rect x="14" y="6" width="6" height="9"/>'],
-        ['策略回测', '/pages/backtest.html', '按买卖策略跑一遍历史，看盈亏曲线与成交明细',
-            '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>'],
-        ['单只更新', '/pages/update-single.html', '指定 1 只股票与日期区间，更新行情',
-            '<path d="M20 11a8 8 0 1 0-2.6 5.9"/><path d="M20 4v7h-7"/>'],
-        ['批量更新', '/pages/update-batch.html', '勾选多只股票，批量同步日K',
-            '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>'],
-        ['条件更新', '/pages/update-filter.html', '按市场/关键字筛选后批量同步',
-            '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>'],
-        ['用户反馈', '/pages/feedback.html', '写下问题或建议，提交即实时推送钉钉',
-            '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.3 9.3 0 0 1-2.6-.4L4 21l1.4-4.2A8.4 8.4 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/>'],
-        ['接口调试', '/pages/debug.html', '测试菜单：直连供应商接口（收在「系统」下）',
-            '<path d="M4 17l6-5-6-5"/><path d="M13 19h7"/>']
-    ];
-
-    /* 无数据库模式：与顶部导航同一套，只留不依赖库表的入口 */
-    var QUICK_NO_DB = [
-        ['股票列表', '/pages/stock-list.html', '内存名录（沪深A股），分页 + 模糊匹配',
+    /* 全站功能入口：与顶部导航同一套，两种运行模式共用（第 4 项是内联图标，不转义） */
+    var QUICK = [
+        ['股票列表', '/pages/stock-list.html', '沪深A股名录，分页 + 模糊匹配',
             '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>'],
         ['K线查看', '/pages/chart.html', '单只日K，指定区间一次取回',
             '<path d="M7 4v3M7 17v3M17 3v3M17 15v5"/><rect x="4" y="7" width="6" height="10"/><rect x="14" y="6" width="6" height="9"/>'],
         ['策略回测', '/pages/backtest.html', '按买卖策略跑历史，看盈亏曲线与明细',
             '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>'],
-        ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值（需密码）',
+        ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值',
             '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 8-3 8h18s-3-2-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'],
         ['token配置', '/pages/config.html', '维护 waizao 令牌（内容不支持查看）',
             '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 3h3v3"/>'],
@@ -284,16 +253,6 @@
         if (v === null || v === undefined || isNaN(n)) return '-';
         var s = fmtNum(Math.abs(n), digits);
         return (n > 0 ? '+' : n < 0 ? '-' : '') + s;
-    }
-
-    function renderModeDesc() {
-        document.getElementById('modeDesc').innerHTML =
-            '后端没有连数据库：日K每次向供应商现取，回测跑完只返回结果、不留存历史。'
-            + '可用功能：<b>概览</b> / <b>股票列表</b> / <b>K线查看</b> / <b>策略回测</b> / <b>盯盘</b> / <b>token配置</b> / <b>用户反馈</b>；'
-            + '单次查询跨度上限 <b>' + MODE.maxSpanDays + '</b> 个自然日。'
-            + (hasCustomWaizaoToken()
-                ? '已使用自定义令牌（内容不可查看，30 天有效）。'
-                : '未自定义令牌，系统使用内置默认令牌（不支持查看）；如需更换请到「系统配置」页。');
     }
 
     /** 指数行情带：拿不到数据就整块不显示，不留空壳 */
@@ -324,15 +283,10 @@
     (async function () {
         loadIndices();
         await loadMode();
+        renderQuick(QUICK);
         if (MODE.noDb) {
-            renderQuick(QUICK_NO_DB);
-            document.getElementById('modePanel').style.display = '';
-            document.getElementById('modeTitle').textContent = '无数据库模式';
-            renderModeDesc();
-            document.addEventListener('token:ready', renderModeDesc);
             return;
         }
-        renderQuick(QUICK_DB);
         document.getElementById('statCards').hidden = false;
         var r = await api('/api/dashboard/summary');
         if (r && r.success) {

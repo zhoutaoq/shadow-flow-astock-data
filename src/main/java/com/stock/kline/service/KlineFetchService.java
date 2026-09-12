@@ -4,6 +4,7 @@ import com.stock.kline.client.RawKline;
 import com.stock.kline.client.WaizaoKlineClient;
 import com.stock.kline.config.WaizaoProperties;
 import com.stock.kline.model.ApiCallLog;
+import com.stock.kline.repo.KlineRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -35,13 +36,13 @@ public class KlineFetchService {
     private static final DateTimeFormatter DF = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final WaizaoKlineClient client;
-    private final StockKlineService klineService;
+    private final KlineRepository klineRepository;
     private final WaizaoProperties props;
 
-    public KlineFetchService(WaizaoKlineClient client, StockKlineService klineService,
+    public KlineFetchService(WaizaoKlineClient client, KlineRepository klineRepository,
                              WaizaoProperties props) {
         this.client = client;
-        this.klineService = klineService;
+        this.klineRepository = klineRepository;
         this.props = props;
     }
 
@@ -296,7 +297,7 @@ public class KlineFetchService {
         cr.getRows().addAll(rows);
         cr.setFetched(cr.getRows().size());
         if (!dryRun && !rows.isEmpty()) {
-            cr.setPersisted(klineService.upsertBatch(rows));
+            cr.setPersisted(klineRepository.save(rows));
         }
     }
 
@@ -363,7 +364,7 @@ public class KlineFetchService {
         WaizaoKlineClient.RawResult r = client.fetchRaw(market, code, startDate, endDate, ApiCallLog.SCENE_DEV);
         int persisted = 0;
         if (persist && r.getRows() != null && !r.getRows().isEmpty()) {
-            persisted = klineService.upsertBatch(r.getRows());
+            persisted = klineRepository.save(r.getRows());
         }
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("requestUrl", r.getUrl());

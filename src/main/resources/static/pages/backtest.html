@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>策略回测 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260911b">
-    <link rel="stylesheet" href="/css/backtest.css?v=20260911b">
+    <link rel="stylesheet" href="/css/common.css?v=20260912f">
+    <link rel="stylesheet" href="/css/backtest.css?v=20260912f">
 </head>
 <body>
 <header class="topbar">
@@ -243,7 +243,7 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260911b"></script>
+<script src="/js/common.js?v=20260912f"></script>
 <script src="/js/date-picker.js"></script>
 <script src="/js/stock-picker.js"></script>
 <script>
@@ -324,7 +324,7 @@
             return;
         }
         el.innerHTML = MODE.noDb
-            ? `跨度 ${span} 个自然日（无数据库模式上限 ${MODE.maxSpanDays} 天）`
+            ? `跨度 ${span} 个自然日（上限 ${MODE.maxSpanDays} 天）`
             : `跨度 ${span} 个自然日`;
         if (MODE.noDb && span > MODE.maxSpanDays) {
             el.innerHTML += ' · <span class="up">已超限，请缩短区间</span>';
@@ -725,7 +725,7 @@
         if (MODE.noDb) {
             const span = (parseYmd(endDate) - parseYmd(startDate)) / 86400000 + 1;
             if (span > MODE.maxSpanDays) {
-                return toast(`无数据库模式单次回测最多 ${MODE.maxSpanDays} 个自然日，当前 ${span} 天`, 'err');
+                return toast(`单次回测最多 ${MODE.maxSpanDays} 个自然日，当前 ${span} 天`, 'err');
             }
         }
         if (!(initAmount > 0)) {
@@ -1219,7 +1219,7 @@
         if (!MODE.backtestPersistent) {
             // 无数据库模式：回测不落盘，列表恒为空，没必要发请求
             document.getElementById('histBody').innerHTML =
-                '<tr><td colspan="9" class="empty">无数据库模式不保存回测历史</td></tr>';
+                '<tr><td colspan="9" class="empty">本系统不保存回测历史</td></tr>';
             return;
         }
         const r = await get('/api/backtest?limit=50');
@@ -1271,6 +1271,10 @@
 
     (async function init() {
         await loadMode();
+        // 回测要登录：一次回测会连打一批供应商接口（按次计费），匿名放开等于给人白刷
+        if (!(await requireLogin())) {
+            return;
+        }
         if (!MODE.backtestPersistent) {
             document.getElementById('histPanel').style.display = 'none';
         }

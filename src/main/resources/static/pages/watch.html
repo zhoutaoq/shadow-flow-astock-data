@@ -2,10 +2,11 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>盯盘</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260911b">
-    <link rel="stylesheet" href="/css/watch.css?v=20260911b">
+    <link rel="stylesheet" href="/css/common.css?v=20260912f">
+    <link rel="stylesheet" href="/css/watch.css?v=20260912f">
 </head>
 <body>
 <header class="topbar">
@@ -16,184 +17,149 @@
 <main class="container">
     <div id="msgBox" class="msg"></div>
 
-    <!-- 进入前先过密码：密码只在服务端配置里维护，不随页面下发 -->
     <section class="panel" id="gatePanel" style="display:none">
-        <h2>盯盘配置 <span class="dim" style="font-weight:400;font-size:12px">需密码</span></h2>
-        <div class="msg msg-info" style="display:block">
-            盯盘会按固定间隔去查实时行情、超阈值时推钉钉机器人，属于要花钱、会打扰人的功能，
-            所以进入配置前先校验一次密码（维护在服务端 <code>watch.password</code>，不下发给浏览器）。
-        </div>
-        <div class="form-row">
-            <div class="field grow">
-                <label>进入密码</label>
-                <input type="password" id="fPwd" autocomplete="off" placeholder="输入盯盘密码">
-                <div class="sp-hint">验证通过后本机本次会话内不再重复输入；关掉浏览器或令牌到期需要重新输入。</div>
-            </div>
-            <button onclick="unlock()">进入</button>
+        <h2>盯盘</h2>
+        <div class="modal-actions">
+            <button onclick="openAuthModal({onSuccess: reload})">去登录</button>
         </div>
     </section>
 
-    <!-- 配置区：改完点保存，先写内存再落盘，调度间隔立刻生效 -->
-    <section class="panel" id="cfgPanel" style="display:none">
-        <div class="cfg-panel-head">
-            <h2 style="margin:0">盯盘配置 <span class="dim" style="font-weight:400;font-size:12px">保存后先写内存再落盘，无需重启</span></h2>
-            <div class="cfg-panel-actions">
-                <button onclick="save()" id="btnSave">保存</button>
+    <div id="cfgPanel" style="display:none">
+
+        <!-- ============ 页头：标题 + 实时摘要 + 动作 ============ -->
+        <div class="whead">
+            <div class="whead-l">
+                <h1 class="whead-t">盯盘</h1>
+                <div class="wsum" id="wsum"></div>
+            </div>
+            <div class="whead-r">
                 <button class="btn-ghost" onclick="reload()">重新载入</button>
-                <button class="btn-ghost" onclick="lock()">锁定页面</button>
+                <button onclick="save()" id="btnSave">保存</button>
             </div>
         </div>
-        <div class="msg msg-info" style="display:block">
-            行情取自新浪财经，触发时按钉钉机器人推送。<b>改完记得点「保存」</b>：
-            配置会先更新到内存（盯盘立刻按新参数跑），再落盘到下面的文件，重启后依旧有效。
-        </div>
 
-        <div class="form-row">
-            <div class="field">
-                <label>盯盘开关</label>
-                <div class="sp-hint" style="margin-top:2px">
-                    <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400">
-                        <input type="checkbox" id="fEnabled"> 启用定时盯盘
+        <div class="wgrid">
+
+            <!-- ① 运行 -->
+            <section class="wcard wcard-q">
+                <header class="wcard-hd">
+                    <span class="wcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg></span>
+                    <h2>运行</h2>
+                </header>
+                <div class="wcard-bd">
+                    <label class="sw">
+                        <input type="checkbox" id="fEnabled">
+                        <span class="sw-track" aria-hidden="true"></span>
+                        <span class="sw-txt">定时盯盘</span>
                     </label>
+                    <div class="field">
+                        <label for="fInterval">轮询间隔</label>
+                        <div class="unit-input">
+                            <input type="number" id="fInterval" min="3" max="3600" step="1" inputmode="numeric">
+                            <span class="unit">秒</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="sp-hint">关掉后调度直接停止，不再查行情、不再推送。</div>
-            </div>
-            <div class="field">
-                <label>轮询间隔（秒）</label>
-                <input type="number" id="fInterval" min="5" max="3600" step="1">
-                <div class="sp-hint">每轮跑完再计下一轮；范围 5 ~ 3600 秒。</div>
-            </div>
-        </div>
+            </section>
 
-        <div class="form-row" style="align-items:flex-start">
-            <div class="field grow">
-                <label>告警规则 <span class="dim" style="font-weight:400;font-size:12px">时间单位 = 上方轮询间隔；任一规则满足即推送；同一轮多条规则同时触发会合并为一条</span></label>
-                <div id="ruleBox"></div>
-                <button class="btn-ghost btn-sm" onclick="addRule()" style="margin-top:4px">+ 添加规则</button>
-                <div class="sp-hint" style="margin-top:6px">每条形如「过去 N 个轮询周期内累计涨/跌幅达 M%」（比如上方轮询间隔 60s、规则填 5，就是过去 300s）；涨跌幅分档：&lt;1.5% 上涨 · 1.5%~3% 快速上涨 · ≥3% 急速拉升（下跌对称）。</div>
-            </div>
-        </div>
-
-        <div class="form-row" style="align-items:flex-start">
-            <div class="field grow">
-                <label>涨跌停放量 <span class="dim" style="font-weight:400;font-size:12px">只盯当前封在涨停 / 跌停板上的股票；两个条件满足任一即告警，同一段放量只推一次</span></label>
-                <div class="rule-row">
-                    <span class="dim">单轮成交额超过</span>
-                    <input type="number" id="fSurgeAmount" class="surge-amount" min="1" step="10">
-                    <span class="dim">万元</span>
+            <!-- ② 涨跌停放量 -->
+            <section class="wcard wcard-q">
+                <header class="wcard-hd">
+                    <span class="wcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l4-6 4 3 4-7 3 4"/><path d="M3 21h18"/></svg></span>
+                    <h2>封板放量</h2>
+                </header>
+                <div class="wcard-bd">
+                    <div class="field">
+                        <label for="fSurgeAmount">单轮成交额 ≥</label>
+                        <div class="unit-input">
+                            <input type="number" id="fSurgeAmount" min="1" step="10" inputmode="decimal">
+                            <span class="unit">万元</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="fSurgeTimes">或 环比上一轮 ≥</label>
+                        <div class="unit-input">
+                            <input type="number" id="fSurgeTimes" min="1" step="0.5" inputmode="decimal">
+                            <span class="unit">倍</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="rule-row">
-                    <span class="dim">或 单轮成交额大于上一轮的</span>
-                    <input type="number" id="fSurgeTimes" class="surge-times" min="1" step="0.5">
-                    <span class="dim">倍</span>
+            </section>
+
+            <!-- ③ 推送 -->
+            <section class="wcard wcard-q">
+                <header class="wcard-hd">
+                    <span class="wcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3L11 14"/><path d="M22 3l-7 18-4-7-7-4z"/></svg></span>
+                    <h2>推送</h2>
+                </header>
+                <div class="wcard-bd">
+                    <div class="field">
+                        <label for="fWebhook">钉钉机器人</label>
+                        <input type="text" id="fWebhook" autocomplete="off" spellcheck="false">
+                    </div>
                 </div>
-                <div class="sp-hint">"单轮"= 一个轮询间隔（上方配置的秒数）内的成交额增量；阈值落盘到 watch-config.json，重启后仍生效。</div>
-            </div>
+            </section>
+
+            <!-- ④ 涨跌幅告警 -->
+            <section class="wcard wcard-f">
+                <header class="wcard-hd">
+                    <span class="wcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3.5-4 3 2.5L20 6"/></svg></span>
+                    <h2>涨跌幅告警</h2>
+                    <span class="wcard-note">任一命中即推送</span>
+                </header>
+                <div class="wcard-bd">
+                    <div class="rule-list" id="ruleBox"></div>
+                    <button type="button" class="btn-ghost btn-sm rr-add" onclick="addRule()">
+                        <span aria-hidden="true">＋</span> 添加规则
+                    </button>
+                </div>
+            </section>
+
+            <!-- ⑤ 盯盘标的 -->
+            <section class="wcard wcard-f">
+                <header class="wcard-hd">
+                    <span class="wcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+                    <h2>盯盘标的</h2>
+                    <span class="wcard-note" id="stockCount"></span>
+                </header>
+                <div class="wcard-bd">
+                    <div id="stockPicker"></div>
+                </div>
+            </section>
+
         </div>
 
-        <div class="form-row" style="align-items:flex-start">
-            <div class="field grow">
-                <label>盯盘股票集合 <span class="dim" style="font-weight:400;font-size:12px">最多 200 只，每行展示 5 个</span></label>
-                <div id="stockPicker"></div>
-                <div class="sp-hint">输入代码或名称后从下拉里点选，点标签上的 × 移除。<span id="stockCount" class="dim"></span></div>
-            </div>
+        <!-- 未保存时的浮动操作条 -->
+        <div class="save-bar" id="saveBar">
+            <span class="save-bar-txt"><i class="dot" aria-hidden="true"></i>有未保存的更改</span>
+            <button class="btn-ghost" onclick="reload()">放弃</button>
+            <button onclick="save()">保存</button>
         </div>
 
-        <div class="form-row" style="align-items:flex-start">
-            <div class="field grow">
-                <label>钉钉机器人 <span class="dim" style="font-weight:400;font-size:12px">留空表示关闭推送（告警仍会写日志）</span></label>
-                <input type="text" id="fWebhook" autocomplete="off" spellcheck="false"
-                       placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
-                <div class="sp-hint">包含 access_token；钉钉机器人"自定义关键词"需配 <b>现价</b>，否则消息会被钉钉服务端拒收</div>
-            </div>
-        </div>
-
-        <div class="sp-hint" id="stateHint"></div>
-    </section>
-
-    <section class="panel">
-        <h2>说明</h2>
-        <table class="grid">
-            <thead>
-            <tr>
-                <th style="width:180px">项</th>
-                <th>说明</th>
-            </tr>
-            </thead>
-            <tbody>
-            <tr>
-                <th>落盘文件</th>
-                <td><code id="cfgFile">-</code>（解析顺序：工作目录下的 watch-config.json → 服务端配置的绝对路径）</td>
-            </tr>
-            <tr>
-                <th>生效方式</th>
-                <td>保存即生效：内存里的配置立刻更新，定时调度按新间隔重新排，不需要重启进程</td>
-            </tr>
-            <tr>
-                <th>告警内容</th>
-                <td>多条规则任一命中即推；同一轮多条规则同时触发会合并为一条推送；涨跌幅超阈值、封板（涨停/跌停）、开板、涨跌停放量都会发；未配置钉钉 webhook 时只写日志</td>
-            </tr>
-            <tr>
-                <th>涨跌停告警</th>
-                <td>封板（涨停 / 跌停）与开板消息里带上当日累计成交量、成交额</td>
-            </tr>
-            <tr>
-                <th>涨跌停放量</th>
-                <td>只盯当前封在涨停 / 跌停板上的标的：单个轮询间隔的成交额超过「放量阈值」设置的万元数，或大于该倍数的上一间隔成交额，即推一条"放量"；同一段放量只推一次，开板后重新计。阈值在上方配置区维护（默认 2000 万 / 10 倍）</td>
-            </tr>
-            <tr>
-                <th>交易时段</th>
-                <td>只在周一至周五 9:30-11:30 / 13:00-15:00 查询；非交易时段不调接口，避免无谓消耗</td>
-            </tr>
-            </tbody>
-        </table>
-    </section>
+    </div>
 </main>
 
-<script src="/js/common.js?v=20260911b"></script>
+<script src="/js/common.js?v=20260912f"></script>
 <script src="/js/stock-picker.js"></script>
 <script>
-    /** 解锁令牌：只存在内存与本次会话里，刷新后需要重新输密码 */
-    let TOKEN = sessionStorage.getItem('watch_token') || '';
     let picker = null;
     let cfg = null;
-
-    function watchHeaders() {
-        return {'X-Watch-Token': TOKEN};
-    }
+    /** 表单是否有未保存的改动：只影响底部操作条的显隐与摘要刷新 */
+    let dirty = false;
 
     function showGate() {
-        TOKEN = '';
-        sessionStorage.removeItem('watch_token');
         document.getElementById('gatePanel').style.display = '';
         document.getElementById('cfgPanel').style.display = 'none';
-        document.getElementById('fPwd').focus();
     }
 
-    async function unlock() {
-        const pwd = document.getElementById('fPwd').value.trim();
-        if (!pwd) {
-            return toast('请输入密码', 'err');
-        }
-        const r = await post('/api/watch/unlock', {password: pwd});
-        if (!r || !r.success) {
-            return;
-        }
-        TOKEN = r.data.token;
-        sessionStorage.setItem('watch_token', TOKEN);
-        document.getElementById('fPwd').value = '';
-        await reload();
-    }
-
-    function lock() {
-        showGate();
-        toast('已锁定，下次配置需要重新输入密码', 'ok');
+    function setDirty(v) {
+        dirty = v;
+        document.getElementById('saveBar').classList.toggle('show', v);
     }
 
     async function reload() {
-        const r = await api('/api/watch/config', {method: 'GET', headers: watchHeaders()});
+        const r = await api('/api/watch/config', {method: 'GET'});
         if (!r || !r.success) {
-            // 令牌失效或还没解锁：回到密码页
             showGate();
             return;
         }
@@ -206,7 +172,6 @@
     function render() {
         document.getElementById('fEnabled').checked = !!cfg.enabled;
         document.getElementById('fInterval').value = cfg.intervalSeconds;
-        document.getElementById('cfgFile').textContent = cfg.configFile || '-';
 
         renderRules();
         renderDingtalk();
@@ -215,12 +180,18 @@
         if (!picker) {
             picker = createStockPicker(document.getElementById('stockPicker'), {
                 multiple: true,
-                gridColumns: 5,
-                onChange: syncCount
+                gridColumns: 4,
+                onChange: onPickerChange
             });
         }
         picker.setItems(cfg.stocks || []);
-        syncCount();
+        setDirty(false);
+        updateSummary();
+    }
+
+    function onPickerChange() {
+        setDirty(true);
+        updateSummary();
     }
 
     function renderDingtalk() {
@@ -244,11 +215,11 @@
         const amountWan = parseFloat(document.getElementById('fSurgeAmount').value);
         const times = parseFloat(document.getElementById('fSurgeTimes').value);
         if (isNaN(amountWan) || amountWan < minA || amountWan > maxA) {
-            toast('放量的「单轮成交额」需要在 ' + minA + ' ~ ' + maxA + ' 万元之间', 'err');
+            toast('「单轮成交额」需要在 ' + minA + ' ~ ' + maxA + ' 万元之间', 'err');
             return null;
         }
         if (isNaN(times) || times < minT || times > maxT) {
-            toast('放量的「放大倍数」需要在 ' + minT + ' ~ ' + maxT + ' 倍之间', 'err');
+            toast('「环比倍数」需要在 ' + minT + ' ~ ' + maxT + ' 倍之间', 'err');
             return null;
         }
         return {amountWan: amountWan, times: times};
@@ -289,14 +260,17 @@
         const row = document.createElement('div');
         row.className = 'rule-row';
         row.innerHTML =
-            '<span class="dim">过去</span>'
-            + '<input type="number" class="rule-n" min="' + minN + '" max="' + maxN + '" step="1" value="' + intervals + '">'
-            + '<span class="dim">个轮询周期内涨/跌幅</span>'
-            + '<input type="number" class="rule-pct" min="' + minP + '" max="' + maxP + '" step="0.01" value="' + percent + '">'
-            + '<span class="dim">%</span>'
-            + '<i class="rule-del" title="删除该规则">×</i>';
-        row.querySelector('.rule-del').addEventListener('click', () => {
+            '<span class="rr-t">过去</span>'
+            + '<span class="unit-input unit-sm"><input type="number" class="rule-n" min="' + minN + '" max="' + maxN + '" step="1" value="' + intervals + '" inputmode="numeric"><span class="unit">周期</span></span>'
+            + '<span class="rr-t">内，涨 / 跌幅 ≥</span>'
+            + '<span class="unit-input unit-sm"><input type="number" class="rule-pct" min="' + minP + '" max="' + maxP + '" step="0.01" value="' + percent + '" inputmode="decimal"><span class="unit">%</span></span>'
+            + '<button type="button" class="btn-ghost rr-del" aria-label="删除该规则">'
+            + '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+            + '</button>';
+        row.querySelector('.rr-del').addEventListener('click', () => {
             row.remove();
+            setDirty(true);
+            updateSummary();
         });
         box.appendChild(row);
     }
@@ -315,10 +289,20 @@
         return out;
     }
 
-    function syncCount() {
-        const n = picker ? picker.getItems().length : 0;
+    /** 页头摘要：始终读表单当前值，改动时立刻反映 */
+    function updateSummary() {
+        const box = document.getElementById('wsum');
+        const on = document.getElementById('fEnabled').checked;
+        const interval = parseInt(document.getElementById('fInterval').value, 10) || 0;
+        const rules = document.querySelectorAll('#ruleBox .rule-row').length;
+        const stocks = picker ? picker.getItems().length : 0;
         const max = (cfg && cfg.limits && cfg.limits.maxStocks) || 200;
-        document.getElementById('stockCount').textContent = '已选 ' + n + ' / ' + max + ' 只';
+        document.getElementById('stockCount').textContent = stocks + ' / ' + max;
+        box.innerHTML =
+            '<span class="wchip ' + (on ? 'on' : 'off') + '"><i class="dot"></i>' + (on ? '运行中' : '已停用') + '</span>'
+            + '<span class="wchip">每 ' + (interval || '—') + ' 秒一轮</span>'
+            + '<span class="wchip">' + rules + ' 条规则</span>'
+            + '<span class="wchip">' + stocks + ' 只标的</span>';
     }
 
     /** 保存中：挡住连点，避免同一份配置被并发提交、把变更提示刷成一片 */
@@ -330,8 +314,8 @@
         }
         const interval = parseInt(document.getElementById('fInterval').value, 10);
         const limits = (cfg && cfg.limits) || {};
-        if (!interval || interval < (limits.minInterval || 5) || interval > (limits.maxInterval || 3600)) {
-            return toast('轮询间隔需要在 ' + (limits.minInterval || 5) + ' ~ ' + (limits.maxInterval || 3600) + ' 秒之间', 'err');
+        if (!interval || interval < (limits.minInterval || 3) || interval > (limits.maxInterval || 3600)) {
+            return toast('轮询间隔需要在 ' + (limits.minInterval || 3) + ' ~ ' + (limits.maxInterval || 3600) + ' 秒之间', 'err');
         }
         const rules = collectRules();
         if (!rules.length) {
@@ -339,10 +323,10 @@
         }
         for (const r of rules) {
             if (r.intervals < (limits.minRuleIntervals || 1) || r.intervals > (limits.maxRuleIntervals || 60)) {
-                return toast('规则的「过去时长」需要是 ' + limits.minRuleIntervals + ' ~ ' + limits.maxRuleIntervals + ' 个轮询周期', 'err');
+                return toast('规则的「过去周期数」需要是 ' + limits.minRuleIntervals + ' ~ ' + limits.maxRuleIntervals, 'err');
             }
             if (r.percent < (limits.minThreshold || 0.01) || r.percent > (limits.maxThreshold || 20)) {
-                return toast('规则的「偏离百分比」需要在 ' + limits.minThreshold + ' ~ ' + limits.maxThreshold + ' % 之间', 'err');
+                return toast('规则的「涨跌幅」需要在 ' + limits.minThreshold + ' ~ ' + limits.maxThreshold + ' % 之间', 'err');
             }
         }
         const stocks = picker.getItems();
@@ -358,7 +342,6 @@
         try {
             r = await api('/api/watch/config', {
                 method: 'PUT',
-                headers: watchHeaders(),
                 body: JSON.stringify({
                     enabled: document.getElementById('fEnabled').checked,
                     intervalSeconds: interval,
@@ -376,30 +359,36 @@
         if (!r || !r.success) {
             return;
         }
-        // 保存成功只更新本地配置与展示用的落盘路径，绝不能用服务端快照重刷整个表单：
+        // 保存成功只更新本地配置，绝不能用服务端快照重刷整个表单：
         // 请求往返期间用户可能又改了名单，重刷会把这段编辑悄悄回滚，
         // 表现就是「刚删掉的股票又冒出来」，再存一次又变成移除 —— 名单来回抖。
         cfg = r.data;
-        document.getElementById('cfgFile').textContent = cfg.configFile || '-';
-        syncCount();
+        setDirty(false);
+        updateSummary();
         toast('已保存并生效：' + stocks.length + ' 只标的，' + rules.length + ' 条规则，每 ' + cfg.intervalSeconds
             + ' 秒一轮，放量阈值 ' + surge.amountWan + ' 万元 / ' + surge.times + ' 倍', 'ok');
     }
 
+    // 表单任何改动都冒到 cfgPanel：标脏 + 刷新摘要
+    document.getElementById('cfgPanel').addEventListener('input', onFormChanged);
+    document.getElementById('cfgPanel').addEventListener('change', onFormChanged);
+
+    function onFormChanged(e) {
+        // 底下操作条自己的按钮不参与
+        if (e.target.closest('.save-bar')) {
+            return;
+        }
+        setDirty(true);
+        updateSummary();
+    }
+
     (async function init() {
         await loadMode();
-        if (MODE.noDb) {
-            if (TOKEN) {
-                await reload();
-            } else {
-                showGate();
-            }
-        } else {
-            showGate();
+        // 盯盘要登录：配置跟着账号走，没登录就不知道该读谁的
+        if (!(await requireLogin())) {
+            return;
         }
-        document.getElementById('fPwd').addEventListener('keydown', e => {
-            if (e.key === 'Enter') unlock();
-        });
+        await reload();
     })();
 </script>
 </body>

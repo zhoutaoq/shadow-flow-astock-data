@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stock.kline.config.WaizaoProperties;
 import com.stock.kline.model.ApiCallLog;
-import com.stock.kline.support.ApiLogSink;
+import com.stock.kline.repo.ApiCallLogRepository;
 import com.stock.kline.support.TokenProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,13 +38,14 @@ public class WaizaoKlineClient {
 
     private final WaizaoProperties props;
     private final TokenProvider tokenProvider;
-    private final ApiLogSink logSink;
+    private final ApiCallLogRepository callLogRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public WaizaoKlineClient(WaizaoProperties props, TokenProvider tokenProvider, ApiLogSink logSink) {
+    public WaizaoKlineClient(WaizaoProperties props, TokenProvider tokenProvider,
+                             ApiCallLogRepository callLogRepository) {
         this.props = props;
         this.tokenProvider = tokenProvider;
-        this.logSink = logSink;
+        this.callLogRepository = callLogRepository;
     }
 
     /**
@@ -136,7 +137,7 @@ public class WaizaoKlineClient {
         item.setRowCount(rows);
         item.setSuccess(err == null ? 1 : 0);
         item.setErrorMsg(err);
-        logSink.record(item, begin);
+        callLogRepository.record(item, begin);
     }
 
     public String buildUrl(String symbol, String code, String startDate, String endDate) {

@@ -2,6 +2,8 @@ package com.stock.kline.watch;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import com.stock.kline.auth.AuthService;
+import com.stock.kline.store.DataDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -17,19 +19,32 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
- * 盯盘配置的唯一来源：内存里留一份，落盘一份 JSON。
+ * 盯盘配置的唯一来源：<b>每个用户一份</b>，内存里留一份，落盘一份 JSON。
  *
- * <p>启动时按这个顺序决定配置内容：
+ * <p>v1.3 起盯盘配置跟着账号走（SaaS 化的第一步）：
+ * <ul>
+ *   <li>落盘位置 {@code ./data/watch/watch-{userId}.json}；</li>
+ *   <li><b>系统默认配置绑定在 admin 账号上</b> —— 后台轮询、钉钉推送都只认这一份，
+ *       普通用户改自己的配置不会影响别人的告警；</li>
+ *   <li>老版本的 {@code watch-config.json} 在首次启动时自动迁成超管的配置。</li>
+ * </ul>
+ *
+ * <p>取配置的顺序（对每个用户）：
  * <ol>
- *   <li>工作目录下的 <code>watch-config.json</code>（本地开发时就是项目根目录）；</li>
- *   <li>yml 里 <code>watch.config-file</code> 指定的绝对路径（服务器上的部署目录）；</li>
- *   <li>都找不到 → 用 yml 的 <code>interval-seconds / rules / dingtalk / enabled</code> 作默认值，
- *       并把老的 <code>watch-list.txt</code> 名单迁移过来，然后落盘一次。</li>
+ *   <li>{@code ./data/watch/watch-{userId}.json}；</li>
+ *   <li>仅超管：<code>./data/watch-config.json</code> → 工作目录下的
+ *       <code>watch-config.json</code> → yml 里 <code>watch.config-file</code>；</li>
+ *   <li>都找不到 → 用 yml 的 <code>interval-seconds / rules / dingtalk / enabled</code>
+ *       作默认值（超管还会把老的 <code>watch-list.txt</code> 名单迁过来）。</li>
  * </ol>
+ *
+ * <p>写盘目标恒为 {@code ./data/watch}，读到了旧位置的文件会在首次保存后自动迁过来。
  *
  * <p>页面保存时先改内存再落盘：内存这步保证「保存完立刻生效」，
  * 落盘这步保证重启后还在。落盘失败不影响本次生效，只记日志。
@@ -42,11 +57,21 @@ public class WatchConfigStore {
 
     private static final Logger log = LoggerFactory.getLogger(WatchConfigStore.class);
 
-    /** 落盘文件名 */
-    private static final String FILE_NAME = "watch-config.json";
+    /** 每个用户一个落盘文件：watch/watch-{userId}.json */
+    private static final String FILE_PREFIX = "watch/watch-";
+    private static final String FILE_SUFFIX = ".json";
+    /** 老版本（v1.2 / v1.3 早期）的落盘文件名，作为超管配置的迁移来源 */
+    private static final String LEGACY_FILE_NAME = "watch-config.json";
+    /** admin 账号还没建出来时的兜底 id：超管总是第一个用户 */
+    private static final long FALLBACK_ADMIN_ID = 1L;
 
-    /** 间隔与规则的允许范围，防止页面上填出把进程拖垮的值 */
-    private static final long MIN_INTERVAL = 5, MAX_INTERVAL = 3600;
+    /**
+     * 间隔与规则的允许范围，防止页面上填出把进程拖垮的值。
+     *
+     * <p>下限 3s：新浪行情接口本身是秒级刷新的，再快只会重复取到同一笔快照，
+     * 白白消耗接口配额、把名单里的标的查重。
+     */
+    private static final long MIN_INTERVAL = 3, MAX_INTERVAL = 3600;
     private static final double MIN_THRESHOLD = 0.01, MAX_THRESHOLD = 20;
     /**
      * 告警规则"过去时长"的允许范围，单位是"上方轮询间隔"的倍数。
@@ -62,20 +87,26 @@ public class WatchConfigStore {
     private static final int MAX_STOCKS = 200;
 
     private final WatchProperties props;
+    private final DataDir dataDir;
+    /** 依赖它不只是为了取 id：注入进来才能保证「超管账号已建好」发生在解析配置归属之前 */
+    private final AuthService authService;
     private final ObjectProvider<StockNameIndex> indexProvider;
     private final ObjectProvider<WatchListLoader> loaderProvider;
     private final ObjectMapper mapper = new ObjectMapper();
     private final ObjectWriter writer = new ObjectMapper().writerWithDefaultPrettyPrinter();
     private final List<Consumer<WatchSettings>> listeners = new CopyOnWriteArrayList<>();
 
-    private WatchSettings current = new WatchSettings();
-    /** 实际读写的落盘路径（页面展示与排查用） */
-    private volatile Path file;
+    /** userId → 该用户的配置 */
+    private final ConcurrentMap<Long, WatchSettings> byUser = new ConcurrentHashMap<>();
+    /** 超管 id（系统默认配置归属），解析到后缓存 */
+    private volatile Long adminId;
 
-    public WatchConfigStore(WatchProperties props,
+    public WatchConfigStore(WatchProperties props, DataDir dataDir, AuthService authService,
                             ObjectProvider<StockNameIndex> indexProvider,
                             ObjectProvider<WatchListLoader> loaderProvider) {
         this.props = props;
+        this.dataDir = dataDir;
+        this.authService = authService;
         this.indexProvider = indexProvider;
         this.loaderProvider = loaderProvider;
     }
@@ -85,9 +116,128 @@ public class WatchConfigStore {
         reload();
     }
 
-    /** 重新从磁盘载入；启动时与「恢复 yml 默认」时调用 */
+    /** 重新从磁盘载入全部已加载的配置；启动时与「恢复 yml 默认」时调用 */
     public synchronized void reload() {
-        Path p = resolveExisting();
+        byUser.clear();
+        long uid = defaultUserId();
+        WatchSettings s = loadOrDefaults(uid);
+        byUser.put(uid, s);
+        // 系统推送只认超管那份配置
+        writeDingtalkBack(s);
+        notifyListeners();
+        log.info("[watch] 系统默认盯盘配置（{}）已载入 {}：开关 {}，间隔 {}s，{} 条规则，{} 只标的",
+                authService.adminUsername(), fileOf(uid), s.isEnabled(), s.getIntervalSeconds(),
+                s.getRules().size(), s.getStocks().size());
+    }
+
+    /* ---------------- 系统默认配置 = 超管的配置 ---------------- */
+
+    /** 系统默认配置（超管的）快照 */
+    public synchronized WatchSettings snapshot() {
+        return snapshot(defaultUserId());
+    }
+
+    public synchronized boolean isEnabled() {
+        return get(defaultUserId()).isEnabled();
+    }
+
+    public synchronized long getIntervalSeconds() {
+        return get(defaultUserId()).getIntervalSeconds();
+    }
+
+    /** 多规则快照（外部只读，不要 push 进来） */
+    public synchronized List<WatchSettings.Rule> rules() {
+        List<WatchSettings.Rule> out = new ArrayList<>();
+        for (WatchSettings.Rule r : get(defaultUserId()).getRules()) {
+            out.add(new WatchSettings.Rule(r.getIntervals(), r.getPercent()));
+        }
+        return out;
+    }
+
+    /** 放量阈值的快照（外部只读，不要 push 进来） */
+    public synchronized WatchSettings.SurgeCfg surge() {
+        return copySurge(get(defaultUserId()).getSurge());
+    }
+
+    /** 盯盘标的（供轮询使用）；名称缺失时按名录补一次 */
+    public synchronized List<WatchTarget> targets() {
+        return targetsOf(defaultUserId());
+    }
+
+    /** 系统默认配置的落盘路径（页面展示与排查用） */
+    public Path getFile() {
+        return getFile(defaultUserId());
+    }
+
+    /* ---------------- 按用户读写 ---------------- */
+
+    /** 当前配置的一份拷贝，外部改它不会影响内存里的值 */
+    public synchronized WatchSettings snapshot(long userId) {
+        return copy(get(userId));
+    }
+
+    /**
+     * 保存某个用户的配置：先更新内存（立刻生效），再落盘。
+     *
+     * <p>只有改的是超管那份（系统默认）才回写钉钉、通知调度器重排 ——
+     * 普通用户改自己的名单不该把别人的轮询节奏也带偏。
+     *
+     * @return 校验并规范化后的最新配置
+     */
+    public synchronized WatchSettings update(long userId, WatchSettings incoming) {
+        if (incoming == null) {
+            return snapshot(userId);
+        }
+        normalize(incoming);
+        WatchSettings prev = get(userId);
+        // 用户没填的钉钉字段从当前内存继承下来（不每次都退回 yml 默认值）
+        if (incoming.getDingtalk() == null) {
+            incoming.setDingtalk(copyDingtalk(prev.getDingtalk()));
+        } else {
+            mergeDingtalk(incoming.getDingtalk(), prev.getDingtalk());
+        }
+        boolean systemDefault = userId == defaultUserId();
+        byUser.put(userId, incoming);
+        if (systemDefault) {
+            writeDingtalkBack(incoming);
+        }
+        persist(userId, incoming);
+        if (systemDefault) {
+            notifyListeners();
+        }
+        log.info("[watch] 用户 {} 的盯盘配置已更新：开关 {}，间隔 {}s，{} 条规则，{} 只标的",
+                userId, incoming.isEnabled(), incoming.getIntervalSeconds(),
+                incoming.getRules().size(), incoming.getStocks().size());
+        return copy(incoming);
+    }
+
+    /** 某个用户配置的落盘路径 */
+    public Path getFile(long userId) {
+        return fileOf(userId);
+    }
+
+    /** 配置变更监听（调度器用它重排定时任务） */
+    public void addListener(Consumer<WatchSettings> listener) {
+        if (listener != null) {
+            listeners.add(listener);
+        }
+    }
+
+    /* ---------------- 内部实现 ---------------- */
+
+    /** 取（必要时载入）某用户的配置 */
+    private synchronized WatchSettings get(long userId) {
+        WatchSettings s = byUser.get(userId);
+        if (s != null) {
+            return s;
+        }
+        s = loadOrDefaults(userId);
+        byUser.put(userId, s);
+        return s;
+    }
+
+    private WatchSettings loadOrDefaults(long userId) {
+        Path p = resolveExisting(userId);
         if (p != null) {
             try {
                 String json = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
@@ -96,129 +246,38 @@ public class WatchConfigStore {
                     // 启动时把 yml 的钉钉默认值灌进来（落盘里为空时 fallback）
                     applyDingtalkDefaults(loaded);
                     normalize(loaded);
-                    current = loaded;
-                    // 同步到 props：DingTalkNotifier 读的是 props.getDingtalk()
-                    writeDingtalkBack(loaded);
-                    file = p;
-                    log.info("[watch] 盯盘配置已载入 {}：开关 {}，间隔 {}s，{} 条规则，{} 只标的",
-                            p, current.isEnabled(), current.getIntervalSeconds(),
-                            current.getRules().size(), current.getStocks().size());
-                    notifyListeners();
-                    return;
+                    log.info("[watch] 用户 {} 的盯盘配置已载入 {}", userId, p);
+                    return loaded;
                 }
             } catch (Exception e) {
                 log.warn("[watch] 盯盘配置文件解析失败 {}：{}，改用 yml 默认值", p, e.getMessage());
             }
         }
         // 走到这里说明还没有落盘文件：用 yml 默认值 + 迁移老名单
-        current = defaultsFromProps();
-        file = writeTarget();
-        migrateLegacyList();
-        normalize(current);
-        writeDingtalkBack(current);
-        persist();
-        notifyListeners();
-        log.info("[watch] 盯盘配置落盘位置 {}（开关 {}，间隔 {}s，{} 条规则，{} 只标的）",
-                file, current.isEnabled(), current.getIntervalSeconds(),
-                current.getRules().size(), current.getStocks().size());
-    }
-
-    /** 当前配置的一份拷贝，外部改它不会影响内存里的值 */
-    public synchronized WatchSettings snapshot() {
-        WatchSettings copy = new WatchSettings();
-        copy.setEnabled(current.isEnabled());
-        copy.setIntervalSeconds(current.getIntervalSeconds());
-        List<WatchSettings.Rule> rules = new ArrayList<>(current.getRules().size());
-        for (WatchSettings.Rule r : current.getRules()) {
-            rules.add(new WatchSettings.Rule(r.getIntervals(), r.getPercent()));
+        WatchSettings s = defaultsFromProps();
+        if (userId == defaultUserId()) {
+            migrateLegacyList(s);
         }
-        copy.setRules(rules);
-        copy.setDingtalk(copyDingtalk(current.getDingtalk()));
-        copy.setSurge(copySurge(current.getSurge()));
-        List<WatchSettings.StockRef> refs = new ArrayList<>(current.getStocks().size());
-        for (WatchSettings.StockRef r : current.getStocks()) {
-            refs.add(new WatchSettings.StockRef(r.getCode(), r.getName()));
+        normalize(s);
+        persist(userId, s);
+        log.info("[watch] 用户 {} 的盯盘配置落盘位置 {}（开关 {}，间隔 {}s，{} 条规则，{} 只标的）",
+                userId, fileOf(userId), s.isEnabled(), s.getIntervalSeconds(),
+                s.getRules().size(), s.getStocks().size());
+        return s;
+    }
+
+    /** 系统默认配置归属的用户：超管。账号还没建好时退回 1（admin 总是第一个用户） */
+    private long defaultUserId() {
+        Long cached = adminId;
+        if (cached != null) {
+            return cached;
         }
-        copy.setStocks(refs);
-        return copy;
-    }
-
-    /** 当前落盘文件路径 */
-    public Path getFile() {
-        return file;
-    }
-
-    public synchronized boolean isEnabled() {
-        return current.isEnabled();
-    }
-
-    public synchronized long getIntervalSeconds() {
-        return current.getIntervalSeconds();
-    }
-
-    /** 多规则快照（外部只读，不要 push 进来） */
-    public synchronized List<WatchSettings.Rule> rules() {
-        List<WatchSettings.Rule> out = new ArrayList<>(current.getRules().size());
-        for (WatchSettings.Rule r : current.getRules()) {
-            out.add(new WatchSettings.Rule(r.getIntervals(), r.getPercent()));
+        long id = authService.adminId();
+        if (id > 0) {
+            adminId = id;
+            return id;
         }
-        return out;
-    }
-
-    /** 放量阈值的快照（外部只读，不要 push 进来） */
-    public synchronized WatchSettings.SurgeCfg surge() {
-        return copySurge(current.getSurge());
-    }
-
-    /** 盯盘标的（供轮询使用）；名称缺失时按名录补一次 */
-    public synchronized List<WatchTarget> targets() {
-        List<WatchTarget> list = new ArrayList<>(current.getStocks().size());
-        for (WatchSettings.StockRef r : current.getStocks()) {
-            if (r == null || r.getCode() == null) {
-                continue;
-            }
-            String code = r.getCode().trim();
-            if (!StockNameIndex.isAShare(code)) {
-                continue;
-            }
-            String name = r.getName() == null || r.getName().trim().isEmpty()
-                    ? nameOf(code) : r.getName().trim();
-            list.add(new WatchTarget(name == null ? code : name, code));
-        }
-        return list;
-    }
-
-    /**
-     * 页面保存：先更新内存（立刻生效），再落盘。
-     *
-     * @return 校验并规范化后的最新配置
-     */
-    public synchronized WatchSettings update(WatchSettings incoming) {
-        if (incoming == null) {
-            return snapshot();
-        }
-        normalize(incoming);
-        // 用户没填的钉钉字段从当前内存继承下来（不每次都退回 yml 默认值）
-        if (incoming.getDingtalk() == null) {
-            incoming.setDingtalk(copyDingtalk(current.getDingtalk()));
-        } else {
-            mergeDingtalk(incoming.getDingtalk(), current.getDingtalk());
-        }
-        current = incoming;
-        writeDingtalkBack(current);
-        persist();
-        notifyListeners();
-        log.info("[watch] 盯盘配置已更新：开关 {}，间隔 {}s，{} 条规则，{} 只标的",
-                current.isEnabled(), current.getIntervalSeconds(),
-                current.getRules().size(), current.getStocks().size());
-        return snapshot();
-    }
-
-    /** 配置变更监听（调度器用它重排定时任务） */
-    public void addListener(Consumer<WatchSettings> listener) {
-        if (listener != null) {
-            listeners.add(listener);
-        }
+        return FALLBACK_ADMIN_ID;
     }
 
     private void notifyListeners() {
@@ -232,7 +291,7 @@ public class WatchConfigStore {
         }
     }
 
-    /** 按 yml 默认值构造一份配置（含老名单迁移） */
+    /** 按 yml 默认值构造一份配置 */
     private WatchSettings defaultsFromProps() {
         WatchSettings s = new WatchSettings();
         s.setEnabled(props.isEnabled());
@@ -257,6 +316,43 @@ public class WatchConfigStore {
         return out;
     }
 
+    /** 深拷贝一份，外部改动不影响内存 */
+    private WatchSettings copy(WatchSettings s) {
+        WatchSettings copy = new WatchSettings();
+        copy.setEnabled(s.isEnabled());
+        copy.setIntervalSeconds(s.getIntervalSeconds());
+        List<WatchSettings.Rule> rules = new ArrayList<>(s.getRules().size());
+        for (WatchSettings.Rule r : s.getRules()) {
+            rules.add(new WatchSettings.Rule(r.getIntervals(), r.getPercent()));
+        }
+        copy.setRules(rules);
+        copy.setDingtalk(copyDingtalk(s.getDingtalk()));
+        copy.setSurge(copySurge(s.getSurge()));
+        List<WatchSettings.StockRef> refs = new ArrayList<>(s.getStocks().size());
+        for (WatchSettings.StockRef r : s.getStocks()) {
+            refs.add(new WatchSettings.StockRef(r.getCode(), r.getName()));
+        }
+        copy.setStocks(refs);
+        return copy;
+    }
+
+    private List<WatchTarget> targetsOf(long userId) {
+        List<WatchTarget> list = new ArrayList<>();
+        for (WatchSettings.StockRef r : get(userId).getStocks()) {
+            if (r == null || r.getCode() == null) {
+                continue;
+            }
+            String code = r.getCode().trim();
+            if (!StockNameIndex.isAShare(code)) {
+                continue;
+            }
+            String name = r.getName() == null || r.getName().trim().isEmpty()
+                    ? nameOf(code) : r.getName().trim();
+            list.add(new WatchTarget(name == null ? code : name, code));
+        }
+        return list;
+    }
+
     /** 启动时把 yml 的钉钉默认值灌进 loaded.dingtalk（仅在落盘字段为空时）。v1.4 起只剩 webhook。 */
     private void applyDingtalkDefaults(WatchSettings loaded) {
         WatchSettings.DingTalkCfg dt = loaded.getDingtalk();
@@ -269,7 +365,7 @@ public class WatchConfigStore {
         }
     }
 
-    /** 把 loaded 里的钉钉字段回写到 props，DingTalkNotifier.send 读的是 props.getDingtalk() */
+    /** 把超管配置里的钉钉字段回写到 props，DingTalkNotifier.send 读的是 props.getDingtalk() */
     private void writeDingtalkBack(WatchSettings s) {
         if (s.getDingtalk() == null) {
             return;
@@ -309,8 +405,8 @@ public class WatchConfigStore {
         return s == null || s.trim().isEmpty();
     }
 
-    /** 首次启动时把 watch-list.txt 里的名单搬进来，避免升级后要重新填一遍 */
-    private void migrateLegacyList() {
+    /** 首次启动时把 watch-list.txt 里的名单搬进超管的配置，避免升级后要重新填一遍 */
+    private void migrateLegacyList(WatchSettings target) {
         WatchListLoader loader = loaderProvider.getIfAvailable();
         if (loader == null) {
             return;
@@ -328,8 +424,8 @@ public class WatchConfigStore {
         for (WatchTarget t : legacy) {
             refs.add(new WatchSettings.StockRef(t.getCode(), t.getName()));
         }
-        current.setStocks(refs);
-        log.info("[watch] 已从 {} 迁移 {} 只标的到落盘配置", props.getWatchListFile(), refs.size());
+        target.setStocks(refs);
+        log.info("[watch] 已从 {} 迁移 {} 只标的到系统默认配置", props.getWatchListFile(), refs.size());
     }
 
     /**
@@ -432,24 +528,46 @@ public class WatchConfigStore {
         return index == null ? null : index.nameOf(code);
     }
 
-    /** 写盘；失败只记日志，不影响内存里已经生效的配置 */
-    private void persist() {
-        Path target = file != null ? file : writeTarget();
+    /**
+     * 写盘；失败只记日志，不影响内存里已经生效的配置。
+     *
+     * <p>这里必须接「要写的内容」而不是调 {@link #snapshot(long)} 现取：
+     * 首次为某个用户生成配置时，内容还没放进 {@link #byUser}，
+     * snapshot 会走 {@link #get(long)} 再去载入一次 —— 载入里又要落盘，直接递归到栈溢出。
+     */
+    private void persist(long userId, WatchSettings s) {
+        Path target = fileOf(userId);
         try {
             Path parent = target.getParent();
             if (parent != null && !Files.isDirectory(parent)) {
                 Files.createDirectories(parent);
             }
-            Files.write(target, writer.writeValueAsString(snapshot()).getBytes(StandardCharsets.UTF_8));
-            file = target;
+            Files.write(target, writer.writeValueAsString(copy(s)).getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
             log.warn("[watch] 盯盘配置落盘失败 {}：{}（内存里的配置仍然生效）", target, e.getMessage());
         }
     }
 
-    /** 已存在的配置文件：先工作目录，再 yml 指定的绝对路径 */
-    private Path resolveExisting() {
-        Path local = Paths.get(System.getProperty("user.dir", "."), FILE_NAME);
+    /** 该用户的落盘文件（固定位置，父目录按需创建） */
+    private Path fileOf(long userId) {
+        return dataDir.file(FILE_PREFIX + userId + FILE_SUFFIX);
+    }
+
+    /** 已存在的配置文件：本人 →（仅超管）旧版 watch-config.json 的三个历史位置 */
+    private Path resolveExisting(long userId) {
+        Path own = fileOf(userId);
+        if (Files.isRegularFile(own)) {
+            return own;
+        }
+        if (userId != defaultUserId()) {
+            return null;
+        }
+        Path legacyInData = dataDir.file(LEGACY_FILE_NAME);
+        if (Files.isRegularFile(legacyInData)) {
+            log.info("[watch] 发现旧版落盘配置 {}，将迁为超管的配置", legacyInData);
+            return legacyInData;
+        }
+        Path local = Paths.get(System.getProperty("user.dir", "."), LEGACY_FILE_NAME);
         if (Files.isRegularFile(local)) {
             return local;
         }
@@ -458,17 +576,6 @@ public class WatchConfigStore {
             return configured;
         }
         return null;
-    }
-
-    /** 写盘目标：优先工作目录；工作目录不可用时退回 yml 的绝对路径 */
-    private Path writeTarget() {
-        Path local = Paths.get(System.getProperty("user.dir", "."), FILE_NAME);
-        Path parent = local.getParent();
-        if (parent == null || Files.isDirectory(parent)) {
-            return local;
-        }
-        Path configured = configuredPath();
-        return configured != null ? configured : local;
     }
 
     private Path configuredPath() {

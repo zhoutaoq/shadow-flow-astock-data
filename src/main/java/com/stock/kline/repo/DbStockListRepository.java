@@ -1,4 +1,4 @@
-package com.stock.kline.service;
+package com.stock.kline.repo;
 
 import com.stock.kline.model.PageResult;
 import com.stock.kline.model.StockListItem;
@@ -10,7 +10,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -18,21 +18,22 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** waizao_stock_list 增删改查 + json 导入 */
-@Service
+/** 数据库模式：股票列表落 {@code waizao_stock_list} */
+@Repository
 @ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
-public class StockListService {
+public class DbStockListRepository implements StockListRepository {
 
     private static final String TABLE = "waizao_stock_list";
 
     private final JdbcTemplate jdbcTemplate;
     private final NamedParameterJdbcTemplate named;
 
-    public StockListService(JdbcTemplate jdbcTemplate, NamedParameterJdbcTemplate named) {
+    public DbStockListRepository(JdbcTemplate jdbcTemplate, NamedParameterJdbcTemplate named) {
         this.jdbcTemplate = jdbcTemplate;
         this.named = named;
     }
 
+    @Override
     public PageResult<StockListItem> page(String keyword, String market, int page, int size) {
         StringBuilder where = new StringBuilder(" WHERE 1=1 ");
         Map<String, Object> params = new HashMap<>();
@@ -54,13 +55,7 @@ public class StockListService {
         return new PageResult<>(rows, total == null ? 0 : total, page, size);
     }
 
-    /**
-     * 按代码 / 名称模糊匹配，供页面股票选择器联想使用。
-     *
-     * <p>排序让"输入完整代码"的那只排在最前：完全相等 → 代码前缀匹配 → 其余，同档内按代码升序。
-     *
-     * @param limit 最多返回条数（页面只展示前 N 条，逼用户输入更精确的关键字）
-     */
+    @Override
     public List<StockListItem> search(String keyword, String market, int limit) {
         Map<String, Object> params = new HashMap<>();
         StringBuilder where = new StringBuilder(" WHERE 1=1 ");
@@ -85,6 +80,7 @@ public class StockListService {
                 params, new BeanPropertyRowMapper<>(StockListItem.class));
     }
 
+    @Override
     public List<StockListItem> findAll(String market) {
         if (StringUtils.hasText(market)) {
             return jdbcTemplate.query(
@@ -98,6 +94,7 @@ public class StockListService {
                 new BeanPropertyRowMapper<>(StockListItem.class));
     }
 
+    @Override
     public List<StockListItem> findByCodes(List<String> codes, String market) {
         if (codes == null || codes.isEmpty()) {
             return new ArrayList<>();
@@ -111,6 +108,7 @@ public class StockListService {
                 params, new BeanPropertyRowMapper<>(StockListItem.class));
     }
 
+    @Override
     public StockListItem findById(Long id) {
         try {
             return jdbcTemplate.queryForObject(
@@ -122,6 +120,7 @@ public class StockListService {
         }
     }
 
+    @Override
     public long insert(StockListItem item) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         MapSqlParameterSource ps = new MapSqlParameterSource()
@@ -135,6 +134,7 @@ public class StockListService {
         return key == null ? 0L : key.longValue();
     }
 
+    @Override
     public int update(StockListItem item) {
         return jdbcTemplate.update(
                 "UPDATE " + TABLE + " SET stock_code = ?, stock_name = ?, market = ?, enabled = ? WHERE id = ?",
@@ -142,23 +142,20 @@ public class StockListService {
                 item.getEnabled() == null ? 1 : item.getEnabled(), item.getId());
     }
 
+    @Override
     public int delete(Long id) {
         return jdbcTemplate.update("DELETE FROM " + TABLE + " WHERE id = ?", id);
     }
 
-    /** 按筛选条件统计命中的股票只数（用于批量抓取前预览规模） */
+    @Override
     public long countByFilter(String keyword, String market, Integer enabled) {
         Map<String, Object> params = new HashMap<>();
-        Long c = named.queryForObject("SELECT COUNT(1) FROM " + TABLE + filterWhere(keyword, market, enabled, params),
-                params, Long.class);
+        Long c = named.queryForObject(
+                "SELECT COUNT(1) FROM " + TABLE + filterWhere(keyword, market, enabled, params), params, Long.class);
         return c == null ? 0 : c;
     }
 
-    /**
-     * 按筛选条件解析出股票代码列表。
-     *
-     * @param limit 最多返回多少只，防止误操作把全表（1w+）拉起跑
-     */
+    @Override
     public List<String> findCodesByFilter(String keyword, String market, Integer enabled, int limit) {
         Map<String, Object> params = new HashMap<>();
         String where = filterWhere(keyword, market, enabled, params);
@@ -188,11 +185,7 @@ public class StockListService {
         return where.toString();
     }
 
-    public String defaultMarket(String market) {
-        return StringUtils.hasText(market) ? market.trim() : "stock";
-    }
-
-    /** 批量 upsert 导入（stock-list.json） */
+    @Override
     public int upsertBatch(List<StockListItem> items) {
         if (items == null || items.isEmpty()) {
             return 0;
@@ -218,6 +211,7 @@ public class StockListService {
         return affected;
     }
 
+    @Override
     public long count() {
         Long c = jdbcTemplate.queryForObject("SELECT COUNT(1) FROM " + TABLE, Long.class);
         return c == null ? 0 : c;

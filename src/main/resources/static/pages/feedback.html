@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>用户反馈</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260911b">
+    <link rel="stylesheet" href="/css/common.css?v=20260912f">
 </head>
 <body>
 <header class="topbar">
@@ -16,24 +16,19 @@
 <main class="container">
     <div id="msgBox" class="msg"></div>
 
-    <section class="panel" id="fbPanel">
-        <h2>用户反馈 <span class="dim" style="font-weight:400;font-size:12px">提交后实时推送到钉钉</span></h2>
-        <div class="msg msg-info" style="display:block">
-            使用中遇到问题、想要什么功能、哪里用着不顺手，都可以直接写在下面。
-            提交后会<b>实时推送到钉钉</b>，消息里带上你的 <b>IP</b> 与 <b>提交时间</b>，方便定位问题。
-            内容不会存到服务器数据库，只在推送与日志中留痕。
+    <section class="panel fb-panel" id="fbPanel">
+        <div class="cfg-panel-head">
+            <h2 style="margin:0">用户反馈</h2>
         </div>
         <div class="field fb-field">
-            <label for="fContent">反馈内容 *</label>
             <textarea id="fContent" maxlength="500" spellcheck="false"
-                      placeholder="例如：K线页拖动缩放时，鼠标滚轮一次跳得太远，希望可以按像素平滑缩放。"></textarea>
-            <div class="sp-hint">写清「哪一页 / 做了什么 / 看到什么 / 期望什么」最有用；涉及股票或日期时请一并写上。</div>
+                      aria-label="反馈内容" placeholder="请输入内容"></textarea>
         </div>
         <div class="fb-meta">
             <span class="fb-count" id="fbCount">0 / 500</span>
             <span class="fb-actions">
                 <button class="btn-ghost" onclick="clearFeedback()">清空</button>
-                <button id="fbSubmit" onclick="submitFeedback()">提交反馈</button>
+                <button id="fbSubmit" onclick="submitFeedback()">提交</button>
             </span>
         </div>
     </section>
@@ -41,26 +36,12 @@
     <section class="panel" id="fbClosedPanel" style="display:none">
         <h2>用户反馈</h2>
         <div class="msg msg-err" style="display:block">
-            反馈入口当前已关闭（服务端 <code>feedback.enabled=false</code>），暂时无法提交。如有紧急问题请直接联系管理员。
+            反馈入口暂时关闭，有急事请直接联系管理员。
         </div>
-    </section>
-
-    <section class="panel">
-        <h2>说明</h2>
-        <table class="grid">
-            <thead><tr><th style="width:180px">项</th><th>说明</th></tr></thead>
-            <tbody>
-            <tr><td><b>推送到哪</b></td><td>钉钉机器人（与盯盘告警同一个群）；服务端未配置 webhook 时提交会提示稍后重试</td></tr>
-            <tr><td><b>消息内容</b></td><td>提交人 IP、提交时间（服务器时间）、反馈正文，三段都由服务端生成，只有正文来自本页</td></tr>
-            <tr><td><b>是否留档</b></td><td>不落库。服务端 <code>app.log</code> 里有一条 <code>[feedback]</code> 日志，钉钉群里是另一份</td></tr>
-            <tr><td><b>内容长度</b></td><td>上限由服务端配置决定（默认 500 字），下方计数实时提示</td></tr>
-            <tr><td><b>提交频率</b></td><td>同一 IP 默认 30 秒内只能提交一次，防止误连点与刷屏</td></tr>
-            </tbody>
-        </table>
     </section>
 </main>
 
-<script src="/js/common.js?v=20260911b"></script>
+<script src="/js/common.js?v=20260912f"></script>
 <script>
     /* 服务端没取到限制参数时的兜底值，与 application.yml 的默认值一致 */
     var FB = {enabled: true, maxLength: 500, cooldownSeconds: 30};
@@ -88,12 +69,12 @@
     async function submitFeedback() {
         var content = contentEl.value.trim();
         if (!content) {
-            toast('请先填写反馈内容', 'err');
+            toast('先写点内容再提交', 'err');
             contentEl.focus();
             return;
         }
         if (content.length > FB.maxLength) {
-            toast('反馈内容最多 ' + FB.maxLength + ' 字，请精简后再提交', 'err');
+            toast('内容最多 ' + FB.maxLength + ' 字，精简一下再提交', 'err');
             return;
         }
         submitBtn.disabled = true;
@@ -102,10 +83,10 @@
             var r = await post('/api/feedback', {content: content});
             if (r.success) {
                 contentEl.value = '';
-                toast(r.message || '感谢反馈，已收到', 'ok');
+                toast(r.message || '已收到，谢谢反馈', 'ok');
             }
         } finally {
-            submitBtn.textContent = '提交反馈';
+            submitBtn.textContent = '提交';
             updateCount();
         }
     }

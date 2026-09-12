@@ -71,6 +71,22 @@ CREATE TABLE IF NOT EXISTS waizao_stock_kline_daily (
     KEY idx_waizao_kline_market (market)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-股票日K线数据';
 
+-- 系统用户（v1.3 SaaS 基础）
+-- 用户名固定为邮箱；口令只存 salt + SHA-256 哈希，任何接口都不回传这两个字段
+CREATE TABLE IF NOT EXISTS waizao_user (
+    id               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+    username         VARCHAR(128) NOT NULL                COMMENT '用户名（邮箱），唯一',
+    password_hash    VARCHAR(128) NOT NULL                COMMENT '口令哈希 SHA-256(salt:明文) hex',
+    password_salt    VARCHAR(64)  NOT NULL                COMMENT '口令随机盐 hex，每个用户独立',
+    role             VARCHAR(16)  NOT NULL DEFAULT 'user' COMMENT '角色: admin-超管 user-普通用户',
+    enabled          TINYINT      NOT NULL DEFAULT 1      COMMENT '是否启用: 1-启用 0-停用（停用后登录态立即失效）',
+    create_time      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    last_login_time  DATETIME     NULL                    COMMENT '最近一次登录时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_waizao_user_username (username)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '系统用户（SaaS 账号）';
+
 -- ============================================================
 -- 回测（数据源固定：供应商 waizao + 日K表 waizao_stock_kline_daily）
 -- 费率一律以小数存储：页面按 % 录入，0.01% 存 0.0001
