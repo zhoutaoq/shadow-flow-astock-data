@@ -65,6 +65,14 @@ public class DingTalkNotifier {
                     oneLine(content));
             return false;
         }
+        // 时段闸门：非交易时段（含收盘后、午休、周末）一条都不发。
+        // 放在这里是因为 post() 是所有钉钉消息的唯一出口 ——
+        // 盯盘告警、关键时点播报、启动通知、用户反馈全走它，一处拦截就是全部拦截。
+        if (!props.getDingtalk().pushAllowedNow()) {
+            log.info("[dingtalk] 非交易时段（{}），本次不发送：{}",
+                    props.getDingtalk().getTradeSessions(), oneLine(content));
+            return false;
+        }
         if (webhook == null || webhook.trim().isEmpty()) {
             return false;
         }

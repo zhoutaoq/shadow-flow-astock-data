@@ -25,6 +25,16 @@ const STOCK_PICKER_LIMIT = 10;
 /** 输入停顿多久才真的去查一次 */
 const STOCK_PICKER_DEBOUNCE_MS = 200;
 
+/** 下拉的最大高度（与 common.css 的 .sp-drop max-height 一致） */
+const STOCK_PICKER_DROP_MAX_H = 288;
+/** 下拉与输入框的间距 */
+const STOCK_PICKER_DROP_GAP = 4;
+/** 下拉离视口边缘至少留多少 */
+const STOCK_PICKER_EDGE = 8;
+/** 下拉宽度区间：跟输入框同宽，但不窄于 260 / 不宽于 420 */
+const STOCK_PICKER_DROP_MIN_W = 260;
+const STOCK_PICKER_DROP_MAX_W = 420;
+
     function createStockPicker(host, opts) {
     opts = opts || {};
     const multiple = !!opts.multiple;
@@ -108,6 +118,14 @@ const STOCK_PICKER_DEBOUNCE_MS = 200;
     }
 
     function renderDrop(kw) {
+        renderDropBody(kw);
+        // 候选条数变了高度就变了，重新摆一次（比如从"搜索中"变成 10 条）
+        if (isShown()) {
+            positionDrop();
+        }
+    }
+
+    function renderDropBody(kw) {
         if (!options.length) {
             dropEl.innerHTML = '<div class="sp-tip">没有匹配的股票'
                 + (kw ? '：' + esc(kw) : '')
@@ -135,13 +153,107 @@ const STOCK_PICKER_DEBOUNCE_MS = 200;
         });
     }
 
+    function isShown() {
+        return dropEl.classList.contains('show');
+    }
+
+    /**
+     * 展开下拉时把它挂到 <code>body</code> 上，改为 <code>position: fixed</code> 定位。
+     *
+     * <p>为什么必须这么干：卡片、面板这类容器为了把装饰元素裁进圆角，普遍带
+     * <code>overflow: hidden</code>，而选择器的下拉是绝对定位的，会被父级裁成一条缝
+     * （盯盘页实测 288px 的下拉只剩 13px 可见）。挨个去改容器的 overflow 治不了根 ——
+     * 那些 overflow 是圆角装饰需要的，删了会露出溢出的高亮条（比如回测页 .cfg-card）。
+     * 挂到 body 上，任何祖先都裁不到它。
+     */
+    function mountDrop() {
+        if (dropEl.parentNode !== document.body) {
+            document.body.appendChild(dropEl);
+        }
+        dropEl.classList.add('sp-drop-fixed');
+    }
+
+    /** 收起时放回宿主里，保持 DOM 就近（宿主被整块替换时也不会留孤儿节点在 body 上） */
+    function unmountDrop() {
+        dropEl.classList.remove('sp-drop-fixed');
+        if (dropEl.parentNode !== host) {
+            host.appendChild(dropEl);
+        }
+    }
+
+    /**
+     * 把下拉摆到「输入框正下方」，下方不够就翻到上方。
+     *
+     * <p>除了躲开祖先裁剪，还解决两件事：
+     * <ol>
+     *   <li>选择器在页面下半部分时，往下展开会跑到视口外，得翻上去；</li>
+     *   <li>多选 + 网格模式下 <code>.sp</code> 比输入框高得多，贴着 <code>.sp</code> 的底边
+     *       会让下拉离输入框几百像素，所以一律以输入框为锚点。</li>
+     * </ol>
+     * 因为是 fixed 定位，这里全部用视口坐标（getBoundingClientRect 本来就是视口坐标）。
+     */
+    function positionDrop() {
+        if (!isShown()) {
+            return;
+        }
+        mountDrop();
+        const anchor = inputEl.getBoundingClientRect();
+
+        // 先定水平位置与宽度，再量内容高度（宽度影响换行，量早了不准）
+        const width = Math.min(Math.max(anchor.width, STOCK_PICKER_DROP_MIN_W), STOCK_PICKER_DROP_MAX_W);
+        let left = anchor.left;
+        const maxLeft = window.innerWidth - STOCK_PICKER_EDGE - width;
+        if (left > maxLeft) {
+            left = Math.max(STOCK_PICKER_EDGE, maxLeft);
+        }
+        if (left < STOCK_PICKER_EDGE) {
+            left = STOCK_PICKER_EDGE;
+        }
+        dropEl.style.left = left + 'px';
+        dropEl.style.width = width + 'px';
+
+        // scrollHeight 是内容真实高度（不受 max-height 影响）
+        const want = Math.min(STOCK_PICKER_DROP_MAX_H, dropEl.scrollHeight);
+        const spaceBelow = window.innerHeight - anchor.bottom - STOCK_PICKER_DROP_GAP - STOCK_PICKER_EDGE;
+        const spaceAbove = anchor.top - STOCK_PICKER_DROP_GAP - STOCK_PICKER_EDGE;
+
+        let up;
+        let h;
+        if (spaceBelow >= want) {
+            up = false;
+            h = want;
+        } else if (spaceAbove >= want) {
+            up = true;
+            h = want;
+        } else {
+            // 上下都塞不下：挑空间大的一侧，能露多少露多少（下拉自身可滚动）
+            up = spaceAbove > spaceBelow;
+            h = Math.max(0, up ? spaceAbove : spaceBelow);
+        }
+
+        const height = h > 0 ? h : want;
+        dropEl.style.maxHeight = height + 'px';
+        dropEl.style.right = 'auto';
+        dropEl.style.bottom = 'auto';
+        if (up) {
+            dropEl.style.top = Math.max(STOCK_PICKER_EDGE, anchor.top - STOCK_PICKER_DROP_GAP - height) + 'px';
+            dropEl.classList.add('up');
+        } else {
+            dropEl.style.top = (anchor.bottom + STOCK_PICKER_DROP_GAP) + 'px';
+            dropEl.classList.remove('up');
+        }
+    }
+
     function open() {
         dropEl.classList.add('show');
+        mountDrop();
+        positionDrop();
     }
 
     function close() {
         dropEl.classList.remove('show');
         activeIdx = -1;
+        unmountDrop();
     }
 
     function pick(it) {
@@ -190,7 +302,9 @@ const STOCK_PICKER_DEBOUNCE_MS = 200;
             dropEl.innerHTML = '<div class="sp-tip">查询失败：' + esc(r.message) + '</div>';
             return;
         }
-        options = (r.data || []).map(x => ({code: x.code, name: x.name || ''}));
+        // 只认前 limit 条：服务端一般已经按 limit 截断，这里再兜一次，
+        // 免得哪天接口返回多了一眼看到一屏候选、还得往下滚才找得到
+        options = (r.data || []).slice(0, limit).map(x => ({code: x.code, name: x.name || ''}));
         activeIdx = options.length ? 0 : -1;
         renderDrop(lastKw);
     }
@@ -275,6 +389,11 @@ const STOCK_PICKER_DEBOUNCE_MS = 200;
         clearAll();
         inputEl.focus();
     });
+
+    // 视口变化 / 页面滚动时下拉要跟着输入框走（下拉是绝对定位，不跟会飘）
+    // 捕获阶段监听是为了顺手拿到内部滚动容器（.table-wrap 之类）的滚动事件
+    window.addEventListener('resize', positionDrop);
+    window.addEventListener('scroll', positionDrop, true);
 
     /**
      * 手输兜底：名录里没有（或还没加载）时，把输入框里的纯数字代码直接当选中项。

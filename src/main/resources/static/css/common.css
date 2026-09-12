@@ -756,6 +756,8 @@ input.sp-input {
     left: 0;
     right: 0;
     min-width: 260px;
+    /* 多选（尤其网格模式）下宿主可能横跨整张卡片，不封顶会拉出一条一米宽的候选列表 */
+    max-width: 420px;
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: var(--r-md);
@@ -765,6 +767,20 @@ input.sp-input {
     display: none;
 }
 .sp-drop.show { display: block; }
+/* 翻到输入框上方（stock-picker.js 在下方空间不够时加这个类）；
+   JS 会同时写内联的 top/bottom，这里只是没有 JS 时的兜底 */
+.sp-drop.up {
+    top: auto;
+    bottom: calc(100% + var(--sp-1));
+}
+/* 展开时被挂到 body 上（stock-picker.js mountDrop）：
+   用 fixed 定位彻底绕开卡片/面板的 overflow: hidden 裁剪，坐标由 JS 按视口算。
+   这条必须排在 .sp-drop.up 之后，才能把上面那条的 bottom 清掉。 */
+.sp-drop.sp-drop-fixed {
+    position: fixed;
+    right: auto;
+    bottom: auto;
+}
 .sp-opt {
     display: flex;
     align-items: center;

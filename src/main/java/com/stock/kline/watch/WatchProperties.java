@@ -229,6 +229,25 @@ public class WatchProperties {
          */
         private String webhook = "";
 
+        /**
+         * <b>只在交易时段内推送</b>，默认 true。
+         *
+         * <p>非交易时段一条都不发（只写日志）：休市后行情接口返回的是当日收盘快照，
+         * 价格不再变动但盯盘进程还在轮询，重启后第一轮会把「已经是涨停」的标的当成
+         * 「刚封上板」推一遍；18:00 收到涨停通知就是这么来的。
+         *
+         * <p>这道闸管的是<b>所有</b>钉钉消息：盯盘告警、关键时点播报、启动通知、用户反馈。
+         */
+        private boolean pushOnlyInTradeSessions = true;
+
+        /**
+         * 允许推送的时段（北京时间，{@code HH:mm-HH:mm}，逗号分隔，周一至周五）。
+         *
+         * <p>默认 {@link TradeSessions#DEFAULT_SESSIONS}，含 09:15 起的集合竞价 ——
+         * 关键时点播报的第一条就排在 09:15:15，从 09:30 起算会把它静默掉。
+         */
+        private String tradeSessions = TradeSessions.DEFAULT_SESSIONS;
+
         public boolean isEnabled() {
             return enabled;
         }
@@ -245,6 +264,22 @@ public class WatchProperties {
             this.webhook = webhook;
         }
 
+        public boolean isPushOnlyInTradeSessions() {
+            return pushOnlyInTradeSessions;
+        }
+
+        public void setPushOnlyInTradeSessions(boolean pushOnlyInTradeSessions) {
+            this.pushOnlyInTradeSessions = pushOnlyInTradeSessions;
+        }
+
+        public String getTradeSessions() {
+            return tradeSessions;
+        }
+
+        public void setTradeSessions(String tradeSessions) {
+            this.tradeSessions = tradeSessions == null ? TradeSessions.DEFAULT_SESSIONS : tradeSessions;
+        }
+
         public boolean configured() {
             return webhook != null && !webhook.trim().isEmpty();
         }
@@ -252,6 +287,11 @@ public class WatchProperties {
         /** 是否真的能发：总开关打开 + webhook 已配置 */
         public boolean pushEnabled() {
             return enabled && configured();
+        }
+
+        /** 此刻是否允许推送（北京时间 + 上面的两道开关） */
+        public boolean pushAllowedNow() {
+            return !pushOnlyInTradeSessions || TradeSessions.inNow(tradeSessions);
         }
     }
 }

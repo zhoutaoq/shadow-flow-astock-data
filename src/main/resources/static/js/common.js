@@ -1081,7 +1081,7 @@ function whenTokenReady() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260912f（v1.3.5：盯盘页分类重排 / 轮询间隔下限 3s）');
+    console.info('[金牛数据] 前端版本 20260912g（v1.3.6：盯盘页下拉遮挡修复 / 非交易时段静默）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();

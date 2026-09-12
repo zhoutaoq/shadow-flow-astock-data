@@ -7,7 +7,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -105,6 +104,8 @@ public class PriceWatchTask {
         boolean volumeSurge;
         /** 上次的封板状态：1 涨停 / 0 未涨跌停 / -1 跌停 */
         int limitState = LIMIT_NONE;
+        /** 是否已经跑过至少一轮：首轮看到的"封板"不是"刚封上"，不能当成状态变更推出去 */
+        boolean limitPrimed;
     }
 
     private static class Sample {
@@ -167,14 +168,15 @@ public class PriceWatchTask {
                 targets.size(), queried.size(), hit, System.currentTimeMillis() - begin);
     }
 
-    /** A股交易时段：周一至周五 9:30-11:30 / 13:00-15:00（法定节假日不判断） */
+    /**
+     * 此刻是否该向行情接口发请求：周一至周五 9:30-11:30 / 13:00-15:00（北京时间）。
+     *
+     * <p>口径统一在 {@link TradeSessions}，不再各写一份 hhmm 比大小。
+     * 注意这里的下界是 9:30（真的在撮合），比 {@link TradeSessions#DEFAULT_SESSIONS}
+     * 的推送窗口 9:15 晚 —— 集合竞价那 15 分钟只做例行播报，不改基线。
+     */
     private boolean isTradingTime() {
-        LocalDateTime now = LocalDateTime.now();
-        if (now.getDayOfWeek().getValue() > 5) {
-            return false;
-        }
-        int hhmm = now.getHour() * 100 + now.getMinute();
-        return (hhmm >= 930 && hhmm <= 1130) || (hhmm >= 1300 && hhmm <= 1500);
+        return TradeSessions.inNow(TradeSessions.FETCH_SESSIONS);
     }
 
     private Future<Quote> submit(WatchTarget t) {
@@ -207,19 +209,27 @@ public class PriceWatchTask {
 
         boolean pushed = false;
 
-        // 封板 / 开板通知：状态变了才推，连续封着或一直没封都不重复刷屏
+        // 封板 / 开板通知：状态变了才推，连续封着或一直没封都不重复刷屏。
+        // 但「第一轮」不算状态变更 —— 重启 / 刚加进名单 / 开盘前第一次看到某只已经封在板上，
+        // 那不是"刚封上"，推出去就是一串误导性的涨停通知（跟下面价格首轮不推送同一个道理）。
+        boolean firstRound = !st.limitPrimed;
+        st.limitPrimed = true;
         if (limitState != st.limitState) {
             int prev = st.limitState;
-            if (prev == LIMIT_UP) {
-                sendLimitAlert(q, LIMIT_UP, false);
-                pushed = true;
-            } else if (prev == LIMIT_DOWN) {
-                sendLimitAlert(q, LIMIT_DOWN, false);
-                pushed = true;
-            }
-            if (limitState == LIMIT_UP || limitState == LIMIT_DOWN) {
-                sendLimitAlert(q, limitState, true);
-                pushed = true;
+            if (firstRound) {
+                log.info("[watch] {} 建立封板基线：{}（首轮不推送）", q.getName(), limitWord(limitState));
+            } else {
+                if (prev == LIMIT_UP) {
+                    sendLimitAlert(q, LIMIT_UP, false);
+                    pushed = true;
+                } else if (prev == LIMIT_DOWN) {
+                    sendLimitAlert(q, LIMIT_DOWN, false);
+                    pushed = true;
+                }
+                if (limitState == LIMIT_UP || limitState == LIMIT_DOWN) {
+                    sendLimitAlert(q, limitState, true);
+                    pushed = true;
+                }
             }
             st.limitState = limitState;
         }
@@ -504,6 +514,14 @@ public class PriceWatchTask {
             return LIMIT_DOWN;
         }
         return LIMIT_NONE;
+    }
+
+    /** 封板状态的中文说法，只给日志用 */
+    private static String limitWord(int state) {
+        if (state == LIMIT_UP) {
+            return "涨停";
+        }
+        return state == LIMIT_DOWN ? "跌停" : "未涨跌停";
     }
 
     /**

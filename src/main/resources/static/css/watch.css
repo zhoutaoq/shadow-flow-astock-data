@@ -70,7 +70,11 @@
     border: 1px solid var(--border);
     border-radius: var(--r-xl);
     box-shadow: var(--shadow-1);
-    overflow: hidden;
+    /* 这里不加 overflow: hidden。
+       卡片里放着股票选择器，它的下拉是浮层；容器一旦裁剪，下拉会被切成一条缝
+       （盯盘页实测 288px 的下拉只剩 13px 可见）。
+       下拉本身现在还会挂到 body 上用 fixed 定位（双层保险），但卡片这边也没必要裁 ——
+       圆角不靠它兜：卡头只有 border-bottom、卡身没有背景色，不会溢出圆角。 */
 }
 .wcard-q { grid-column: span 4; }
 
