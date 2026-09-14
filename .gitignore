@@ -158,9 +158,13 @@ data/
 # 发布配置：含服务器地址与口令，不入库
 stock-kline-deploy-config.yaml
 
-# 一键发布脚本目录（deploy.bat / remote.sh / plink.exe / pscp.exe / 使用说明.md）：
-# deploy.bat 里写的是服务器 root 明文口令，一并只留本机，不入库
-sh/
+# 发布脚本目录 sh/：脚本与服务器运行参数入库（deploy.bat / remote.sh / server.env /
+# deploy.env.example / 使用说明.md），只排除下面两类别的东西 ——
+#   ① 连接凭据：服务器 IP / 账号 / 口令 / 主机指纹，单独放 deploy.env（由 deploy.env.example 复制而来）
+#   ② 第三方二进制：PuTTY 的 plink.exe / pscp.exe，按需自行下载，不塞进仓库
+sh/deploy.env
+sh/plink.exe
+sh/pscp.exe
 
 # 构建产物 / 日志
 target/

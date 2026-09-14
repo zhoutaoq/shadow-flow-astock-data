@@ -1,0 +1,14 @@
+# 行尾策略 —— 脚本的行尾决定它能不能在被调用的环境里跑起来，必须钉死在仓库里，
+# 不随 core.autocrlf / 编辑器设置漂移。
+#
+#   *.sh    → LF     远端 bash 读 CRLF 会直接语法错（set: -: invalid option / $'\r'），
+#                    且是在「解析阶段」就退出，连停旧进程都执行不到。
+#   *.bat   → CRLF   cmd 对 LF 批处理的容错不可靠（标签 / goto 尤其敏感）。
+#   *.env   → CRLF   server.env 由 .bat 用 call 读、由 remote.sh 按行解析；
+#                    按 CRLF 最稳 —— remote.sh 的解析器会自己剥掉 \r，所以 LF 也能吃。
+*.sh          text eol=lf
+*.bat         text eol=crlf
+*.env         text eol=crlf
+*.env.example text eol=crlf
+# 本文件自己固定 LF，免得被 core.autocrlf 来回改
+.gitattributes text eol=lf
