@@ -29,6 +29,9 @@ public class DingTalkNotifier {
 
     public DingTalkNotifier(WatchProperties props) {
         this.props = props;
+        // 启动就先在后台把公网 IP 探出来（要发外网请求，不阻塞启动），
+        // 这样第一条告警拼前缀时通常已经有缓存，不用同步等网络。
+        WatchText.warmUpPublicIp();
     }
 
     /**
@@ -40,12 +43,28 @@ public class DingTalkNotifier {
 
     /**
      * 推送一条盯盘文本消息：用 {@code watch.dingtalk.webhook}，并自动补上
-     * <code>[智能盯盘]</code> 前缀满足机器人关键词校验。
+     * <code>[智能盯盘-公网IP]</code> 前缀。
+     *
+     * <p>前缀里的「智能盯盘」满足机器人「自定义关键词」校验（钉钉按子串匹配，
+     * <code>[智能盯盘-1.2.3.4]</code> 一样能命中）；后面挂的公网 IP 是给人在群里看的 ——
+     * 同一套程序部署在两台以上机器、告警都进同一个群时，一眼能看出是哪台在报。
+     * 探测不到公网 IP 时退回原样的 <code>[智能盯盘]</code>，不影响送达。
      *
      * @return 是否推送成功（webhook 未配置时返回 false，由调用方决定是否记日志）
      */
     public boolean send(String content) {
-        return post(props.getDingtalk().getWebhook(), "[智能盯盘] " + content);
+        return post(props.getDingtalk().getWebhook(), keywordTag() + " " + content);
+    }
+
+    /**
+     * 消息前缀：正常是 <code>[智能盯盘-1.2.3.4]</code>，公网 IP 拿不到时退成 <code>[智能盯盘]</code>。
+     *
+     * <p>用出口公网 IP 而不是网卡地址：云主机上公网 IP 是 NAT 出来的、网卡里只有内网地址，
+     * 取网卡只会得到 10.x / 192.168.x，没有任何标识意义。
+     */
+    private static String keywordTag() {
+        String ip = WatchText.publicIp();
+        return ip == null || ip.isEmpty() ? "[智能盯盘]" : "[智能盯盘-" + ip + "]";
     }
 
     /**
@@ -53,7 +72,7 @@ public class DingTalkNotifier {
      *
      * <p>用户反馈等其它模块复用它，避免各自再写一遍 HTTP + JSON 转义。
      * 注意钉钉「自定义关键词」模式下消息文本必须含机器人后台配的关键词，
-     * 这个前缀由调用方自己拼（盯盘那边是 {@code [智能盯盘] }）。
+     * 这个前缀由调用方自己拼（盯盘那边是 {@code [智能盯盘-公网IP] }，见 {@link #send(String)}）。
      *
      * @param webhook 目标机器人地址，空白视为未配置、直接返回 false
      * @return 是否推送成功（HTTP 2xx 且响应体已读取）
