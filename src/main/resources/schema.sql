@@ -3,10 +3,12 @@
 -- 表命名规范：waizao_xxx
 -- ============================================================
 
--- 通用配置表：按「场景 + 键」存放运行期可变的变量（目前是 waizao 的 token）
+-- 通用配置表：按「归属用户 + 场景 + 键」存放运行期可变的变量（目前是 waizao 的 token）
 -- 接口地址、超时、并发度、启用开关等稳定参数仍写在 application.yml，不进这张表
+-- owner_id = 0 表示系统级：未登录请求、以及该用户没单独配过时的兜底
 CREATE TABLE IF NOT EXISTS waizao_sys_config (
     id           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+    owner_id     BIGINT       NOT NULL DEFAULT 0      COMMENT '归属用户 id；0 = 系统级兜底',
     config_scene VARCHAR(64)  NOT NULL                COMMENT '场景/分组，如 waizao',
     config_key   VARCHAR(64)  NOT NULL                COMMENT '配置键，如 token',
     config_value TEXT         NULL                    COMMENT '配置值（令牌类会频繁更换，页面保存后即时生效）',
@@ -14,7 +16,7 @@ CREATE TABLE IF NOT EXISTS waizao_sys_config (
     create_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
-    UNIQUE KEY uk_waizao_sys_config_scene_key (config_scene, config_key)
+    UNIQUE KEY uk_waizao_sys_config_owner_scene_key (owner_id, config_scene, config_key)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '通用配置表（各场景可变参数）';
 
 -- 股票列表（来源 resources/stock-list.json）

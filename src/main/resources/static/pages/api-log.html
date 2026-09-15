@@ -2,9 +2,9 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>接口调用日志</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260912h">
+    <link rel="stylesheet" href="/css/common.css?v=20260915a">
 </head>
 <body>
 <header class="topbar">
@@ -100,9 +100,9 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260912h"></script>
-<script src="/js/date-picker.js?v=20260912h"></script>
-<script src="/js/stock-picker.js?v=20260912h"></script>
+<script src="/js/common.js?v=20260915a"></script>
+<script src="/js/date-picker.js?v=20260915a"></script>
+<script src="/js/stock-picker.js?v=20260915a"></script>
 <script>
     const state = {page: 1, size: 50};
 

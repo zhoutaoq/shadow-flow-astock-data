@@ -83,7 +83,8 @@ waizao:
     backtest-keep: 500
   api:
     base-url: http://api.waizaowang.com
-    # ⚠️ token 是频繁变动的凭据，统一维护在配置表（场景 waizao / 键 token），页面「系统配置」保存即生效。
+    # ⚠️ token 是频繁变动的凭据，统一维护在配置表（场景 waizao / 键 token / 归属用户），
+    #    页面「实时通知配置」保存即生效；下面这个值只在「系统级那行」为空时作种子写一次。
     # 系统内置默认令牌：无数据库模式以前端 common.js 的 DEFAULT_WAIZAO_TOKEN 为准（内容不支持查看）；
     # 数据库模式下仅在「配置表为空、首次启动」时作为种子写入一次，之后一律以配置表为准。
     token: "305c8974672f4bbe953e52a94a1f070c"

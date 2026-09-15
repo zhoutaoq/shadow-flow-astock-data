@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260912h">
-    <link rel="stylesheet" href="/css/home.css?v=20260912h">
+    <link rel="stylesheet" href="/css/common.css?v=20260915a">
+    <link rel="stylesheet" href="/css/home.css?v=20260915a">
 </head>
 <body>
 <header class="topbar">
@@ -218,9 +218,9 @@
 
 </main>
 
-<script src="/js/common.js?v=20260912h"></script>
-<script src="/js/date-picker.js?v=20260912h"></script>
-<script src="/js/home.js?v=20260912h"></script>
+<script src="/js/common.js?v=20260915a"></script>
+<script src="/js/date-picker.js?v=20260915a"></script>
+<script src="/js/home.js?v=20260915a"></script>
 <script>
     /* 全站功能入口：与顶部导航同一套，两种运行模式共用（第 4 项是内联图标，不转义） */
     var QUICK = [
@@ -232,7 +232,7 @@
             '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>'],
         ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值',
             '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 8-3 8h18s-3-2-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'],
-        ['token配置', '/pages/config.html', '维护 waizao 令牌（内容不支持查看）',
+        ['实时通知配置', '/pages/config.html', '维护自己的数据接口令牌，登录后可用',
             '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 3h3v3"/>'],
         ['用户反馈', '/pages/feedback.html', '写下问题或建议，提交即实时推送钉钉',
             '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.3 9.3 0 0 1-2.6-.4L4 21l1.4-4.2A8.4 8.4 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/>']
@@ -269,7 +269,8 @@
                     + '<div class="tape-point ' + dir + '">' + fmtNum(x.point, 2) + '</div>'
                     + '<div class="tape-chg ' + dir + '">' + signed(x.change, 2)
                     + ' <b>' + signed(x.changePercent, 2) + '%</b></div>'
-                    + '<div class="tape-amt">成交 ' + (x.amount ? fmtVol(x.amount) : '-') + '</div>'
+                    // 海外指数没有成交额，这一行整体不渲染，不留「成交 -」空壳
+                    + (x.amount ? '<div class="tape-amt">成交 ' + fmtVol(x.amount) + '</div>' : '')
                     + '</div>';
             }).join('');
             document.getElementById('tape').hidden = false;

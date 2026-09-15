@@ -213,8 +213,14 @@
 
 * { box-sizing: border-box; }
 
+/* 整页做成「顶栏 + 内容 + 页脚」三段的纵向弹性布局：
+   .container 撑满剩余高度、页脚 margin-top:auto —— 内容不足一屏时页脚仍贴在窗口底部，
+   不会悬在页面中间；内容超过一屏时又自然落在正文最后，不遮挡任何内容。 */
 body {
     margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
@@ -390,6 +396,9 @@ a.nav-item { color: var(--text-dim); }
 
 /* ============ 容器 ============ */
 .container {
+    /* flex:1 把剩余高度吃下来，页脚才有得贴底（见 body 的注释） */
+    flex: 1 0 auto;
+    width: 100%;
     padding: var(--sp-5) var(--sp-6) 60px;
     max-width: var(--page-w);
     margin: 0 auto;
@@ -1311,7 +1320,9 @@ button:disabled { box-shadow: none; }
    由 common.js 统一注入到 body 末尾，页面里不用写；版本号与发布时间来自
    /api/version（打包时写进 build-info.properties），所以改 pom 的 version 即同步。 */
 .site-footer {
-    margin-top: var(--sp-8);
+    /* auto 而非固定间距：把页脚推到弹性布局的末尾，即窗口底部 */
+    margin-top: auto;
+    flex: 0 0 auto;
     padding: var(--sp-5) var(--sp-4) calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--border-soft);
     color: var(--text-dim);

@@ -2,9 +2,9 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>股票列表 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260912h">
+    <link rel="stylesheet" href="/css/common.css?v=20260915a">
 </head>
 <body>
 <header class="topbar">
@@ -81,7 +81,7 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=20260912h"></script>
+<script src="/js/common.js?v=20260915a"></script>
 <script>
     /**
      * 两种模式共用一页，差别只在数据来源与写操作：
@@ -227,7 +227,6 @@
     (async function init() {
         await loadMode();
         if (MODE.noDb) {
-            await whenTokenReady();   // 没有令牌时先弹填写框，别白跑一次请求
             document.getElementById('modeTip').textContent = '无数据库模式 · 只读';
         } else {
             document.getElementById('writeOps').style.display = '';

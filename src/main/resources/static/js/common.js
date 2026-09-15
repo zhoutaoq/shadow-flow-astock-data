@@ -4,15 +4,14 @@
 /**
  * 由 /api/mode 填充。两种模式共用一套页面，导航按「是否依赖库表」裁剪：
  * 无数据库模式下不生成「数据更新」整组与「调用日志」「接口调试」，
- * 只剩 概览 / 分析回测（股票列表 · K线分析 · 策略回测）/ 系统（系统配置 · 用户反馈）。
+ * 只剩 概览 / 分析回测（股票列表 · K线分析 · 策略回测）/ 系统（实时通知配置 · 用户反馈）。
  * 取不到接口时按「数据库模式」渲染，避免一次请求失败导致整页没导航。
  */
 const MODE = {
     dbEnabled: true,
     noDb: false,
     maxSpanDays: 1200,
-    backtestPersistent: true,
-    tokenFromRequest: false
+    backtestPersistent: true
 };
 
 /**
@@ -43,16 +42,7 @@ function loadMode() {
     return _modePromise;
 }
 
-/* ============ 令牌 ============ */
-/**
- * 供应商令牌：cookie 里的自定义值优先；没自定义时用系统内置默认令牌兜底。
- * 无数据库模式下后端不保存任何参数，每次请求靠 X-Waizao-Token 请求头把令牌带过去。
- * 自定义令牌写本机 cookie（30 天有效）；内置默认令牌只内置在代码里，任何页面都不回显、不支持查看。
- */
-const TOKEN_COOKIE = 'waizao_token';
-const TOKEN_COOKIE_DAYS = 30;
-/** 系统内置默认令牌：开箱即用；不支持在页面上查看，只能在「token配置」页覆盖 */
-const DEFAULT_WAIZAO_TOKEN = '305c8974672f4bbe953e52a94a1f070c';
+/* ============ Cookie 小工具 ============ */
 
 function setCookie(name, value, days) {
     const d = new Date();
@@ -70,29 +60,15 @@ function delCookie(name) {
     document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax';
 }
 
-/** 当前生效的供应商令牌：cookie 自定义值优先，否则回退到内置默认令牌（因此恒非空） */
-function waizaoToken() {
-    return getCookie(TOKEN_COOKIE) || DEFAULT_WAIZAO_TOKEN;
-}
-
-/** 是否已有可用令牌（含内置默认）：恒为 true，填写框/等待逻辑据此不再拦截 */
-function hasWaizaoToken() {
-    return !!waizaoToken();
-}
-
-/** 是否设置了自定义令牌（cookie 里有值）：用于页面文案区分「默认 / 自定义」 */
-function hasCustomWaizaoToken() {
-    return !!getCookie(TOKEN_COOKIE);
-}
-
-function setWaizaoToken(t) {
-    const v = (t || '').trim();
-    if (v) {
-        setCookie(TOKEN_COOKIE, v, TOKEN_COOKIE_DAYS);
-    } else {
-        delCookie(TOKEN_COOKIE);
-    }
-}
+/* ============ 令牌 ============ */
+/**
+ * v1.5 起供应商令牌完全由服务端按用户维护，浏览器不再持有令牌。
+ *
+ * <p>「实时通知配置」页保存的令牌记在当前登录用户名下，抓数时后端取「发起这一请求的人」
+ * 自己的令牌；该用户没配过时回落到系统级默认令牌。所以前端既不存 cookie 令牌、
+ * 也没有内置默认值与兜底填写框，更不发 {@code X-Waizao-Token} 请求头 ——
+ * 换浏览器 / 换设备登录同一账号，用的是同一份令牌。
+ */
 
 /* ============ 账号登录态 ============ */
 /**
@@ -504,10 +480,6 @@ async function doLogout() {
 async function api(url, options) {
     const o = options || {};
     const headers = Object.assign({'Content-Type': 'application/json'}, o.headers || {});
-    const tk = waizaoToken();
-    if (tk) {
-        headers['X-Waizao-Token'] = tk;
-    }
     const at = authToken();
     if (at) {
         headers['X-Auth-Token'] = at;
@@ -712,7 +684,12 @@ function padYmd(y, mo, d) {
 /* ============ 主题：暗色 / 亮色 ============ */
 const THEME_KEY = 'jn_theme';
 
-/** 已保存的主题；没存过就跟随系统偏好 */
+/**
+ * 已保存的主题；没手动选过就按客户端本地时间自动判断。
+ *
+ * <p>「自动」= 白天亮色 / 晚上暗色（见 {@link autoThemeByClock}），
+ * 用户在顶栏点过太阳/月亮后以保存值为准，不再随时间跳变。
+ */
 function currentTheme() {
     try {
         const saved = localStorage.getItem(THEME_KEY);
@@ -720,10 +697,20 @@ function currentTheme() {
             return saved;
         }
     } catch (e) {
-        // 隐私模式下 localStorage 不可用，退回系统偏好
+        // 隐私模式下 localStorage 不可用，退回时间判断
     }
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
-        ? 'light' : 'dark';
+    return autoThemeByClock();
+}
+
+/**
+ * 按客户端本地时间自动选主题：06:00–18:00 亮色，其余暗色。
+ *
+ * <p>各页面 {@code <head>} 里的首屏内联脚本有一份等价实现 —— 那段必须早于 CSS 渲染执行，
+ * 引不到本文件，改这里的规则时记得同步改那 14 份（否则会先按旧规则闪一下）。
+ */
+function autoThemeByClock() {
+    const h = new Date().getHours();
+    return h >= 6 && h < 18 ? 'light' : 'dark';
 }
 
 /** 落到 <html data-theme> 上，配色全部由 CSS 令牌接管 */
@@ -789,7 +776,7 @@ const NAV_ITEMS = [
     {text: 'K线查看', href: '/pages/chart.html'},
     {text: '策略回测', href: '/pages/backtest.html', login: true},
     {text: '盯盘', href: '/pages/watch.html', login: true},
-    {text: 'token配置', href: '/pages/config.html'},
+    {text: '实时通知配置', href: '/pages/config.html', login: true},
     {text: '用户反馈', href: '/pages/feedback.html'},
     {text: '用户管理', href: '/pages/users.html', admin: true}
 ];
@@ -1040,106 +1027,14 @@ async function submitChangePassword(hide) {
     }
 }
 
-/**
- * 无数据库模式下的令牌兜底填写框。系统内置了默认令牌后，正常永远不会再弹；
- * 只有当内置默认被清空、且本机也没有自定义令牌时才要求填写，不填不放行。
- *
- * <p>数据库模式的令牌维护在配置表，不需要这一步。
- */
-function ensureTokenDialog() {
-    if (!MODE.tokenFromRequest || hasWaizaoToken()) {
-        return false;
-    }
-    let mask = document.getElementById('tokenMask');
-    if (!mask) {
-        mask = document.createElement('div');
-        mask.className = 'mask';
-        mask.id = 'tokenMask';
-        mask.innerHTML =
-            '<div class="modal modal-auth">'
-            + '<div class="auth-head">'
-            + '<span class="auth-brand"><span class="mark">' + ICON.pwd + '</span>需要数据接口令牌</span>'
-            + '</div>'
-            + '<div class="auth-field">'
-            + '<label for="tkInput">令牌</label>'
-            + '<div class="auth-input-wrap has-toggle">'
-            + '<input type="password" id="tkInput" autocomplete="off" spellcheck="false"'
-            + ' placeholder="粘贴数据接口令牌">'
-            + '<button class="auth-eye" type="button" data-for="tkInput" aria-label="显示令牌">' + ICON.eye + '</button>'
-            + '</div>'
-            + '</div>'
-            + '<div class="auth-alert" id="tkErr">' + ICON.err + '<span id="tkErrTxt"></span></div>'
-            + '<button class="auth-submit" id="tkSave" type="button">保存并使用</button>'
-            + '</div>';
-        document.body.appendChild(mask);
-
-        const input = mask.querySelector('#tkInput');
-        mask.querySelector('.auth-eye').addEventListener('click', () => {
-            const show = input.type === 'password';
-            input.type = show ? 'text' : 'password';
-            mask.querySelector('.auth-eye').innerHTML = show ? ICON.eyeOff : ICON.eye;
-        });
-        const save = () => {
-            const v = input.value.trim();
-            if (!v) {
-                mask.querySelector('#tkErrTxt').textContent = '令牌不能为空';
-                mask.querySelector('#tkErr').classList.add('show');
-                input.focus();
-                return;
-            }
-            setWaizaoToken(v);
-            mask.classList.remove('show');
-            toast('令牌已保存', 'ok');
-            document.dispatchEvent(new CustomEvent('token:ready', {detail: {token: v}}));
-        };
-        mask.querySelector('#tkSave').addEventListener('click', save);
-        input.addEventListener('keydown', e => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                save();
-            }
-        });
-        // 遮罩不接受"点外面关掉"：没有令牌时任何功能都跑不动
-        mask.addEventListener('mousedown', e => e.stopPropagation());
-    }
-    mask.classList.add('show');
-    const input = mask.querySelector('#tkInput');
-    input.value = '';
-    input.type = 'password';
-    mask.querySelector('.auth-eye').innerHTML = ICON.eye;
-    mask.querySelector('#tkErr').classList.remove('show');
-    setTimeout(() => input.focus(), 60);
-    return true;
-}
-
-/**
- * 等令牌就绪：页面在解析阶段（早于 DOMContentLoaded）就要发请求时用。
- *
- * <p>没有它，首进页面会先发出一批没有令牌的请求，白挨几条报错提示。
- */
-let _tokenReadyPromise = null;
-function whenTokenReady() {
-    if (!_tokenReadyPromise) {
-        _tokenReadyPromise = new Promise(resolve => {
-            if (!MODE.tokenFromRequest || hasWaizaoToken()) {
-                resolve();
-                return;
-            }
-            document.addEventListener('token:ready', () => resolve(), {once: true});
-        });
-    }
-    return _tokenReadyPromise;
-}
-
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260912h（v1.3.7：全站页脚 署名 / 版本号 / 发布时间）');
+    console.info('[金牛数据] 前端版本 20260915a（v1.5.0：令牌按用户隔离 / 页脚贴底 / 亮暗色按时间自动判断）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();
     await loadMode();
-    ensureTokenDialog();
     // 登录态决定「用户管理」是否出现、顶栏显示邮箱还是登录入口，必须在渲染导航前拿到
     await loadMe();
     renderNav();

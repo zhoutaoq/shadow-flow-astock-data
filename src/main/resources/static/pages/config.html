@@ -2,9 +2,10 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-    <title>系统配置</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260912h">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>实时通知配置 - 金牛数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260915a">
 </head>
 <body>
 <header class="topbar">
@@ -15,9 +16,19 @@
 <main class="container">
     <div id="msgBox" class="msg"></div>
 
-    <!-- 无数据库模式：没有配置表，整页就是一个令牌输入框 -->
     <section class="panel" id="tokenPanel" style="display:none">
-        <h2 style="margin:0 0 12px">数据接口令牌</h2>
+        <h2 style="margin:0 0 4px">我的数据接口令牌</h2>
+        <div class="sp-hint">
+            令牌只存在服务端、记在你的账号下：抓数时用「发起这一请求的人」自己的令牌，
+            没配过则回落到系统级默认令牌（盯盘等后台任务没有登录态，用的就是系统级那一份）。
+        </div>
+        <div class="form-row" style="margin-top:12px">
+            <div class="field grow">
+                <label>当前生效</label>
+                <input type="text" id="fCur" readonly>
+            </div>
+            <button class="btn-ghost" onclick="clearToken()">清除（回落到系统级）</button>
+        </div>
         <div class="form-row">
             <div class="field grow">
                 <label>新令牌</label>
@@ -25,22 +36,49 @@
                        placeholder="粘贴新的令牌">
             </div>
             <button onclick="saveToken()" id="btnSave">保存</button>
-            <button class="btn-ghost" onclick="resetToDefault()">恢复默认令牌</button>
         </div>
         <div class="sp-hint" id="tokenState"></div>
     </section>
 
-    <section class="panel" id="tablePanel">
-        <h2 style="margin:0 0 4px">配置变量</h2>
-        <div class="form-row">
-            <button onclick="openEdit(null)">新增配置</button>
-            <button class="btn-ghost" onclick="reload()">从数据库重载</button>
+    <!-- 系统级那一份：未登录请求与未配过令牌的用户的兜底，只有超管能看能改 -->
+    <section class="panel" id="sysPanel" style="display:none">
+        <h2 style="margin:0 0 4px">系统级默认令牌（仅超管）</h2>
+        <div class="sp-hint">
+            未登录的首页 / K线查看，以及还没配过自己令牌的用户，都走这一份。
+            供应商令牌轮换时记得改这里，否则匿名访问会跟着失效。
         </div>
-        <div style="overflow:auto;max-height:620px;margin-top:10px">
+        <div class="form-row" style="margin-top:12px">
+            <div class="field grow">
+                <label>当前生效</label>
+                <input type="text" id="fSysCur" readonly>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="field grow">
+                <label>新令牌</label>
+                <input type="password" id="fSysToken" autocomplete="off" spellcheck="false"
+                       placeholder="粘贴新的系统级令牌">
+            </div>
+            <button onclick="saveSysToken()">保存</button>
+        </div>
+        <div class="sp-hint" id="sysTokenState"></div>
+    </section>
+
+    <section class="panel" id="tablePanel" style="display:none">
+        <h2 style="margin:0 0 4px">我的配置项</h2>
+        <div class="sp-hint">只列你名下的行（超管多一份系统级的）。场景 + 配置键是定位条件，改了等于新增另一条。</div>
+        <div class="form-row" style="margin-top:12px">
+            <button onclick="openEdit(null, myId())">新增配置</button>
+            <button class="btn-ghost" id="btnAddSys" style="display:none"
+                    onclick="openEdit(null, 0)">新增系统级配置</button>
+            <button class="btn-ghost" onclick="reload()">重新加载</button>
+        </div>
+        <div style="overflow:auto;max-height:520px;margin-top:10px">
             <table class="grid">
                 <thead>
                 <tr>
                     <th style="width:60px">ID</th>
+                    <th style="width:90px">归属</th>
                     <th style="width:140px">场景</th>
                     <th style="width:160px">配置键</th>
                     <th>配置值</th>
@@ -84,8 +122,7 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=20260912h"></script>
-<script src="/js/date-picker.js?v=20260912h"></script>
+<script src="/js/common.js?v=20260915a"></script>
 <script>
     /** 需要遮蔽显示的键：值里是令牌/口令 */
     function isSecretKey(key) {
@@ -99,27 +136,78 @@
         return v.length <= 8 ? '****' : v.slice(0, 4) + '****' + v.slice(-4);
     }
 
+    const TOKEN_SCENE = 'waizao';
+    const TOKEN_KEY = 'token';
+    /** 系统级归属：未登录请求与未配置用户的兜底，只有超管看得到 */
+    const SYSTEM_OWNER = 0;
+
     let rows = [];
+    /** 编辑弹窗这次写哪一份归属：普通用户恒为自己的 id，超管可选 0（系统级） */
+    let editOwner = 0;
+    /** 我名下的令牌明文：只在当前页面内存里，展示一律打码 */
+    let myToken = '';
+    /** 系统级令牌明文，同上 */
+    let sysToken = '';
+
+    /** 当前登录用户 id（后端按它划分归属） */
+    function myId() {
+        return (ME.user && ME.user.id) || 0;
+    }
+
+    /** 找指定归属下那条 waizao/token（可能还没配） */
+    function tokenRow(owner) {
+        return rows.find(x => x.ownerId === owner
+            && x.configScene === TOKEN_SCENE && x.configKey === TOKEN_KEY) || null;
+    }
 
     async function load() {
         const r = await get('/api/sys-config');
         if (!r.success) return;
-        rows = r.data || [];
+        apply(r.data || []);
+    }
+
+    function apply(list) {
+        rows = list;
+        const mine = tokenRow(myId());
+        const sys = tokenRow(SYSTEM_OWNER);
+        myToken = mine ? (mine.configValue || '') : '';
+        sysToken = sys ? (sys.configValue || '') : '';
         render();
+        renderTokenState();
+        renderSysTokenState();
+    }
+
+    function renderTokenState() {
+        document.getElementById('fCur').value = myToken
+            ? maskValue(myToken)
+            : '（未配置，使用系统级默认令牌）';
+        document.getElementById('tokenState').innerHTML = myToken
+            ? '当前：<b>我的令牌</b>，仅本账号发起的请求生效。'
+            : '当前：<b>系统级默认令牌</b>。想只给自己用，在上面粘贴令牌保存即可。';
+    }
+
+    function renderSysTokenState() {
+        document.getElementById('fSysCur').value = sysToken
+            ? maskValue(sysToken)
+            : '（未配置，回落到 application.yml 里的 waizao.api.token）';
+        document.getElementById('sysTokenState').innerHTML =
+            '这一份落在配置表的「归属用户 = 0」那行，改完立即生效，不用重启。';
     }
 
     function render() {
         const tbody = document.getElementById('tbody');
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无配置</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无配置</td></tr>';
             return;
         }
         tbody.innerHTML = rows.map(x => {
             const secret = isSecretKey(x.configKey);
-            const shown = secret ? maskValue(x.configValue) : (x.configValue || '');
             return `
                 <tr>
                     <td class="dim">${x.id}</td>
+                    <td>${x.ownerId === SYSTEM_OWNER
+                        ? '<span class="dim">系统级</span>'
+                        : '<b>我的</b>'}</td>
                     <td><b>${esc(x.configScene)}</b></td>
                     <td>${esc(x.configKey)}</td>
                     <td>${secret
@@ -129,7 +217,7 @@
                     <td class="dim">${esc(x.remark || '')}</td>
                     <td class="dim">${esc(x.updateTime || '')}</td>
                     <td>
-                        <button class="btn-sm btn-ghost" onclick="openEdit(${x.id})">编辑</button>
+                        <button class="btn-sm btn-ghost" onclick="openEdit(${x.id}, ${x.ownerId || 0})">编辑</button>
                         <button class="btn-sm btn-ghost" onclick="removeCfg(${x.id})">删除</button>
                     </td>
                 </tr>`;
@@ -143,11 +231,19 @@
         btn.textContent = showing ? '隐藏' : '显示';
     }
 
-    function openEdit(id) {
+    /**
+     * 打开新增/编辑弹窗。
+     *
+     * @param {number|null} id    要编辑的行 id，null 表示新增
+     * @param {number}      owner 这一行归属谁：自己的 id 或 0（系统级，仅超管）
+     */
+    function openEdit(id, owner) {
         const item = id ? rows.find(x => x.id === id) : null;
-        document.getElementById('editTitle').textContent = item ? '编辑配置' : '新增配置';
-        document.getElementById('eScene').value = item ? item.configScene : 'waizao';
-        document.getElementById('eKey').value = item ? item.configKey : '';
+        editOwner = item ? (item.ownerId || 0) : (owner || 0);
+        document.getElementById('editTitle').textContent = (item ? '编辑' : '新增')
+            + (editOwner === SYSTEM_OWNER ? '系统级' : '我的') + '配置';
+        document.getElementById('eScene').value = item ? item.configScene : TOKEN_SCENE;
+        document.getElementById('eKey').value = item ? item.configKey : TOKEN_KEY;
         document.getElementById('eValue').value = item ? (item.configValue || '') : '';
         document.getElementById('eRemark').value = item ? (item.remark || '') : '';
         // 编辑时场景与键是定位条件，改了等于新增另一条
@@ -165,6 +261,8 @@
 
     async function submitEdit() {
         const body = {
+            // 归属交给服务端裁决：非超管时这里写什么都会被改回自己的
+            ownerId: editOwner,
             configScene: document.getElementById('eScene').value.trim(),
             configKey: document.getElementById('eKey').value.trim(),
             configValue: document.getElementById('eValue').value,
@@ -183,7 +281,8 @@
 
     async function removeCfg(id) {
         const item = rows.find(x => x.id === id);
-        if (!confirm(`确认删除配置 ${item ? item.configScene + '/' + item.configKey : id} ？删除后相关功能会取不到值`)) {
+        const who = item && item.ownerId === SYSTEM_OWNER ? '系统级' : '';
+        if (!confirm(`确认删除${who}配置 ${item ? item.configScene + '/' + item.configKey : id} ？删除后相关功能会取不到值`)) {
             return;
         }
         const r = await del('/api/sys-config/' + id);
@@ -195,51 +294,77 @@
     async function reload() {
         const r = await post('/api/sys-config/reload', {});
         if (!r.success) return;
-        rows = r.data || [];
-        render();
+        // 服务端 reload 后返回的就是我能看到的全部行，直接用，少发一次请求
+        apply(r.data || []);
         toast(r.message, 'ok');
+    }
+
+    /** 保存我自己的令牌；归属交给服务端按登录态定，这里不传 ownerId */
+    async function saveToken() {
+        const v = document.getElementById('fToken').value.trim();
+        if (!v) {
+            return toast('先粘贴一个令牌再保存', 'err');
+        }
+        const r = await post('/api/sys-config', {
+            configScene: TOKEN_SCENE,
+            configKey: TOKEN_KEY,
+            configValue: v,
+            remark: '实时通知配置页维护'
+        });
+        if (!r.success) return;
+        document.getElementById('fToken').value = '';
+        toast('令牌已更新，立即生效', 'ok');
+        await load();
+    }
+
+    /** 保存系统级默认令牌：ownerId = 0，只有超管能落进这份归属 */
+    async function saveSysToken() {
+        const v = document.getElementById('fSysToken').value.trim();
+        if (!v) {
+            return toast('先粘贴一个令牌再保存', 'err');
+        }
+        const r = await post('/api/sys-config', {
+            ownerId: SYSTEM_OWNER,
+            configScene: TOKEN_SCENE,
+            configKey: TOKEN_KEY,
+            configValue: v,
+            remark: '实时通知配置页维护（系统级）'
+        });
+        if (!r.success) return;
+        document.getElementById('fSysToken').value = '';
+        toast('系统级令牌已更新，立即生效', 'ok');
+        await load();
+    }
+
+    /** 删掉我名下的令牌行，请求回落到系统级默认令牌 */
+    async function clearToken() {
+        const row = tokenRow(myId());
+        if (!row) {
+            return toast('你还没有自己的令牌，当前用的就是系统级默认令牌', 'info');
+        }
+        if (!confirm('清除后你的请求将使用系统级默认令牌，确认？')) return;
+        const r = await del('/api/sys-config/' + row.id);
+        if (!r.success) return;
+        toast(r.message, 'ok');
+        await load();
     }
 
     document.getElementById('editMask').addEventListener('click', e => {
         if (e.target.id === 'editMask') closeEdit();
     });
 
-    // ============ 无数据库模式：默认令牌开箱即用，内容不支持查看 ============
-
-    function renderTokenState() {
-        document.getElementById('tokenState').innerHTML = hasCustomWaizaoToken()
-            ? '当前：<b>自定义令牌</b>（有效期 30 天）'
-            : '当前：<b>系统内置令牌</b>';
-    }
-
-    function saveToken() {
-        const v = document.getElementById('fToken').value.trim();
-        if (!v) {
-            return toast('先粘贴一个令牌再保存', 'err');
-        }
-        setWaizaoToken(v);
-        document.getElementById('fToken').value = '';
-        renderTokenState();
-        toast('令牌已更新', 'ok');
-    }
-
-    /** 清掉本机自定义值，立即回到内置默认令牌（默认令牌恒存在，不会再弹填写框） */
-    function resetToDefault() {
-        if (hasCustomWaizaoToken() && !confirm('恢复后将使用系统内置令牌，确认？')) return;
-        setWaizaoToken('');
-        document.getElementById('fToken').value = '';
-        renderTokenState();
-        toast('已恢复为系统内置令牌', 'ok');
-    }
-
     (async function init() {
         await loadMode();
-        if (MODE.noDb) {
-            // 配置表在这个模式下根本不存在，别去调接口也别显示表格
-            document.getElementById('tablePanel').style.display = 'none';
-            document.getElementById('tokenPanel').style.display = '';
-            renderTokenState();
+        // 配置按用户隔离，必须知道当前是谁：未登录先弹登录框，放弃则回首页
+        if (!(await requireLogin())) {
             return;
+        }
+        document.getElementById('tokenPanel').style.display = '';
+        document.getElementById('tablePanel').style.display = '';
+        if (isAdmin()) {
+            // 系统级那一份是匿名请求的兜底，轮换供应商令牌时必须能改
+            document.getElementById('sysPanel').style.display = '';
+            document.getElementById('btnAddSys').style.display = '';
         }
         load();
     })();

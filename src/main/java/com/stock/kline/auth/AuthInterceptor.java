@@ -7,7 +7,6 @@ import com.stock.kline.model.ApiResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import javax.servlet.http.HttpServletRequest;
@@ -16,16 +15,22 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 需要登录才能用的接口的守门人。
+ * 登录态解析与守门。
+ *
+ * <p>同一份实现挂两次（见 {@code AuthWebConfig}）：
+ * <ul>
+ *   <li><b>解析态</b>（{@code required = false}）挂在 {@code /api/**} 上：带了有效登录令牌就把
+ *       {@link User} 放进 request 属性，没带或无效也只是放过 —— 让 K线查看、股票列表这些
+ *       匿名可用的接口在「已登录」时也能按用户取数（比如用自己的供应商令牌）；
+ *       路由本身不需要登录的，绝不能在这里被拦下。</li>
+ *   <li><b>守着</b>（{@code required = true}）只挂在需要登录的路径上，没登录就 401。</li>
+ * </ul>
  *
  * <p>采用「显式登记受保护路径」而不是「全站拦截再放行白名单」——
  * 首页、K线、股票列表这些匿名也要能看，漏登记一个路径最多是少管一个接口，
- * 反过来误拦一个就会让匿名功能挂掉。
- *
- * <p>校验通过后把 {@link User} 放进 request 属性，
- * 业务代码从 {@link AuthContext} 取，不必再解析一次令牌。
+ * <p>不作为 bean 自动装配（{@code AuthWebConfig} 里 new 两个实例、各自指定是否拦截），
+ * 所以这里没有 {@code @Component}。
  */
-@Component
 public class AuthInterceptor implements HandlerInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(AuthInterceptor.class);
@@ -35,11 +40,18 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     private final SessionService sessions;
     private final UserRepository users;
+    /** true = 没登录直接 401；false = 只解析登录态，不登录也放行 */
+    private final boolean required;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public AuthInterceptor(SessionService sessions, UserRepository users) {
+        this(sessions, users, true);
+    }
+
+    public AuthInterceptor(SessionService sessions, UserRepository users, boolean required) {
         this.sessions = sessions;
         this.users = users;
+        this.required = required;
     }
 
     @Override
@@ -48,14 +60,12 @@ public class AuthInterceptor implements HandlerInterceptor {
         String token = tokenOf(request);
         SessionService.Session session = sessions.get(token);
         if (session == null) {
-            reject(request, response, "请先登录");
-            return false;
+            return !required || reject(response, "请先登录");
         }
         User u = users.findById(session.getUserId());
         if (u == null || !u.isEnabled()) {
             sessions.remove(token);
-            reject(request, response, "登录已失效，请重新登录");
-            return false;
+            return !required || reject(response, "登录已失效，请重新登录");
         }
         request.setAttribute(AuthContext.ATTR_USER, u);
         return true;
@@ -70,8 +80,8 @@ public class AuthInterceptor implements HandlerInterceptor {
         return t == null ? "" : t.trim();
     }
 
-    private void reject(HttpServletRequest request, HttpServletResponse response, String message)
-            throws IOException {
+    /** 回 401；返回 false 便于调用处直接 `return` */
+    private boolean reject(HttpServletResponse response, String message) throws IOException {
         response.setStatus(HttpStatus.UNAUTHORIZED.value());
         response.setContentType("application/json;charset=UTF-8");
         response.getCharacterEncoding();
@@ -81,5 +91,6 @@ public class AuthInterceptor implements HandlerInterceptor {
         } catch (Exception e) {
             log.warn("[auth] 写入未登录响应失败: {}", e.getMessage());
         }
+        return false;
     }
 }

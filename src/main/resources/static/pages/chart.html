@@ -2,9 +2,9 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>K线分析 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260912h">
+    <link rel="stylesheet" href="/css/common.css?v=20260915a">
 </head>
 <body>
 <header class="topbar">
@@ -46,9 +46,9 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260912h"></script>
-<script src="/js/date-picker.js?v=20260912h"></script>
-<script src="/js/stock-picker.js?v=20260912h"></script>
+<script src="/js/common.js?v=20260915a"></script>
+<script src="/js/date-picker.js?v=20260915a"></script>
+<script src="/js/stock-picker.js?v=20260915a"></script>
 <script>
     const VIEW_DAYS = 92;              // 默认渲染近三个月
     const CHUNK_DAYS = 180;            // 数据库模式懒加载步长
@@ -573,7 +573,6 @@
 
     (async function initFromQuery() {
         await loadMode();
-        await whenTokenReady();   // 首进页面要先填令牌，别先发出一批没令牌的请求
         onModeReady(MODE);
         const p = new URLSearchParams(location.search);
         if (p.get('code')) {

@@ -54,8 +54,6 @@ public class ModeController {
         data.put("maxSpanDays", props.getMaxSpanDays());
         data.put("backtestPersistent", backtestRepository.persistent());
         data.put("callLogPersistent", callLogRepository.persistent());
-        // 无数据库模式下令牌优先取请求头（浏览器本地保存），没有再回落到配置文件
-        data.put("tokenFromRequest", !db);
         return ApiResponse.ok(data);
     }
 }

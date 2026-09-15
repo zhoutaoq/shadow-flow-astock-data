@@ -24,8 +24,10 @@ import java.util.Map;
  * 无数据库模式：配置落 {@code ./data/sys-config.json}，启动时整表载入内存。
  *
  * <p>与 {@link DbSysConfigRepository} 暴露完全相同的行为：页面照常增删改查，
- * 保存后立即生效，重启后从文件恢复。token 也就有了稳定的落点，
+ * 保存后立即生效，重启后从文件恢复。令牌也就有了稳定的落点，
  * 不必每次都靠浏览器把它带在请求头里。
+ *
+ * <p>v1.5 起同样按用户隔离，索引键为「归属用户 + 场景 + 键」。
  */
 @Repository
 @ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "false", matchIfMissing = true)
@@ -39,7 +41,7 @@ public class FileSysConfigRepository implements SysConfigRepository {
     private final FileTable<SysConfig> table;
     private final WaizaoProperties defaults;
 
-    /** scene|key → 配置行；volatile 整体替换，读侧无锁 */
+    /** owner|scene|key → 配置行；volatile 整体替换，读侧无锁 */
     private volatile Map<String, SysConfig> rows = new LinkedHashMap<>();
     private volatile long maxId = 0;
 
@@ -52,30 +54,45 @@ public class FileSysConfigRepository implements SysConfigRepository {
     public synchronized void init() {
         reload();
         seedToken();
-        log.info("[sys-config] 无数据库模式：{} 已载入 {} 条配置，生效 token={}",
+        log.info("[sys-config] 无数据库模式：{} 已载入 {} 条配置，系统级 token={}",
                 table.file(), rows.size(), DbSysConfigRepository.mask(waizaoToken()));
     }
 
     @Override
-    public String get(String scene, String key) {
-        SysConfig c = rows.get(key(scene, key));
+    public String get(long ownerId, String scene, String key) {
+        SysConfig c = rows.get(key(ownerId, scene, key));
         return c == null ? null : c.getConfigValue();
     }
 
     @Override
-    public String get(String scene, String key, String def) {
-        String v = get(scene, key);
+    public String get(long ownerId, String scene, String key, String def) {
+        String v = get(ownerId, scene, key);
         return StringUtils.hasText(v) ? v : def;
     }
 
     @Override
-    public String waizaoToken() {
-        return get(SCENE_WAIZAO, KEY_TOKEN, "");
+    public String get(String scene, String key) {
+        return get(SYSTEM_OWNER, scene, key);
     }
 
     @Override
-    public synchronized List<SysConfig> list() {
-        List<SysConfig> out = new ArrayList<>(rows.values());
+    public String waizaoToken(long ownerId) {
+        return get(ownerId, SCENE_WAIZAO, KEY_TOKEN, "");
+    }
+
+    @Override
+    public String waizaoToken() {
+        return waizaoToken(SYSTEM_OWNER);
+    }
+
+    @Override
+    public synchronized List<SysConfig> list(long ownerId) {
+        List<SysConfig> out = new ArrayList<>();
+        for (SysConfig c : rows.values()) {
+            if (c.getOwnerId() == ownerId) {
+                out.add(c);
+            }
+        }
         out.sort(Comparator.comparing(SysConfig::getConfigScene).thenComparing(SysConfig::getConfigKey));
         return out;
     }
@@ -90,12 +107,14 @@ public class FileSysConfigRepository implements SysConfigRepository {
         if (!StringUtils.hasText(scene) || !StringUtils.hasText(key)) {
             throw new IllegalArgumentException("场景与配置键都不能为空");
         }
+        long owner = cfg.getOwnerId();
         String now = LocalDateTime.now().format(DF);
         Map<String, SysConfig> fresh = new LinkedHashMap<>(rows);
-        SysConfig exist = fresh.get(key(scene, key));
+        SysConfig exist = fresh.get(key(owner, scene, key));
         if (exist == null) {
             exist = new SysConfig();
             exist.setId(++maxId);
+            exist.setOwnerId(owner);
             exist.setConfigScene(scene);
             exist.setConfigKey(key);
             exist.setCreateTime(now);
@@ -103,23 +122,24 @@ public class FileSysConfigRepository implements SysConfigRepository {
         exist.setConfigValue(cfg.getConfigValue() == null ? "" : cfg.getConfigValue().trim());
         exist.setRemark(cfg.getRemark());
         exist.setUpdateTime(now);
-        fresh.put(key(scene, key), exist);
+        fresh.put(key(owner, scene, key), exist);
         rows = fresh;
         persist();
-        log.info("[sys-config] 保存 {}/{} 已生效", scene, key);
+        log.info("[sys-config] 保存 owner={} {}/{} 已生效", owner, scene, key);
     }
 
     @Override
-    public synchronized void delete(long id) {
+    public synchronized void delete(long ownerId, long id) {
         Map<String, SysConfig> fresh = new LinkedHashMap<>();
         boolean hit = false;
         for (Map.Entry<String, SysConfig> e : rows.entrySet()) {
-            Long rid = e.getValue().getId();
-            if (rid != null && rid == id) {
+            SysConfig row = e.getValue();
+            // 归属一起比对：删不动别人的配置行
+            if (row.getOwnerId() == ownerId && row.getId() != null && row.getId() == id) {
                 hit = true;
                 continue;
             }
-            fresh.put(e.getKey(), e.getValue());
+            fresh.put(e.getKey(), row);
         }
         if (!hit) {
             return;
@@ -139,13 +159,13 @@ public class FileSysConfigRepository implements SysConfigRepository {
             if (c.getId() != null && c.getId() > max) {
                 max = c.getId();
             }
-            fresh.put(key(c.getConfigScene(), c.getConfigKey()), c);
+            fresh.put(key(c.getOwnerId(), c.getConfigScene(), c.getConfigKey()), c);
         }
         maxId = max;
         rows = fresh;
     }
 
-    /** 文件里还没有 waizao/token 时，用 yml 的值播一次种，省得用户重新找令牌 */
+    /** 文件里还没有系统级 waizao/token 时，用 yml 的值播一次种，省得用户重新找令牌 */
     private void seedToken() {
         if (StringUtils.hasText(waizaoToken())) {
             return;
@@ -155,19 +175,20 @@ public class FileSysConfigRepository implements SysConfigRepository {
             return;
         }
         SysConfig cfg = new SysConfig();
+        cfg.setOwnerId(SYSTEM_OWNER);
         cfg.setConfigScene(SCENE_WAIZAO);
         cfg.setConfigKey(KEY_TOKEN);
         cfg.setConfigValue(seed.trim());
         cfg.setRemark("首次启动自动初始化，请按需更新");
         save(cfg);
-        log.info("[sys-config] 已初始化 {}/{}", SCENE_WAIZAO, KEY_TOKEN);
+        log.info("[sys-config] 已初始化系统级 {}/{}", SCENE_WAIZAO, KEY_TOKEN);
     }
 
     private void persist() {
-        table.save(list());
+        table.save(new ArrayList<>(rows.values()));
     }
 
-    private static String key(String scene, String key) {
-        return (scene == null ? "" : scene) + "|" + (key == null ? "" : key);
+    private static String key(long ownerId, String scene, String key) {
+        return ownerId + "|" + (scene == null ? "" : scene) + "|" + (key == null ? "" : key);
     }
 }

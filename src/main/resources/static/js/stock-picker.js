@@ -130,7 +130,7 @@ const STOCK_PICKER_DROP_MAX_W = 420;
             dropEl.innerHTML = '<div class="sp-tip">没有匹配的股票'
                 + (kw ? '：' + esc(kw) : '')
                 + (allowManual()
-                    ? '。可直接输入完整代码后回车（或到「系统配置」检查令牌）'
+                    ? '。可直接输入完整代码后回车（或到「实时通知配置」检查令牌）'
                     : '。可换个关键字，或先到「股票列表管理」导入股票列表')
                 + '</div>';
             return;

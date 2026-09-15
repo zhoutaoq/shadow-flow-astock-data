@@ -2,9 +2,9 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>接口调试 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260912h">
+    <link rel="stylesheet" href="/css/common.css?v=20260915a">
 </head>
 <body>
 <header class="topbar">
@@ -81,9 +81,9 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260912h"></script>
-<script src="/js/date-picker.js?v=20260912h"></script>
-<script src="/js/stock-picker.js?v=20260912h"></script>
+<script src="/js/common.js?v=20260915a"></script>
+<script src="/js/date-picker.js?v=20260915a"></script>
+<script src="/js/stock-picker.js?v=20260915a"></script>
 <script>
     document.getElementById('fStart').value = daysAgo(30);
     document.getElementById('fEnd').value = today();
@@ -152,7 +152,7 @@
         if (p.get('code')) await codePicker.pickByCode(p.get('code'));
     })();
 
-    // 令牌维护在「系统配置」页（配置表 waizao/token），页面不留明文；生成 curl 时取一次
+    // 令牌按用户维护在「实时通知配置」页，页面不留明文；生成 curl 时取一次自己名下的那一份
     // 接口根地址来自配置文件，页面不回显，用默认值兜底
     let apiToken = '';
     (async function loadApiCfg() {
@@ -165,7 +165,7 @@
         const base = 'http://api.waizaowang.com';
         const url = `${base}/market/c/daykline?symbol=${p.market}&code=${p.code}`
             + `&period=1d&dividend=1&startDate=${p.startDate}&endDate=${p.endDate}`
-            + `&token=${apiToken || '<系统配置页维护的 token>'}`;
+            + `&token=${apiToken || '<实时通知配置页维护的 token>'}`;
         const cmd = `curl --url '${url}' \\\n`
             + `  -H 'Accept: application/json, text/plain, */*' \\\n`
             + `  -H 'Origin: http://www.waizaowang.com' \\\n`
