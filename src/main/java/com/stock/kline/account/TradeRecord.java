@@ -3,10 +3,10 @@ package com.stock.kline.account;
 import java.math.BigDecimal;
 
 /**
- * 操作记录：一次买入 / 卖出。
+ * 操作记录：一次买入 / 卖出，记在<b>某个账户</b>下（需求 v1.5.2 第 ④ 条）。
  *
- * <p>按需求「实时生效不落盘」：只存在于内存（每个用户一份，进程重启即清空），
- * 但每次操作<b>立即</b>作用到持仓与可用金额上，页面马上能看到结果。
+ * <p>按需求「实时生效不落盘」：只存在于内存（每个账户一份，进程重启即清空），
+ * 但每次操作<b>立即</b>作用到该账户的持仓与可用金额上，页面马上能看到结果。
  *
  * <p>之所以不落盘：操作记录是「记账流水」的雏形，真正的落盘账本应当是成交明细；
  * 当前需求只要实时效果，硬落盘反而会让「填错一条记录」变得难以撤销。
@@ -15,7 +15,7 @@ import java.math.BigDecimal;
  * <ul>
  *   <li>买入：持仓数量 +N；可用金额 -（成本价 × N）；标的自动加入盯盘；</li>
  *   <li>卖出：持仓数量 -N（减到 0 则移除该持仓）；可用金额 +（成本价 × N）；
- *       标的从盯盘中移除。</li>
+ *       标的在所有账户里都不再持有时才移出盯盘。</li>
  * </ul>
  */
 public class TradeRecord {
@@ -27,6 +27,8 @@ public class TradeRecord {
 
     private long id;
     private long userId;
+    /** 归属账户 id */
+    private long accountId;
     /** buy / sell */
     private String action;
     private String code;
@@ -56,6 +58,14 @@ public class TradeRecord {
 
     public void setUserId(long userId) {
         this.userId = userId;
+    }
+
+    public long getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(long accountId) {
+        this.accountId = accountId;
     }
 
     public String getAction() {

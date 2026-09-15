@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260915b">
-    <link rel="stylesheet" href="/css/account.css?v=20260915b">
+    <link rel="stylesheet" href="/css/common.css?v=20260915d">
+    <link rel="stylesheet" href="/css/account.css?v=20260915d">
 </head>
 <body>
 <header class="topbar">
@@ -24,16 +24,39 @@
         </div>
     </section>
 
-    <div id="acctPanel" style="display:none">
-
-        <!-- ============ 页头 ============ -->
+    <!-- ============================ 一级：账户 ============================ -->
+    <div id="listPanel" style="display:none">
         <div class="ahead">
             <div class="ahead-l">
                 <h1 class="ahead-t">我的账户</h1>
+                <div class="asum" id="ovChips"></div>
+            </div>
+            <div class="ahead-r">
+                <button class="btn-ghost" onclick="reload()">重新载入</button>
+                <button onclick="openAccountModal('create')">＋ 新建账户</button>
+            </div>
+        </div>
+
+        <div class="acc-grid" id="accGrid"></div>
+    </div>
+
+    <!-- ==================== 二级：账户下的持仓 / 盈亏 / 记录 ==================== -->
+    <div id="acctPanel" style="display:none">
+
+        <div class="ahead">
+            <div class="ahead-l">
+                <div class="acrumb">
+                    <button class="btn-ghost btn-sm" onclick="backToList()">
+                        <span class="acrumb-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span>
+                        全部账户
+                    </button>
+                    <h1 class="ahead-t" id="curName">账户</h1>
+                </div>
                 <div class="asum" id="asum"></div>
             </div>
             <div class="ahead-r">
                 <button class="btn-ghost" onclick="reload()">重新载入</button>
+                <button class="btn-ghost" onclick="openAccountModal('rename', curId)">重命名</button>
                 <button class="btn-ghost" onclick="openPositionModal()">＋ 添加持仓</button>
                 <button onclick="saveAccount()">保存账户</button>
             </div>
@@ -46,23 +69,22 @@
                 <header class="acard-hd">
                     <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg></span>
                     <h2>账户设置</h2>
-                    <span class="acard-note" id="acctFile"></span>
+                    <span class="acard-note" id="acctNote"></span>
                 </header>
                 <div class="acard-bd">
                     <div class="afield">
                         <label for="fInit">账户期初市值</label>
                         <div class="aunit">
-                            <input type="number" id="fInit" min="0" step="1000" inputmode="decimal" placeholder="例如 1000000">
+                            <input type="number" id="fInit" min="0" step="1000" inputmode="decimal">
                             <span class="unit">元</span>
                         </div>
                     </div>
                     <div class="afield">
                         <label for="fCash">可用金额</label>
                         <div class="aunit">
-                            <input type="number" id="fCash" step="1000" inputmode="decimal" placeholder="例如 250000">
+                            <input type="number" id="fCash" step="1000" inputmode="decimal">
                             <span class="unit">元</span>
                         </div>
-                        <span class="akpi-d">买入按成本价 × 数量扣减，卖出则加回；也可手工修正</span>
                     </div>
                     <div class="afield">
                         <label for="fRemark">备注</label>
@@ -135,12 +157,12 @@
                 </div>
             </section>
 
-            <!-- ④ 操作记录：实时生效、不落盘 -->
+            <!-- ④ 操作记录 -->
             <section class="acard">
                 <header class="acard-hd">
                     <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span>
                     <h2>操作记录</h2>
-                    <span class="acard-note">实时生效，不落盘</span>
+                    <span class="acard-note" id="recCount"></span>
                 </header>
                 <div class="acard-bd">
                     <div class="arec-form">
@@ -158,7 +180,7 @@
                         <div class="afield">
                             <label for="fQty">数量</label>
                             <div class="aunit">
-                                <input type="number" id="fQty" min="1" step="100" inputmode="numeric" placeholder="100">
+                                <input type="number" id="fQty" min="1" step="100" inputmode="numeric">
                                 <span class="unit">股</span>
                             </div>
                         </div>
@@ -174,7 +196,6 @@
                             <button id="btnRecord" onclick="submitRecord()">记一笔</button>
                         </div>
                     </div>
-                    <div class="akpi-d" id="recTip">买入按成交价 × 数量扣减可用金额并把标的加入盯盘（新标的会顺带建仓）；卖出加回金额，清仓则移出盯盘。已有持仓按持仓成本价记账，成交价可不填。</div>
                     <div class="arec-list" id="recList"></div>
                 </div>
             </section>
@@ -183,18 +204,21 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260915b"></script>
-<script src="/js/stock-picker.js?v=20260915b"></script>
+<script src="/js/common.js?v=20260915d"></script>
+<script src="/js/stock-picker.js?v=20260915d"></script>
 <script>
-    let cfg = null;          // /api/account 账户设置
-    let summary = null;      // /api/account/summary 汇总
+    let overview = null;     // /api/account/accounts 一级列表
+    let cfg = null;          // /api/account 当前账户设置
+    let summary = null;      // /api/account/summary 当前账户汇总
     let limits = null;       // /api/account/limits
+    let curId = 0;           // 当前进入的账户 id；0 = 停在账户列表
     let recAction = 'buy';   // 当前选中的操作方向
     let posPicker = null;    // 持仓弹窗里的选择器
-    let recPicker = null;    // 操作记录里的选择器（只从已持仓里选）
+    let recPicker = null;    // 操作记录里的选择器
 
     function showGate() {
         document.getElementById('gatePanel').style.display = '';
+        document.getElementById('listPanel').style.display = 'none';
         document.getElementById('acctPanel').style.display = 'none';
     }
 
@@ -224,25 +248,115 @@
         return (n > 0 ? '+' : n < 0 ? '-' : '') + Math.abs(n).toFixed(2) + '%';
     }
 
-    async function reload() {
-        const [accR, sumR] = await Promise.all([
-            api('/api/account', {method: 'GET'}),
-            api('/api/account/summary', {method: 'GET'})
-        ]);
-        if (!accR || !accR.success) {
+    /* ==================== 一级：账户列表 ==================== */
+
+    async function openList() {
+        const r = await get('/api/account/accounts');
+        if (!r || !r.success) {
             showGate();
             return;
         }
-        cfg = accR.data || {};
-        summary = (sumR && sumR.success) ? sumR.data : null;
+        overview = r.data || {accounts: []};
+        curId = 0;
         document.getElementById('gatePanel').style.display = 'none';
+        document.getElementById('acctPanel').style.display = 'none';
+        document.getElementById('listPanel').style.display = '';
+        renderAccounts();
+    }
+
+    function renderAccounts() {
+        const ov = overview || {};
+        const rows = ov.accounts || [];
+        const maxA = (limits && limits.maxAccounts) || 10;
+
+        document.getElementById('ovChips').innerHTML =
+            '<span class="achip">' + rows.length + ' / ' + maxA + ' 个账户</span>'
+            + '<span class="achip">合计总市值 ' + money(ov.totalValue) + '</span>'
+            + '<span class="achip ' + dir(ov.dayProfit) + '">合计当日收益 ' + moneySigned(ov.dayProfit) + '</span>'
+            + '<span class="achip ' + dir(ov.totalProfit) + '">合计总收益 ' + moneySigned(ov.totalProfit) + '</span>';
+
+        const canAdd = rows.length < maxA;
+        document.getElementById('accGrid').innerHTML = rows.map(a => {
+            const d = dir(a.dayProfit);
+            const t = dir(a.totalProfit);
+            return '<div class="acc-item" data-id="' + a.id + '">'
+                + '<div class="acc-hd">'
+                + '<span class="acc-name">' + esc(a.name || '账户') + '</span>'
+                + '<span class="acc-badge">' + a.positionCount + ' 只持仓</span>'
+                + '</div>'
+                + '<div class="acc-mv">' + money(a.totalValue) + '</div>'
+                + '<div class="acc-kpis">'
+                + '<span class="acc-kpi">当日 <b class="' + d + '">' + moneySigned(a.dayProfit) + '</b></span>'
+                + '<span class="acc-kpi">总收益 <b class="' + t + '">' + moneySigned(a.totalProfit) + '</b>'
+                + '<small> ' + pctSigned(a.totalProfitPercent) + '</small></span>'
+                + '</div>'
+                + '<div class="acc-ft">'
+                + '<span>期初 ' + money(a.initValue) + '</span>'
+                + '<span>可用 ' + money(a.cash) + '</span>'
+                + '</div>'
+                + '<div class="acc-ops">'
+                + '<button class="btn-ghost btn-sm" data-op="open">进入</button>'
+                + '<button class="btn-ghost btn-sm" data-op="rename">重命名</button>'
+                + '<button class="btn-ghost btn-sm" data-op="delete">删除</button>'
+                + '</div>'
+                + '</div>';
+        }).join('') + (canAdd
+            ? '<button type="button" class="acc-add" onclick="openAccountModal(\'create\')">＋ 新建账户</button>'
+            : '');
+
+        document.getElementById('accGrid').querySelectorAll('.acc-item').forEach(card => {
+            const id = Number(card.getAttribute('data-id'));
+            card.addEventListener('click', e => {
+                const op = e.target.closest('[data-op]');
+                if (!op) return enterAccount(id);
+                e.stopPropagation();
+                const kind = op.getAttribute('data-op');
+                if (kind === 'open') return enterAccount(id);
+                if (kind === 'rename') return openAccountModal('rename', id);
+                if (kind === 'delete') return removeAccount(id);
+            });
+        });
+    }
+
+    async function enterAccount(id) {
+        curId = id;
+        const [accR, sumR] = await Promise.all([
+            get('/api/account?accountId=' + id),
+            get('/api/account/summary?accountId=' + id)
+        ]);
+        if (!accR || !accR.success || !accR.data) {
+            toast((accR && accR.message) || '账户打不开，可能已被删除', 'err');
+            return openList();
+        }
+        cfg = accR.data;
+        summary = (sumR && sumR.success) ? sumR.data : null;
+        dirtyAccount = false;
+        document.getElementById('gatePanel').style.display = 'none';
+        document.getElementById('listPanel').style.display = 'none';
         document.getElementById('acctPanel').style.display = '';
         render();
+        await loadRecords();
     }
+
+    function backToList() {
+        curId = 0;
+        openList();
+    }
+
+    /** 重新载入：停在哪个视图就刷哪个 */
+    async function reload() {
+        if (curId > 0) {
+            return enterAccount(curId);
+        }
+        return openList();
+    }
+
+    /* ==================== 二级：当前账户 ==================== */
 
     function render() {
         const s = summary || {};
-        const pl = (cfg && cfg.positions) || [];
+        document.getElementById('curName').textContent = (cfg && cfg.name) || '账户';
+        document.getElementById('acctNote').textContent = '';
 
         // 账户设置回显：只在没有未保存改动时覆盖，避免把用户正在输的值冲掉
         if (!dirtyAccount) {
@@ -312,7 +426,7 @@
     function renderPositions(rows) {
         const body = document.getElementById('posBody');
         if (!rows.length) {
-            body.innerHTML = '<tr><td class="empty" colspan="10">还没有持仓，点右上角「＋ 添加持仓」，或直接在下面「操作记录」里买入一只</td></tr>';
+            body.innerHTML = '<tr><td class="empty" colspan="10">这本账户还没有持仓，点右上角「＋ 添加持仓」，或直接在下面「操作记录」里买入一只</td></tr>';
             return;
         }
         body.innerHTML = rows.map(p => {
@@ -337,6 +451,110 @@
                 + '</span></td>'
                 + '</tr>';
         }).join('');
+    }
+
+    /* ==================== 账户弹窗（新建 / 重命名） ==================== */
+
+    let accountMode = 'create';
+    /**
+     * 弹窗正在处理哪本账的那份快照。
+     *
+     * <p>列表态没有 curId，而且 cfg 里装的是「上一次进二级时那本账」——
+     * 拿它当重命名的基准会把别本账的期初/可用一起写过去，所以目标账单独记。
+     */
+    let accountTarget = null;
+
+    function openAccountModal(mode, id) {
+        accountMode = mode;
+        accountTarget = (mode === 'rename' && id)
+            ? ((overview && (overview.accounts || []).find(a => a.id === id))
+                || (cfg && cfg.id === id ? cfg : null))
+            : null;
+        const targetId = accountTarget ? accountTarget.id : (id || 0);
+
+        let mask = document.getElementById('accMask');
+        if (!mask) {
+            mask = document.createElement('div');
+            mask.className = 'mask';
+            mask.id = 'accMask';
+            mask.innerHTML = '<div class="modal" style="width:440px">'
+                + '<h3 id="accTitle">新建账户</h3>'
+                + '<div class="field"><label for="accName">账户名称</label>'
+                + '<input type="text" id="accName" maxlength="32" autocomplete="off" spellcheck="false"></div>'
+                + '<div class="field acc-only-create"><label for="accInit">期初市值（元）</label>'
+                + '<input type="number" id="accInit" min="0" step="1000" inputmode="decimal"></div>'
+                + '<div class="field acc-only-create"><label for="accCash">可用金额（元）</label>'
+                + '<input type="number" id="accCash" step="1000" inputmode="decimal"></div>'
+                + '<div class="modal-actions">'
+                + '<button class="btn-ghost" id="accCancel">取消</button>'
+                + '<button id="accSave">保存</button>'
+                + '</div></div>';
+            document.body.appendChild(mask);
+            mask.querySelector('#accCancel').addEventListener('click', () => mask.classList.remove('show'));
+            mask.addEventListener('mousedown', e => {
+                if (e.target === mask) mask.classList.remove('show');
+            });
+            mask.querySelector('#accSave').addEventListener('click', submitAccountModal);
+        }
+        mask.setAttribute('data-target', String(targetId));
+        mask.querySelector('#accTitle').textContent = accountTarget ? '重命名账户' : '新建账户';
+        mask.querySelector('#accName').value = accountTarget ? (accountTarget.name || '') : '';
+        mask.querySelector('#accInit').value = accountTarget ? accountTarget.initValue : '';
+        mask.querySelector('#accCash').value = accountTarget ? accountTarget.cash : '';
+        mask.classList.toggle('rename', !!accountTarget);
+        mask.classList.add('show');
+        setTimeout(() => mask.querySelector('#accName').focus(), 30);
+    }
+
+    async function submitAccountModal() {
+        const name = document.getElementById('accName').value.trim();
+        if (!name) {
+            return toast('账户名称不能为空', 'err');
+        }
+        const targetId = Number(document.getElementById('accMask').getAttribute('data-target') || 0);
+        if (accountMode === 'create') {
+            const initRaw = document.getElementById('accInit').value;
+            const cashRaw = document.getElementById('accCash').value;
+            const init = String(initRaw).trim() === '' ? 0 : parseFloat(initRaw);
+            const cash = String(cashRaw).trim() === '' ? 0 : parseFloat(cashRaw);
+            if (isNaN(init) || init < 0) {
+                return toast('期初市值要填一个不小于 0 的数字', 'err');
+            }
+            if (isNaN(cash)) {
+                return toast('可用金额要填一个数字', 'err');
+            }
+            const r = await post('/api/account/accounts', {name: name, initValue: init, cash: cash});
+            if (!r || !r.success) return;
+            document.getElementById('accMask').classList.remove('show');
+            toast(r.message || '账户已创建', 'ok');
+            await reload();
+            return;
+        }
+        // 重命名：只改名字，期初/可用/备注照目标账原值回写
+        const r = await put('/api/account/accounts/' + targetId, {
+            name: name,
+            initValue: accountTarget ? accountTarget.initValue : 0,
+            cash: accountTarget ? accountTarget.cash : 0,
+            remark: accountTarget ? accountTarget.remark : null
+        });
+        if (!r || !r.success) return;
+        document.getElementById('accMask').classList.remove('show');
+        toast('账户名已更新', 'ok');
+        await reload();
+    }
+
+    async function removeAccount(id) {
+        const row = (overview && overview.accounts || []).find(a => a.id === id);
+        const label = row ? row.name : id;
+        if (!confirm('确定删除账户「' + label + '」？这本账下的持仓与操作记录会一并删除。')) {
+            return;
+        }
+        const r = await del('/api/account/accounts/' + id);
+        if (r && r.success) {
+            toast('账户已删除', 'ok');
+            if (curId === id) curId = 0;
+            await openList();
+        }
     }
 
     /* ============ 持仓弹窗 ============ */
@@ -398,14 +616,14 @@
         }
         const body = {code: picked.code, name: picked.name || '', costPrice: cost, quantity: qty};
         const r = editingId
-            ? await put('/api/account/positions/' + editingId, body)
-            : await post('/api/account/positions', body);
+            ? await put('/api/account/positions/' + editingId + '?accountId=' + curId, body)
+            : await post('/api/account/positions?accountId=' + curId, body);
         if (!r || !r.success) {
             return;
         }
         document.getElementById('posMask').classList.remove('show');
         toast(r.message || '已保存', 'ok');
-        await reload();
+        await enterAccount(curId);
     }
 
     async function removePosition(id) {
@@ -413,10 +631,10 @@
         if (!confirm('确定删除持仓「' + (row ? row.name : id) + '」？')) {
             return;
         }
-        const r = await del('/api/account/positions/' + id);
+        const r = await del('/api/account/positions/' + id + '?accountId=' + curId);
         if (r && r.success) {
             toast('持仓已删除', 'ok');
-            await reload();
+            await enterAccount(curId);
         }
     }
 
@@ -433,7 +651,8 @@
         if (isNaN(cash)) {
             return toast('可用金额要填一个数字', 'err');
         }
-        const r = await put('/api/account', {
+        const r = await put('/api/account?accountId=' + curId, {
+            name: cfg ? cfg.name : null,
             initValue: init,
             cash: cash,
             remark: document.getElementById('fRemark').value.trim()
@@ -443,18 +662,20 @@
         }
         dirtyAccount = false;
         toast('账户设置已保存', 'ok');
-        await reload();
+        await enterAccount(curId);
     }
 
     /* ============ 操作记录 ============ */
 
     async function loadRecords() {
-        const r = await get('/api/account/records');
+        const r = await get('/api/account/records?accountId=' + curId);
         const box = document.getElementById('recList');
         if (!box) return;
         const rows = (r && r.success && r.data) ? r.data : [];
+        const note = document.getElementById('recCount');
+        if (note) note.textContent = rows.length ? rows.length + ' 条' : '';
         if (!rows.length) {
-            box.innerHTML = '<div class="arec-empty">还没有操作记录</div>';
+            box.innerHTML = '<div class="arec-empty">这本账户还没有操作记录</div>';
             return;
         }
         box.innerHTML = rows.map(x => {
@@ -494,14 +715,14 @@
             if (price != null) {
                 body.price = price;
             }
-            const r = await post('/api/account/records', body);
+            const r = await post('/api/account/records?accountId=' + curId, body);
             if (!r || !r.success) {
                 return;
             }
             toast(r.message || '已生效', 'ok');
             document.getElementById('fQty').value = '';
             document.getElementById('fPrice').value = '';
-            await reload();
+            await enterAccount(curId);
         } finally {
             btn.disabled = false;
         }
@@ -514,7 +735,7 @@
         if (!picked || !picked.code || !input) {
             return;
         }
-        const r = await get('/api/account/price?code=' + encodeURIComponent(picked.code));
+        const r = await get('/api/account/price?accountId=' + curId + '&code=' + encodeURIComponent(picked.code));
         if (r && r.success && r.data && r.data.price != null && String(input.value).trim() === '') {
             input.value = r.data.price;
         }
@@ -557,7 +778,7 @@
                 onChange: () => { fillPrice(); }
             });
         }
-        await reload();
+        await openList();
     })();
 </script>
 </body>

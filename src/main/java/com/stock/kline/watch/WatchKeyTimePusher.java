@@ -33,7 +33,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>与 {@link PriceWatchTask} 的"超阈值才告警"不同，这里是固定时点的例行播报：每到上述时点，
  * 用行情客户端并发查一遍所有盯盘标的，取现价与涨跌幅，逐只一行、整体一条推送。周末不排任务；
- * webhook 未配置、盯盘未开启、名单为空时自动跳过。
+ * 机器人未配置、盯盘未开启、名单为空时自动跳过。
+ *
+ * <p><b>v1.5.2</b>：播报按用户各发各的 —— 每个运行中的用户一份快报，进自己配的群。
+ * 用户之间互相看不到对方的名单，A 的时点播报不会因为 B 把开关关了而消失。
  *
  * <p>调度用独立单线程守护池，每跑完一次就按「距下一个时点」重新排一次单次任务，跨时点不叠加；
  * 进程任意时刻启动都会先算下一次触发。
@@ -103,8 +106,13 @@ public class WatchKeyTimePusher implements Runnable {
     @Override
     public void run() {
         try {
-            if (shouldPush()) {
-                pushSnapshot();
+            for (long userId : store.activeUserIds()) {
+                try {
+                    pushForUser(userId);
+                } catch (Exception e) {
+                    // 单个用户失败不能拖住其余用户的播报
+                    log.warn("[watch] 用户 {} 的关键时点播报异常: {}", userId, e.getMessage());
+                }
             }
         } catch (Exception e) {
             log.warn("[watch] 关键时点播报异常: {}", e.getMessage());
@@ -114,15 +122,19 @@ public class WatchKeyTimePusher implements Runnable {
         }
     }
 
-    private boolean shouldPush() {
-        return props.getDingtalk().configured()
-                && store.isEnabled()
-                && !store.targets().isEmpty();
+    /** 这个用户此刻要不要播报：开着盯盘、有机器人可用、名单非空 */
+    private boolean shouldPush(long userId) {
+        return !store.webhookOf(userId).isEmpty()
+                && store.enabledOf(userId)
+                && !store.targetsOf(userId).isEmpty();
     }
 
-    /** 抓全部盯盘标的现价，合并成一条涨跌幅快报推送 */
-    private void pushSnapshot() {
-        List<WatchTarget> targets = store.targets();
+    /** 抓某个用户盯盘标的的现价，合并成一条涨跌幅快报推到他的群 */
+    private void pushForUser(long userId) {
+        if (!shouldPush(userId)) {
+            return;
+        }
+        List<WatchTarget> targets = store.targetsOf(userId);
         List<Quote> quotes = fetchAll(targets);
 
         List<String> validLines = new ArrayList<>();
@@ -142,7 +154,8 @@ public class WatchKeyTimePusher implements Runnable {
             else flat++;
         }
         if (validLines.isEmpty()) {
-            log.info("[watch] 关键时点 {} 无有效行情，跳过推送", LocalDateTime.now().format(FMT));
+            log.info("[watch] 用户 {} 关键时点 {} 无有效行情，跳过推送",
+                    userId, LocalDateTime.now().format(FMT));
             return; // 名单虽有但一个有效行情都没有，不发空消息
         }
         StringBuilder sb = new StringBuilder("盯盘涨跌幅快报 ")
@@ -155,10 +168,10 @@ public class WatchKeyTimePusher implements Runnable {
                 .append(" ｜ 下跌 ").append(down)
                 .append(" ｜ 平盘 ").append(flat);
         String content = sb.toString();
-        if (notifier.send(content)) {
-            log.info("[watch] 关键时点已推送 {} 只涨跌幅快报", validLines.size());
+        if (notifier.sendTo(store.webhookOf(userId), content)) {
+            log.info("[watch] 用户 {} 关键时点已推送 {} 只涨跌幅快报", userId, validLines.size());
         } else {
-            log.warn("[watch] 钉钉未推送（webhook 未配置或调用失败），关键时点内容：{}", content);
+            log.warn("[watch] 钉钉未推送（未配置机器人或调用失败），用户 {}，关键时点内容：{}", userId, content);
         }
     }
 

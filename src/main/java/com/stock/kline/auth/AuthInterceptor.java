@@ -68,6 +68,14 @@ public class AuthInterceptor implements HandlerInterceptor {
             return !required || reject(response, "登录已失效，请重新登录");
         }
         request.setAttribute(AuthContext.ATTR_USER, u);
+        // 代理登录：把代理者（超管）也放进属性里，页面据此显示"正在以谁的身份查看"，
+        // 退出代理的接口也靠它判断这次请求有没有资格还原。
+        if (session.isImpersonated()) {
+            User actor = users.findById(session.getImpersonatorId());
+            if (actor != null && actor.isAdmin()) {
+                request.setAttribute(AuthContext.ATTR_IMPERSONATOR, actor);
+            }
+        }
         return true;
     }
 

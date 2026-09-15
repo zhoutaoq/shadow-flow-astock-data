@@ -340,6 +340,8 @@ a.nav-item { color: var(--text-dim); }
     gap: 6px;
     flex: 0 0 auto;
     font-size: var(--fs-13);
+    /* 一直贴着顶栏右边缘：代理提示挤进来时也不会把账号按钮甩到左边去 */
+    margin-left: auto;
 }
 .user-area .ua-link { color: var(--text-dim); }
 .user-area .ua-link:hover { color: var(--primary); }
@@ -934,8 +936,6 @@ input.sp-input {
     to { background-position: 400px 0; }
 }
 
-/* 顶部消息条滑入：这是"出结果了"的反馈，不是装饰 */
-#msgBox { animation: toastIn .26s cubic-bezier(.2, .8, .2, 1); }
 
 /* 加载骨架屏：数据没来之前占位，避免页面空白跳动 */
 .skeleton {
@@ -1057,26 +1057,36 @@ button:disabled { box-shadow: none; }
 .btn-ghost:hover { background: var(--bg-hover); }
 .btn-sm { padding: 5px 11px; font-size: var(--fs-12); border-radius: 8px; }
 
-/* 全局提示条（#msgBox）做成右下角浮层：不占页面布局，也不会和顶栏账号下拉打架。
+/* 全局提示条（#msgBox）固定在页面顶部居中、正好落在顶栏下面：
+   保存成功、登录成功这类反馈出现在视线停留的位置，不必再去右下角找。
    页面内联的 <div class="msg msg-info"> 说明块不受影响，仍在原位置。 */
 #msgBox {
     position: fixed;
-    bottom: 24px;
-    right: 24px;
+    top: 68px;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    /* 居中靠 transform 而不是 left/right+auto margin：宽度随内容收缩（max-content），
+       短消息不会被拉成整行横幅。所以下面所有动效的 transform 都要带上 translateX(-50%)。 */
+    transform: translateX(-50%);
     z-index: 300;
     margin: 0;
-    max-width: 400px;
-    box-shadow: var(--shadow-3);
+    width: max-content;
+    max-width: min(560px, calc(100vw - 32px));
+    /* 空占位不参与绘制：默认藏着，toast() 打开时才 display:flex。
+       阴影也只留给带类型类的 .msg-ok/.msg-err/.msg-info —— 挂在 #msgBox 上
+       会在页面顶部常驻一条带阴影的空框。 */
+    display: none;
 }
 @media (max-width: 720px) {
-    #msgBox { left: 16px; right: 16px; max-width: none; }
+    #msgBox { max-width: calc(100vw - 24px); }
 }
 #msgBox.msg-ok, #msgBox.msg-err, #msgBox.msg-info {
     animation: msg-slide-in .26s var(--ease-out);
 }
 @keyframes msg-slide-in {
-    from { opacity: 0; transform: translateY(14px) scale(.98); }
-    to { opacity: 1; transform: none; }
+    from { opacity: 0; transform: translate(-50%, -12px) scale(.98); }
+    to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
 /* ---- 提示条：左侧色条 + 图标位 + 柔和阴影 ----
@@ -1195,6 +1205,42 @@ button:disabled { box-shadow: none; }
 .ua-menu a svg { width: 15px; height: 15px; opacity: .75; flex: 0 0 auto; }
 .ua-menu a.danger, .ua-menu a.danger svg { color: var(--danger); opacity: 1; }
 .ua-menu a.danger:hover { background: rgba(229, 72, 77, .12); color: var(--danger); }
+
+/* ---- 代理登录提示（超管切到某个用户身上时挂在顶栏账号区里，随时能退出来） ----
+   放在顶栏而不是另起一条横幅：顶栏是 sticky 的，滚动多久都看得见，
+   也不会和顶部居中的全局提示条抢位置。 */
+.imp-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px 4px 12px;
+    border-radius: var(--r-pill);
+    border: 1px solid rgba(210, 153, 34, .45);
+    background: rgba(210, 153, 34, .14);
+    color: var(--warn);
+    font-size: var(--fs-12);
+    white-space: nowrap;
+    /* 顶栏只有一行 56px：提示再长也只能在自己内部收窄，不能把导航挤到第二行 */
+    max-width: min(260px, 32vw);
+    min-width: 0;
+}
+.imp-chip .imp-txt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.imp-chip svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.imp-chip .imp-who { font-weight: 600; }
+.imp-chip button {
+    padding: 3px 10px;
+    font-size: var(--fs-12);
+    border-radius: var(--r-pill);
+    background: transparent;
+    box-shadow: none;
+    border: 1px solid currentColor;
+    color: var(--warn);
+}
+.imp-chip button:hover { background: rgba(210, 153, 34, .2); transform: none; }
 
 /* ============ 登录 / 注册弹窗（现代版） ============ */
 .modal-auth {

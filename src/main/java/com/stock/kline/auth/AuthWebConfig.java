@@ -40,7 +40,9 @@ public class AuthWebConfig implements WebMvcConfigurer {
             "/api/sys-config/**",
             "/api/account/**",
             "/api/auth/logout",
-            "/api/auth/password"
+            "/api/auth/password",
+            // 退出代理登录：只有正处在代理中的那个登录态能调，未登录根本谈不上退出
+            "/api/auth/impersonate/stop"
     };
 
     private final SessionService sessions;

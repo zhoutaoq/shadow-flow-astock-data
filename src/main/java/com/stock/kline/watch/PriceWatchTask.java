@@ -31,6 +31,12 @@ import java.util.concurrent.TimeUnit;
  *       或大于上一个间隔成交额的配置倍数（默认 10 倍），即算放量并告警
  *       （只在"不放量 → 放量"时推一次，不逐轮刷屏；阈值在盯盘页面配置）</li>
  * </ul>
+ *
+ * <p><b>v1.5.2</b>：一轮里跑的不再只有超管那一份配置 —— {@link #runOnce()} 会遍历
+ * {@link WatchConfigStore#activeUserIds()}，每个开了盯盘的用户按<b>自己的间隔</b>被轮到一次，
+ * 用<b>自己的规则</b>判断、推到<b>自己的机器人</b>。调度器只提供一个"基础节拍"
+ * （所有用户里最短的间隔），谁到点谁跑，所以改自己的间隔不会把别人的节奏带偏。
+ * 各标的的历史采样按「用户 + 代码」分开存：两个人盯同一只股票，基线互不干扰。
  */
 @Component
 @ConditionalOnProperty(name = "watch.enabled", havingValue = "true", matchIfMissing = true)
@@ -62,8 +68,11 @@ public class PriceWatchTask {
     private final DingTalkNotifier notifier;
     private final ExecutorService executor;
 
-    /** code → 历史价格采样（按时间升序） */
+    /** "用户id|代码" → 历史价格采样（按时间升序）：同一个人盯同一只才有共同基线 */
     private final Map<String, State> states = new ConcurrentHashMap<>();
+
+    /** userId → 上一轮开跑时刻（毫秒）：调度器给基础节拍，这里判断某个用户是否到点 */
+    private final Map<Long, Long> lastRunMs = new ConcurrentHashMap<>();
 
     public PriceWatchTask(WatchConfigStore store,
                           SinaQuoteClient quoteClient,
@@ -75,13 +84,36 @@ public class PriceWatchTask {
         this.executor = watchExecutor;
     }
 
-    /** 页面改了名单后清掉已移除标的的状态，避免重新加回来时还留着很旧的基线 */
-    public synchronized void pruneStates(List<WatchTarget> targets) {
+    /** 某个用户这一轮的配置快照：一轮之内不再反复回读 store，免得中途改配置跑出半新半旧的判断 */
+    private static class Ctx {
+        final long userId;
+        final List<WatchSettings.Rule> rules;
+        final long intervalSec;
+        final WatchSettings.SurgeCfg surge;
+        final String webhook;
+
+        Ctx(long userId, List<WatchSettings.Rule> rules, long intervalSec,
+            WatchSettings.SurgeCfg surge, String webhook) {
+            this.userId = userId;
+            this.rules = rules;
+            this.intervalSec = Math.max(1, intervalSec);
+            this.surge = surge;
+            this.webhook = webhook;
+        }
+    }
+
+    /**
+     * 页面改了名单后清掉已移除标的的状态，避免重新加回来时还留着很旧的基线。
+     *
+     * @param userId 只清这个用户的，别人盯同一只股票的历史不受影响
+     */
+    public synchronized void pruneStates(long userId, List<WatchTarget> targets) {
+        String prefix = userId + "|";
         Set<String> keep = new HashSet<>();
         for (WatchTarget t : targets) {
-            keep.add(t.getCode());
+            keep.add(prefix + t.getCode());
         }
-        states.keySet().removeIf(code -> !keep.contains(code));
+        states.keySet().removeIf(k -> k.startsWith(prefix) && !keep.contains(k));
     }
 
     /**
@@ -119,14 +151,44 @@ public class PriceWatchTask {
     }
 
     /**
-     * 一轮轮询：名单 / 规则 / 钉钉都取自 {@link WatchConfigStore}，调度由 {@link WatchScheduler} 负责。
+     * 一次基础节拍：把所有「到点了」的用户各跑一轮。
+     *
+     * <p>名单 / 规则 / 间隔 / 机器人都在 {@link Ctx} 里按用户取好，调度由 {@link WatchScheduler} 负责。
+     * 某个用户抛异常只记日志，不影响这一拍里的其它用户。
      */
     public void runOnce() {
-        List<WatchTarget> targets = store.targets();
-        pruneStates(targets);
+        List<Long> uids = store.activeUserIds();
+        if (uids.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        for (long userId : uids) {
+            long intervalMs = Math.max(1, store.intervalOf(userId)) * 1000L;
+            Long last = lastRunMs.get(userId);
+            if (last != null && now - last < intervalMs) {
+                continue; // 这个用户的间隔还没到，等下一拍
+            }
+            lastRunMs.put(userId, now);
+            try {
+                runUser(userId);
+            } catch (Exception e) {
+                log.warn("[watch] 用户 {} 的盯盘轮次异常: {}", userId, e.getMessage());
+            }
+        }
+    }
+
+    /** 跑一个用户的一轮：查他的名单、比他的规则、推他的群 */
+    private void runUser(long userId) {
+        if (!store.enabledOf(userId)) {
+            return;
+        }
+        List<WatchTarget> targets = store.targetsOf(userId);
+        pruneStates(userId, targets);
         if (targets.isEmpty()) {
             return;
         }
+        Ctx ctx = new Ctx(userId, store.rulesOf(userId), store.intervalOf(userId),
+                store.surgeOf(userId), store.webhookOf(userId));
 
         long begin = System.currentTimeMillis();
         boolean open = isTradingTime();
@@ -135,7 +197,7 @@ public class PriceWatchTask {
         List<Future<Quote>> futures = new ArrayList<>(targets.size());
         List<WatchTarget> queried = new ArrayList<>(targets.size());
         for (WatchTarget t : targets) {
-            State st = states.get(t.getCode());
+            State st = states.get(key(userId, t.getCode()));
             if (!open && st != null && !st.history.isEmpty()) {
                 continue;
             }
@@ -143,7 +205,7 @@ public class PriceWatchTask {
             futures.add(submit(t));
         }
         if (queried.isEmpty()) {
-            log.debug("[watch] 非交易时段，本轮跳过（{} 只均已有基线）", targets.size());
+            log.debug("[watch] 用户 {} 非交易时段，本轮跳过（{} 只均已有基线）", userId, targets.size());
             return;
         }
 
@@ -152,7 +214,7 @@ public class PriceWatchTask {
             WatchTarget t = queried.get(i);
             Quote q;
             try {
-                q = futures.get(i).get(Math.max(1, store.getIntervalSeconds()), TimeUnit.SECONDS);
+                q = futures.get(i).get(ctx.intervalSec, TimeUnit.SECONDS);
             } catch (Exception e) {
                 log.warn("[watch] 查询超时或失败 {} {}", t, e.getMessage());
                 continue;
@@ -160,12 +222,12 @@ public class PriceWatchTask {
             if (q == null) {
                 continue;
             }
-            if (check(t, q)) {
+            if (check(ctx, t, q)) {
                 hit++;
             }
         }
-        log.info("[watch] 本轮 {} 只，实际查询 {} 只，触发 {} 条，耗时 {} ms",
-                targets.size(), queried.size(), hit, System.currentTimeMillis() - begin);
+        log.info("[watch] 用户 {} 本轮 {} 只，实际查询 {} 只，触发 {} 条，耗时 {} ms",
+                userId, targets.size(), queried.size(), hit, System.currentTimeMillis() - begin);
     }
 
     /**
@@ -188,15 +250,15 @@ public class PriceWatchTask {
      *
      * @return 是否触发了推送
      */
-    private boolean check(WatchTarget t, Quote q) {
-        State st = states.computeIfAbsent(q.getCode(), k -> new State());
+    private boolean check(Ctx ctx, WatchTarget t, Quote q) {
+        State st = states.computeIfAbsent(key(ctx.userId, q.getCode()), k -> new State());
         int limitState = limitStateOf(q);
         // 本轮增量必须在写新一轮基数之前算：它就是"这一个轮询间隔"的量额
         BigDecimal amountDelta = intervalAmountDelta(st, q);
         BigDecimal volumeDelta = intervalVolumeDelta(st, q);
 
         // 写新采样 + trim 旧采样（保留所有规则都够用的窗口）
-        long maxWindowSec = maxRuleSeconds();
+        long maxWindowSec = maxRuleSeconds(ctx);
         long cutoff = q.getQuoteTime() - maxWindowSec * 1000L;
         st.history.add(new Sample(q.getQuoteTime(), q.getPrice()));
         // 采样按时间升序；trim 头部比 trim 全表扫描更便宜
@@ -218,17 +280,18 @@ public class PriceWatchTask {
         if (limitState != st.limitState) {
             int prev = st.limitState;
             if (firstRound) {
-                log.info("[watch] {} 建立封板基线：{}（首轮不推送）", q.getName(), limitWord(limitState));
+                log.info("[watch] 用户 {} {} 建立封板基线：{}（首轮不推送）",
+                        ctx.userId, q.getName(), limitWord(limitState));
             } else {
                 if (prev == LIMIT_UP) {
-                    sendLimitAlert(q, LIMIT_UP, false, volumeDelta, amountDelta);
+                    sendLimitAlert(ctx, q, LIMIT_UP, false, volumeDelta, amountDelta);
                     pushed = true;
                 } else if (prev == LIMIT_DOWN) {
-                    sendLimitAlert(q, LIMIT_DOWN, false, volumeDelta, amountDelta);
+                    sendLimitAlert(ctx, q, LIMIT_DOWN, false, volumeDelta, amountDelta);
                     pushed = true;
                 }
                 if (limitState == LIMIT_UP || limitState == LIMIT_DOWN) {
-                    sendLimitAlert(q, limitState, true, volumeDelta, amountDelta);
+                    sendLimitAlert(ctx, q, limitState, true, volumeDelta, amountDelta);
                     pushed = true;
                 }
             }
@@ -241,7 +304,7 @@ public class PriceWatchTask {
             st.lastAmount = q.getAmount();
             st.prevAmountDelta = null;
             st.volumeSurge = false;
-            log.info("[watch] {} 建立基线：现价 {}（首轮不推送）", q.getName(), q.priceText());
+            log.info("[watch] 用户 {} {} 建立基线：现价 {}（首轮不推送）", ctx.userId, q.getName(), q.priceText());
             return false;
         }
 
@@ -249,19 +312,17 @@ public class PriceWatchTask {
         // 开板（limitState 回到 NONE）就把窗口重置，下次重新封板再从头判断。
         if (limitState == LIMIT_NONE) {
             st.volumeSurge = false;
-        } else if (!st.volumeSurge && isSurge(amountDelta, st.prevAmountDelta, store.surge())) {
-            if (sendSurgeAlert(q, limitState, amountDelta, st.prevAmountDelta)) {
+        } else if (!st.volumeSurge && isSurge(amountDelta, st.prevAmountDelta, ctx.surge)) {
+            if (sendSurgeAlert(ctx, q, limitState, amountDelta, st.prevAmountDelta)) {
                 pushed = true;
             }
             st.volumeSurge = true;
         }
 
         // 多规则扫描：每条规则的"过去时长"= 该规则 intervals 倍 × 轮询间隔秒数
-        List<WatchSettings.Rule> rules = store.rules();
-        long intervalSec = store.getIntervalSeconds();
         List<Hit> hits = new ArrayList<>();
-        for (WatchSettings.Rule r : rules) {
-            long spanMs = (long) r.getIntervals() * intervalSec * 1000L;
+        for (WatchSettings.Rule r : ctx.rules) {
+            long spanMs = (long) r.getIntervals() * ctx.intervalSec * 1000L;
             Sample base = findSampleBefore(st.history, q.getQuoteTime() - spanMs);
             if (base == null) {
                 // 历史还不够长（刚加进来的标的还在攒采样），跳过这条规则
@@ -276,11 +337,11 @@ public class PriceWatchTask {
         }
 
         if (!hits.isEmpty()) {
-            String msg = buildAlert(q, hits);
-            if (notifier.send(msg)) {
-                log.info("[watch] 已推送：{}", msg);
+            String msg = buildAlert(ctx, q, hits);
+            if (notifier.sendTo(ctx.webhook, msg)) {
+                log.info("[watch] 已推送（用户 {}）：{}", ctx.userId, msg);
             } else {
-                log.warn("[watch] 钉钉未推送（webhook 未配置或调用失败），内容：{}", msg);
+                log.warn("[watch] 钉钉未推送（未配置机器人或调用失败），用户 {}，内容：{}", ctx.userId, msg);
             }
             pushed = true;
         }
@@ -289,6 +350,11 @@ public class PriceWatchTask {
         st.lastAmount = q.getAmount();
         st.prevAmountDelta = amountDelta;
         return pushed;
+    }
+
+    /** 采样键：同一只股票被不同用户盯盘时，各自维护一份基线 */
+    private static String key(long userId, String code) {
+        return userId + "|" + code;
     }
 
     /** 找出时间戳 <= cutoff 的最近一次采样；没找到返回 null */
@@ -303,10 +369,10 @@ public class PriceWatchTask {
         return hit;
     }
 
-    /** 当前所有规则里最长的过去时长，按秒计（= maxIntervals × 当前轮询间隔秒） */
-    private long maxRuleSeconds() {
+    /** 当前所有规则里最长的过去时长，按秒计（= maxIntervals × 该用户的轮询间隔秒） */
+    private static long maxRuleSeconds(Ctx ctx) {
         int max = 0;
-        for (WatchSettings.Rule r : store.rules()) {
+        for (WatchSettings.Rule r : ctx.rules) {
             if (r.getIntervals() > max) {
                 max = r.getIntervals();
             }
@@ -314,7 +380,7 @@ public class PriceWatchTask {
         if (max <= 0) {
             max = 1;
         }
-        return (long) max * store.getIntervalSeconds();
+        return max * ctx.intervalSec;
     }
 
     /** 一条规则命中：保留规则 + 命中的基准采样 + 计算出的偏离 */
@@ -341,7 +407,7 @@ public class PriceWatchTask {
      * </ul>
      * 消息含"过去 Ns 内累计涨幅"与"当前涨跌幅"，并列出拉升成交量 / 拉升成交额。
      */
-    String buildAlert(Quote q, List<Hit> hits) {
+    String buildAlert(Ctx ctx, Quote q, List<Hit> hits) {
         BigDecimal maxDelta = BigDecimal.ZERO;
         for (Hit h : hits) {
             if (h.delta.abs().compareTo(maxDelta.abs()) > 0) {
@@ -352,14 +418,13 @@ public class PriceWatchTask {
         BigDecimal absPct = maxDelta.abs();
         String action = phraseFor(absPct, up);
 
-        BigDecimal volDelta = volumeDelta(q);
-        BigDecimal amtDelta = amountDelta(q);
+        BigDecimal volDelta = volumeDelta(ctx, q);
+        BigDecimal amtDelta = amountDelta(ctx, q);
 
         StringBuilder sb = new StringBuilder();
         sb.append(q.getName()).append(' ').append(action);
         // 命中的第一条规则 intervals × 轮询间隔秒 = 这次推送的主要时间范围
-        long intervalSec = store.getIntervalSeconds();
-        long mainSec = (long) hits.get(0).rule.getIntervals() * intervalSec;
+        long mainSec = (long) hits.get(0).rule.getIntervals() * ctx.intervalSec;
         sb.append("，过去 ").append(mainSec).append("s 内");
         sb.append(up ? "累计涨幅 " : "累计跌幅 ")
                 .append(absPct.toPlainString()).append('%');
@@ -395,11 +460,11 @@ public class PriceWatchTask {
     }
 
     /** 拉升成交量 = 上一轮累计成交量到本轮累计成交量的差值（可能为负：缩量就显示 0） */
-    private BigDecimal volumeDelta(Quote q) {
+    private BigDecimal volumeDelta(Ctx ctx, Quote q) {
         if (q.getVolume() == null) {
             return null;
         }
-        State st = states.get(q.getCode());
+        State st = states.get(key(ctx.userId, q.getCode()));
         if (st == null || st.lastVolume == null) {
             return BigDecimal.ZERO;
         }
@@ -408,11 +473,11 @@ public class PriceWatchTask {
     }
 
     /** 拉升成交额：同上 */
-    private BigDecimal amountDelta(Quote q) {
+    private BigDecimal amountDelta(Ctx ctx, Quote q) {
         if (q.getAmount() == null) {
             return null;
         }
-        State st = states.get(q.getCode());
+        State st = states.get(key(ctx.userId, q.getCode()));
         if (st == null || st.lastAmount == null) {
             return BigDecimal.ZERO;
         }
@@ -550,7 +615,7 @@ public class PriceWatchTask {
      * @param windowVol   本窗口成交量（股），null 表示无法判断
      * @param windowAmt   本窗口成交额（元），null 表示无法判断
      */
-    private void sendLimitAlert(Quote q, int state, boolean closed,
+    private void sendLimitAlert(Ctx ctx, Quote q, int state, boolean closed,
                                 BigDecimal windowVol, BigDecimal windowAmt) {
         String word;
         if (state == LIMIT_UP) {
@@ -564,10 +629,10 @@ public class PriceWatchTask {
                 + "，本窗口成交量 " + formatVolume(windowVol)
                 + "，本窗口成交额 " + formatAmount(windowAmt)
                 + "，总成交额 " + formatAmount(q.getAmount()) + "。";
-        if (notifier.send(msg)) {
-            log.info("[watch] 已推送：{}", msg);
+        if (notifier.sendTo(ctx.webhook, msg)) {
+            log.info("[watch] 已推送（用户 {}）：{}", ctx.userId, msg);
         } else {
-            log.warn("[watch] 钉钉未推送（webhook 未配置或调用失败），内容：{}", msg);
+            log.warn("[watch] 钉钉未推送（未配置机器人或调用失败），用户 {}，内容：{}", ctx.userId, msg);
         }
     }
 
@@ -579,7 +644,7 @@ public class PriceWatchTask {
      *
      * @return 是否真的推成功（失败也照样记状态，跟封板通知一个口径，不逐轮重试刷屏）
      */
-    private boolean sendSurgeAlert(Quote q, int state, BigDecimal curAmount, BigDecimal prevAmount) {
+    private boolean sendSurgeAlert(Ctx ctx, Quote q, int state, BigDecimal curAmount, BigDecimal prevAmount) {
         String word = state == LIMIT_UP ? "涨停" : "跌停";
         StringBuilder sb = new StringBuilder();
         sb.append(q.getName()).append(' ').append(word).append("放量");
@@ -595,13 +660,13 @@ public class PriceWatchTask {
             }
             sb.append("）");
         }
-        sb.append("，本区间成交量 ").append(formatVolume(volumeDelta(q))).append('。');
+        sb.append("，本区间成交量 ").append(formatVolume(volumeDelta(ctx, q))).append('。');
         String msg = sb.toString();
-        if (notifier.send(msg)) {
-            log.info("[watch] 已推送：{}", msg);
+        if (notifier.sendTo(ctx.webhook, msg)) {
+            log.info("[watch] 已推送（用户 {}）：{}", ctx.userId, msg);
             return true;
         }
-        log.warn("[watch] 钉钉未推送（webhook 未配置或调用失败），内容：{}", msg);
+        log.warn("[watch] 钉钉未推送（未配置机器人或调用失败），用户 {}，内容：{}", ctx.userId, msg);
         return false;
     }
 }

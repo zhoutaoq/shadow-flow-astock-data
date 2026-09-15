@@ -17,6 +17,10 @@ import java.util.List;
  */
 public class AccountSummary {
 
+    /** 账户 id（二级视图据此确认看的是哪本账） */
+    private long accountId;
+    /** 账户名称 */
+    private String accountName;
     /** 账户期初市值（元） */
     private BigDecimal initValue = BigDecimal.ZERO;
     /** 可用金额（元） */
@@ -44,6 +48,10 @@ public class AccountSummary {
     /** 一条持仓的展示视图 */
     public static class PositionView {
         private Long id;
+        /** 归属账户 id：首页的合计视图里把各本账拼在一起，靠它对上号 */
+        private long accountId;
+        /** 归属账户名称 */
+        private String accountName;
         private String code;
         private String name;
         private BigDecimal costPrice = BigDecimal.ZERO;
@@ -75,6 +83,22 @@ public class AccountSummary {
 
         public void setId(Long id) {
             this.id = id;
+        }
+
+        public long getAccountId() {
+            return accountId;
+        }
+
+        public void setAccountId(long accountId) {
+            this.accountId = accountId;
+        }
+
+        public String getAccountName() {
+            return accountName;
+        }
+
+        public void setAccountName(String accountName) {
+            this.accountName = accountName;
         }
 
         public String getCode() {
@@ -188,6 +212,22 @@ public class AccountSummary {
         public void setQuoteTime(String quoteTime) {
             this.quoteTime = quoteTime;
         }
+    }
+
+    public long getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(long accountId) {
+        this.accountId = accountId;
+    }
+
+    public String getAccountName() {
+        return accountName;
+    }
+
+    public void setAccountName(String accountName) {
+        this.accountName = accountName;
     }
 
     public BigDecimal getInitValue() {

@@ -1,6 +1,7 @@
 package com.stock.kline.web;
 
 import com.stock.kline.account.Account;
+import com.stock.kline.account.AccountOverview;
 import com.stock.kline.account.AccountService;
 import com.stock.kline.account.AccountSummary;
 import com.stock.kline.account.Position;
@@ -24,12 +25,21 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 我的账户（需求 v1.5.1 第 ③ 条）：登录后读写自己那份账户与持仓。
+ * 我的账户（需求 v1.5.1 第 ③ 条、v1.5.2 第 ④ 条）：登录后读写自己那份账户。
+ *
+ * <p>两级模型（参考同花顺）：
+ * <ul>
+ *   <li><b>一级 —— 账户</b>：
+ *       {@code GET/POST /api/account/accounts} 列表与新建、
+ *       {@code PUT/DELETE /api/account/accounts/{id}} 改名与删除；</li>
+ *   <li><b>二级 —— 账户下的持仓与记录</b>：下面所有接口用 {@code accountId} 定位，
+ *       不带（或传 0）时回落到第一本账，老前端调用不需要改。</li>
+ * </ul>
  *
  * <p>接口面：
  * <ul>
- *   <li>{@code GET  /api/account/summary}    账户 + 持仓 + 收益的合成视图（首页与账户页共用）；</li>
- *   <li>{@code GET  /api/account}            账户设置（期初市值 / 可用金额）；</li>
+ *   <li>{@code GET  /api/account/summary}    汇总：带 accountId = 该本账，不带 = 全部账户合计（首页用）；</li>
+ *   <li>{@code GET  /api/account}            账户设置（名称 / 期初市值 / 可用金额）；</li>
  *   <li>{@code PUT  /api/account}            保存账户设置；</li>
  *   <li>{@code GET  /api/account/positions}  持仓列表；</li>
  *   <li>{@code POST /api/account/positions}  新增持仓；</li>
@@ -53,64 +63,114 @@ public class AccountController {
         this.service = service;
     }
 
-    /** 账户汇总：首页「我的账户」区块与账户页都用它 */
-    @GetMapping("/summary")
-    public ApiResponse<AccountSummary> summary() {
-        return ApiResponse.ok(service.summary(requireUserId()));
+    /* ==================== 一级：账户 ==================== */
+
+    /** 账户列表：每本账一行（总市值 / 当日收益 / 总收益 / 持仓数）+ 全部合计 */
+    @GetMapping("/accounts")
+    public ApiResponse<AccountOverview> accounts() {
+        return ApiResponse.ok(service.overview(requireUserId()));
     }
 
-    @GetMapping
-    public ApiResponse<Account> get() {
-        return ApiResponse.ok(service.getAccount(requireUserId()));
-    }
-
-    @PutMapping
-    public ApiResponse<Account> save(@RequestBody(required = false) Account body) {
+    /** 新建一本账 */
+    @PostMapping("/accounts")
+    public ApiResponse<Account> createAccount(@RequestBody(required = false) Map<String, Object> body) {
         if (body == null) {
             return ApiResponse.fail("账户内容为空");
         }
-        return ApiResponse.ok(service.saveAccount(requireUserId(), body), "账户设置已保存");
+        Account a = service.createAccount(requireUserId(),
+                body.get("name") == null ? null : String.valueOf(body.get("name")),
+                decimal(body.get("initValue")),
+                decimal(body.get("cash")));
+        return ApiResponse.ok(a, "账户「" + a.getName() + "」已创建");
+    }
+
+    /** 改名 / 改期初市值 / 改可用金额 */
+    @PutMapping("/accounts/{id}")
+    public ApiResponse<Account> saveAccountById(@PathVariable long id,
+                                                @RequestBody(required = false) Account body) {
+        if (body == null) {
+            return ApiResponse.fail("账户内容为空");
+        }
+        return ApiResponse.ok(service.saveAccount(requireUserId(), id, body), "账户设置已保存");
+    }
+
+    /** 删除一本账（连同它的持仓与操作记录） */
+    @DeleteMapping("/accounts/{id}")
+    public ApiResponse<Void> deleteAccount(@PathVariable long id) {
+        service.deleteAccount(requireUserId(), id);
+        return ApiResponse.ok(null, "账户已删除");
+    }
+
+    /* ==================== 二级：账户下的持仓与收益 ==================== */
+
+    /** 汇总：带 accountId = 该本账；不带 = 全部账户合计（首页「我的账户」区块） */
+    @GetMapping("/summary")
+    public ApiResponse<AccountSummary> summary(@RequestParam(value = "accountId", required = false) Long accountId) {
+        long userId = requireUserId();
+        if (accountId == null || accountId <= 0) {
+            return ApiResponse.ok(service.summary(userId));
+        }
+        return ApiResponse.ok(service.summary(userId, accountId));
+    }
+
+    @GetMapping
+    public ApiResponse<Account> get(@RequestParam(value = "accountId", required = false) Long accountId) {
+        return ApiResponse.ok(service.getAccount(requireUserId(), accountId));
+    }
+
+    @PutMapping
+    public ApiResponse<Account> save(@RequestParam(value = "accountId", required = false) Long accountId,
+                                     @RequestBody(required = false) Account body) {
+        if (body == null) {
+            return ApiResponse.fail("账户内容为空");
+        }
+        long userId = requireUserId();
+        return ApiResponse.ok(service.saveAccount(userId, service.resolveAccountId(userId, accountId), body),
+                "账户设置已保存");
     }
 
     @GetMapping("/positions")
-    public ApiResponse<List<Position>> positions() {
-        return ApiResponse.ok(service.listPositions(requireUserId()));
+    public ApiResponse<List<Position>> positions(@RequestParam(value = "accountId", required = false) Long accountId) {
+        return ApiResponse.ok(service.listPositions(requireUserId(), requireAccountId(accountId)));
     }
 
     @PostMapping("/positions")
-    public ApiResponse<Position> addPosition(@RequestBody(required = false) Position body) {
+    public ApiResponse<Position> addPosition(@RequestParam(value = "accountId", required = false) Long accountId,
+                                             @RequestBody(required = false) Position body) {
         if (body == null) {
             return ApiResponse.fail("持仓内容为空");
         }
         body.setId(null);
-        return ApiResponse.ok(service.savePosition(requireUserId(), body), "持仓已添加");
+        return ApiResponse.ok(service.savePosition(requireUserId(), requireAccountId(accountId), body), "持仓已添加");
     }
 
     @PutMapping("/positions/{id}")
     public ApiResponse<Position> updatePosition(@PathVariable long id,
+                                                @RequestParam(value = "accountId", required = false) Long accountId,
                                                 @RequestBody(required = false) Position body) {
         if (body == null) {
             return ApiResponse.fail("持仓内容为空");
         }
         body.setId(id);
-        return ApiResponse.ok(service.savePosition(requireUserId(), body), "持仓已更新");
+        return ApiResponse.ok(service.savePosition(requireUserId(), requireAccountId(accountId), body), "持仓已更新");
     }
 
     @DeleteMapping("/positions/{id}")
-    public ApiResponse<Void> deletePosition(@PathVariable long id) {
-        service.deletePosition(requireUserId(), id);
+    public ApiResponse<Void> deletePosition(@PathVariable long id,
+                                            @RequestParam(value = "accountId", required = false) Long accountId) {
+        service.deletePosition(requireUserId(), requireAccountId(accountId), id);
         return ApiResponse.ok(null, "持仓已删除");
     }
 
     @DeleteMapping("/positions")
-    public ApiResponse<Void> clearPositions() {
-        service.clearPositions(requireUserId());
+    public ApiResponse<Void> clearPositions(@RequestParam(value = "accountId", required = false) Long accountId) {
+        service.clearPositions(requireUserId(), requireAccountId(accountId));
         return ApiResponse.ok(null, "持仓已清空");
     }
 
     @GetMapping("/records")
-    public ApiResponse<List<TradeRecord>> records() {
-        return ApiResponse.ok(service.listRecords(requireUserId()));
+    public ApiResponse<List<TradeRecord>> records(@RequestParam(value = "accountId", required = false) Long accountId) {
+        return ApiResponse.ok(service.listRecords(requireUserId(), requireAccountId(accountId)));
     }
 
     /**
@@ -121,7 +181,8 @@ public class AccountController {
      * {@code price} 是这次建仓的成本价（页面预填实时行情价，可手改）。
      */
     @PostMapping("/records")
-    public ApiResponse<TradeRecord> addRecord(@RequestBody(required = false) Map<String, Object> body) {
+    public ApiResponse<TradeRecord> addRecord(@RequestParam(value = "accountId", required = false) Long accountId,
+                                              @RequestBody(required = false) Map<String, Object> body) {
         if (body == null) {
             return ApiResponse.fail("操作内容为空");
         }
@@ -140,7 +201,7 @@ public class AccountController {
         }
         BigDecimal price = decimal(body.get("price"));
         Object name = body.get("name");
-        TradeRecord r = service.addRecord(requireUserId(),
+        TradeRecord r = service.addRecord(requireUserId(), requireAccountId(accountId),
                 act == null ? null : String.valueOf(act),
                 code == null ? null : String.valueOf(code),
                 name == null ? null : String.valueOf(name),
@@ -155,16 +216,17 @@ public class AccountController {
      * 都拿不到时 {@code price} 为 null，页面留空由用户填实际成交价。
      */
     @GetMapping("/price")
-    public ApiResponse<Map<String, Object>> price(@RequestParam("code") String code) {
+    public ApiResponse<Map<String, Object>> price(@RequestParam("code") String code,
+                                                  @RequestParam(value = "accountId", required = false) Long accountId) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("code", code);
-        out.put("price", service.suggestPrice(requireUserId(), code));
+        out.put("price", service.suggestPrice(requireUserId(), requireAccountId(accountId), code));
         return ApiResponse.ok(out);
     }
 
     @DeleteMapping("/records")
-    public ApiResponse<Void> clearRecords() {
-        service.clearRecords(requireUserId());
+    public ApiResponse<Void> clearRecords(@RequestParam(value = "accountId", required = false) Long accountId) {
+        service.clearRecords(requireUserId(), requireAccountId(accountId));
         return ApiResponse.ok(null, "操作记录已清空");
     }
 
@@ -174,12 +236,16 @@ public class AccountController {
         Map<String, Object> limits = new LinkedHashMap<>();
         limits.put("maxPositions", 200);
         limits.put("maxRecords", 200);
+        limits.put("maxAccounts", 10);
+        limits.put("maxNameLength", 32);
         List<String> actions = new ArrayList<>();
         actions.add(TradeRecord.ACTION_BUY);
         actions.add(TradeRecord.ACTION_SELL);
         limits.put("actions", actions);
         return ApiResponse.ok(limits);
     }
+
+    /* ==================== 内部 ==================== */
 
     /** 当前登录用户：拦截器已保证登录，这里再判一次防止路径被摘出拦截器后拿到 0 号用户的数据 */
     private static long requireUserId() {
@@ -188,6 +254,11 @@ public class AccountController {
             throw new IllegalArgumentException("请先登录");
         }
         return userId;
+    }
+
+    /** 二级接口的账户定位：不带 accountId 时回落到第一本账（老前端调用照旧可用） */
+    private long requireAccountId(Long accountId) {
+        return service.resolveAccountId(requireUserId(), accountId);
     }
 
     /** 请求体里的数字宽松解析：null / 空串 / 非法一律给 null，由业务层校验 */

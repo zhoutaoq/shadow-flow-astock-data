@@ -37,9 +37,25 @@ public class SessionService {
 
     /** 签发一个令牌；同一个用户可以有多个令牌（多浏览器同时登录） */
     public Session create(User user) {
+        return create(user, null);
+    }
+
+    /**
+     * 签发一个令牌，并记下「这次是谁在代理」。
+     *
+     * <p>代理登录（v1.5.2）：超管要以某个用户的眼睛看系统，就得换一份<b>目标用户的</b>登录态 ——
+     * 这样所有按用户取数的接口（盯盘、账户、令牌）自然读到目标的，不需要任何接口知道"代理"这回事。
+     * 被代理者本人的令牌也一起记下来，退出代理时直接把原令牌还回去，超管不用重新登录。
+     *
+     * @param actor 代理者（超管）的登录态；null 表示正常登录
+     */
+    public Session create(User user, Session actor) {
         String token = UUID.randomUUID().toString().replace("-", "");
-        Session s = new Session(token, user.getId(), user.getUsername(),
-                user.getRole(), System.currentTimeMillis() + ttlMillis);
+        Session s = new Session(token, user.getId(), user.getUsername(), user.getRole(),
+                System.currentTimeMillis() + ttlMillis,
+                actor == null ? 0L : actor.getUserId(),
+                actor == null ? null : actor.getUsername(),
+                actor == null ? null : actor.getToken());
         sessions.put(token, s);
         if (sessions.size() > 64 && (sessions.size() & 63) == 0) {
             sweep();
@@ -110,13 +126,26 @@ public class SessionService {
         private final String username;
         private final String role;
         private final long expireAt;
+        /** 代理者的用户 id；0 表示这不是一个代理登录的登录态 */
+        private final long impersonatorId;
+        private final String impersonatorUsername;
+        /** 代理者原来的令牌：退出代理登录时原样还回去 */
+        private final String impersonatorToken;
 
         Session(String token, long userId, String username, String role, long expireAt) {
+            this(token, userId, username, role, expireAt, 0L, null, null);
+        }
+
+        Session(String token, long userId, String username, String role, long expireAt,
+                long impersonatorId, String impersonatorUsername, String impersonatorToken) {
             this.token = token;
             this.userId = userId;
             this.username = username;
             this.role = role;
             this.expireAt = expireAt;
+            this.impersonatorId = impersonatorId;
+            this.impersonatorUsername = impersonatorUsername;
+            this.impersonatorToken = impersonatorToken;
         }
 
         public String getToken() {
@@ -137,6 +166,23 @@ public class SessionService {
 
         public long getExpireAt() {
             return expireAt;
+        }
+
+        /** 是否处于代理登录中 */
+        public boolean isImpersonated() {
+            return impersonatorId > 0 && impersonatorToken != null;
+        }
+
+        public long getImpersonatorId() {
+            return impersonatorId;
+        }
+
+        public String getImpersonatorUsername() {
+            return impersonatorUsername;
+        }
+
+        public String getImpersonatorToken() {
+            return impersonatorToken;
         }
 
         public boolean isAdmin() {

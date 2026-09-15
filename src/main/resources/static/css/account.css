@@ -514,3 +514,148 @@ a.acct-hold-item.acct-more:hover { background: var(--bg-tint); }
 @media (max-width: 640px) {
     .acct-kpi-v { font-size: 20px; }
 }
+
+/* =========================================================================
+ * 一级视图：账户列表（v1.5.2）
+ *
+ * 参考同花顺：一级先把「有哪些账」摆出来，点进某本账才是持仓 / 盈亏 / 操作记录。
+ * 每张卡片的数字口径与二级页头一致（总市值 / 当日收益 / 总收益 / 持仓数）。
+ * ========================================================================= */
+
+.acc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+    gap: var(--sp-4);
+}
+
+.acc-item {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: var(--sp-4) 16px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-1);
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+
+.acc-item:hover {
+    border-color: var(--primary);
+    box-shadow: var(--shadow-2);
+    transform: translateY(-1px);
+}
+
+.acc-hd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.acc-name {
+    font-size: var(--fs-14);
+    font-weight: 600;
+    color: var(--text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.acc-badge {
+    margin-left: auto;
+    flex: 0 0 auto;
+    height: 20px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--r-pill);
+    background: var(--bg-tint);
+    color: var(--text-dim);
+    font-size: var(--fs-12);
+    font-variant-numeric: tabular-nums;
+}
+
+.acc-mv {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -.4px;
+    color: var(--text-strong);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+}
+
+.acc-kpis {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.acc-kpi b { font-weight: 600; }
+.acc-kpi b.up { color: var(--up); }
+.acc-kpi b.down { color: var(--down); }
+.acc-kpi small { color: var(--text-dim); }
+
+.acc-ft {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-soft);
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.acc-ops {
+    display: flex;
+    gap: 6px;
+}
+
+.acc-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 148px;
+    padding: var(--sp-4);
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-xl);
+    color: var(--text-dim);
+    font-size: var(--fs-13);
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+}
+
+.acc-add:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--bg-tint);
+}
+
+/* ============ 二级视图的面包屑 ============ */
+.acrumb {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.acrumb .ahead-t { font-size: var(--fs-16); }
+
+.acrumb-ic {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.acrumb-ic svg { width: 13px; height: 13px; }
+
+/* 新建 / 重命名共用同一个弹窗：重命名时只留名字，金额字段整体收起 */
+.mask.rename .acc-only-create { display: none; }

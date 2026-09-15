@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="9tFvSYDlcAO83tlA6ZdnMc">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>用户管理</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260915b" data-page-node-id="SWdqXq14OX31AokLLilU5o">
+    <link rel="stylesheet" href="/css/common.css?v=20260915d" data-page-node-id="SWdqXq14OX31AokLLilU5o">
     <style>
         .u-toolbar { display: flex; gap: var(--sp-2); align-items: flex-end; flex-wrap: wrap; }
         .u-toolbar .field { margin-bottom: 0; }
@@ -35,6 +35,7 @@
         .u-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex: 0 0 auto; }
         .u-state.off .u-dot { background: var(--disabled-fg); }
         .u-time { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+        .u-ops { display: flex; gap: 6px; flex-wrap: wrap; }
     </style>
 </head>
 <body data-page-node-id="CS6lGRdKriQtazHnRmwylU">
@@ -75,7 +76,7 @@
                 <th style="width:80px" data-page-node-id="VEMiuKc3P0y4b7me8XXicy">状态</th>
                 <th style="width:170px" data-page-node-id="D1bFUGwXbAeHv4WdDIxOrG">创建时间</th>
                 <th style="width:170px" data-page-node-id="vqYUrzMF7FAuY5624VXyJ2">最近登录</th>
-                <th style="width:110px" data-page-node-id="7AQPuPIUpeGBaCZzsSYbOX">操作</th>
+                <th style="width:200px" data-page-node-id="7AQPuPIUpeGBaCZzsSYbOX">操作</th>
             </tr>
             </thead>
             <tbody id="uBody" data-page-node-id="m0u6CDsFojbeOiKvmFwfch"></tbody>
@@ -84,7 +85,7 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260915b"></script>
+<script src="/js/common.js?v=20260915d"></script>
 <script>
     var page = 1, size = 20, keyword = '';
 
@@ -120,8 +121,13 @@
                     + '<i class="u-dot"></i>' + (u.enabled ? '正常' : '已停用') + '</span></td>'
                     + '<td class="u-time">' + esc(u.createTime || '—') + '</td>'
                     + '<td class="u-time">' + esc(u.lastLoginTime || '—') + '</td>'
-                    + '<td><button class="btn-sm btn-ghost" onclick="openReset(' + u.id
-                    + ',\'' + esc(u.username) + '\')">重置密码</button></td>'
+                    + '<td class="u-ops">'
+                    + '<button class="btn-sm btn-ghost" onclick="openReset(' + u.id
+                    + ',\'' + esc(u.username) + '\')">重置密码</button>'
+                    + (u.admin ? ''
+                        : '<button class="btn-sm btn-ghost" onclick="impersonate(' + u.id
+                          + ',\'' + esc(u.username) + '\')">代理登录</button>')
+                    + '</td>'
                     + '</tr>';
             }).join('');
         }
@@ -238,6 +244,28 @@
             btn.classList.remove('loading');
             btn.textContent = '保存新密码';
         }
+    }
+
+    /**
+     * 代理登录：以指定用户的身份继续操作，用来查看/处理该用户自己的那份数据。
+     *
+     * <p>换的是本地令牌，所以换完直接回首页 —— 顶栏会挂出「已切换到 xxx」的提示，
+     * 随时可以点它退回来。
+     */
+    async function impersonate(id, username) {
+        if (!confirm('以 ' + username + ' 的身份继续操作？随时可以从顶栏退出代理登录。')) {
+            return;
+        }
+        var r = await post('/api/admin/users/' + id + '/impersonate', {});
+        if (!r || !r.success) {
+            return;
+        }
+        var token = r.data && r.data.token;
+        if (!token) {
+            return toast('切换失败，请重试', 'err');
+        }
+        setAuthToken(token);
+        location.href = '/';
     }
 
     document.getElementById('fKw').addEventListener('keydown', function (e) {

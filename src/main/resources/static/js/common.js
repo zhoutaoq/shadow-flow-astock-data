@@ -84,6 +84,8 @@ const AUTH_COOKIE_DAYS = 7;
 const ME = {
     loggedIn: false,
     user: null,
+    /** 代理登录中：{id, username} 是坐在后面的那个超管；不在代理中为 null */
+    impersonator: null,
     registrationEnabled: true,
     rules: {minPasswordLength: 6, requireLetterAndDigit: true, usernamePattern: 'email'}
 };
@@ -125,6 +127,7 @@ function loadMe(force) {
                 if (json && json.success && json.data) {
                     ME.loggedIn = !!json.data.loggedIn;
                     ME.user = json.data.user || null;
+                    ME.impersonator = json.data.impersonator || null;
                     ME.registrationEnabled = json.data.registrationEnabled !== false;
                     if (json.data.rules) {
                         ME.rules = json.data.rules;
@@ -179,6 +182,7 @@ function onUnauthorized() {
     clearAuthToken();
     ME.loggedIn = false;
     ME.user = null;
+    ME.impersonator = null;
     paintUserArea();
     if (first) {
         toast('登录已失效，请重新登录', 'err');
@@ -473,7 +477,50 @@ async function doLogout() {
     clearAuthToken();
     ME.loggedIn = false;
     ME.user = null;
+    ME.impersonator = null;
     location.href = '/';
+}
+
+/**
+ * 是否处在「超管代理登录某个用户」的状态。
+ *
+ * <p>判据取 {@code /api/auth/me} 回的 {@code impersonator}：只有服务端认下这个身份，
+ * 顶栏才会挂出提示与退出入口，前端不自己造状态。
+ */
+function isImpersonating() {
+    return !!(ME.loggedIn && ME.impersonator);
+}
+
+/**
+ * 顶栏里显示的身份简称：邮箱只留 @ 前面那段。
+ *
+ * <p>顶栏是固定 56px 高的一行，全量邮箱（zhang.san@example.com）会把导航挤到第二行 ——
+ * 而账号按钮本来就挨着提示，全名在那里有。
+ */
+function shortName(username) {
+    const s = String(username == null ? '' : username);
+    const at = s.indexOf('@');
+    return at > 0 ? s.slice(0, at) : s;
+}
+
+/**
+ * 退出代理登录：还原成代理者（超管）自己的登录态。
+ *
+ * <p>服务端把代理时的原令牌一并回带，这里换回本地 cookie 再整页刷新 ——
+ * 页面上到处都可能是按用户隔离的数据，逐块重取不如重载一次干净。
+ */
+async function stopImpersonate() {
+    const r = await post('/api/auth/impersonate/stop', {});
+    if (!r || !r.success) {
+        return;
+    }
+    const t = r.data && r.data.token;
+    if (t) {
+        setAuthToken(t);
+    }
+    ME.impersonator = null;
+    toast(r.message || '已退出代理登录', 'ok');
+    location.reload();
 }
 
 /** 请求后端接口，统一解析 {success,message,data} */
@@ -516,7 +563,8 @@ const ICON = {
     eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 5.9A9.4 9.4 0 0 1 12 5.6c6.2 0 9.8 6.4 9.8 6.4a17 17 0 0 1-2.7 3.5M6.2 7.6A16.6 16.6 0 0 0 2.2 12S5.8 18.4 12 18.4c1.4 0 2.6-.3 3.7-.8"/><path d="M9.9 9.9a3.1 3.1 0 0 0 4.3 4.3M3 3l18 18"/></svg>',
     pwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2.5"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/></svg>',
     out: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 8.5V6.2A2.2 2.2 0 0 0 13.3 4H6.7a2.2 2.2 0 0 0-2.2 2.2v11.6A2.2 2.2 0 0 0 6.7 20h6.6a2.2 2.2 0 0 0 2.2-2.2v-2.3"/><path d="M10 12h10M17.4 9.2L20 12l-2.6 2.8"/></svg>',
-    spade: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.6c3.4 3.5 7.3 6.3 7.3 10.1 0 2.5-1.9 4.4-4.2 4.4-1 0-1.9-.3-2.6-.9.3 1.9 1.2 3.5 2.5 4.8H9c1.3-1.3 2.2-2.9 2.5-4.8-.7.6-1.6.9-2.6.9-2.3 0-4.2-1.9-4.2-4.4C4.7 8.9 8.6 6.1 12 2.6z"/></svg>'
+    spade: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.6c3.4 3.5 7.3 6.3 7.3 10.1 0 2.5-1.9 4.4-4.2 4.4-1 0-1.9-.3-2.6-.9.3 1.9 1.2 3.5 2.5 4.8H9c1.3-1.3 2.2-2.9 2.5-4.8-.7.6-1.6.9-2.6.9-2.3 0-4.2-1.9-4.2-4.4C4.7 8.9 8.6 6.1 12 2.6z"/></svg>',
+    swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13M14 4.8L17.2 8 14 11.2"/><path d="M20 16H7M10 12.8L6.8 16 10 19.2"/></svg>'
 };
 
 /** 顶部提示条：类型决定图标与配色；文本一律转义后插入 */
@@ -896,7 +944,14 @@ function paintUserArea() {
     const u = ME.user || {};
     // 头像取邮箱首字母，admin 就是 a，一眼能认出是哪个号
     const initial = (u.username || '?').trim().charAt(0);
-    box.innerHTML = '<div class="ua-group">'
+    // 代理登录时先在账号区前面挂一枚提示，随顶栏常驻，随时能退出来
+    const imp = isImpersonating()
+        ? '<span class="imp-chip" id="impChip">' + ICON.swap
+            + '<span class="imp-txt">已切换到 <span class="imp-who">'
+            + esc(shortName(u.username)) + '</span></span>'
+            + '<button type="button" id="impStop">退出</button></span>'
+        : '';
+    box.innerHTML = imp + '<div class="ua-group">'
         + '<button class="ua-btn" type="button" aria-haspopup="menu">'
         + '<span class="ua-avatar">' + esc(initial) + '</span>'
         + '<span class="ua-name">' + esc(u.username) + '</span>'
@@ -904,10 +959,21 @@ function paintUserArea() {
         + '<i class="ua-caret">▾</i></button>'
         + '<div class="ua-menu" role="menu">'
         + '<a href="javascript:void(0)" id="uaPwd" role="menuitem">' + ICON.pwd + '修改密码</a>'
+        + (isImpersonating()
+            ? '<a href="javascript:void(0)" id="uaImpStop" role="menuitem">' + ICON.swap + '退出代理登录</a>'
+            : '')
         + '<a href="javascript:void(0)" id="uaLogout" class="danger" role="menuitem">' + ICON.out + '退出登录</a>'
         + '</div></div>';
     box.querySelector('#uaPwd').addEventListener('click', openPasswordModal);
     box.querySelector('#uaLogout').addEventListener('click', doLogout);
+    const stopBtn = box.querySelector('#impStop');
+    if (stopBtn) {
+        stopBtn.addEventListener('click', stopImpersonate);
+    }
+    const stopItem = box.querySelector('#uaImpStop');
+    if (stopItem) {
+        stopItem.addEventListener('click', stopImpersonate);
+    }
 }
 
 /**
@@ -1032,7 +1098,7 @@ async function submitChangePassword(hide) {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260915b（v1.5.1：股价统一两位小数 / 涨跌停告警补三要素 / 我的账户与持仓）');
+    console.info('[金牛数据] 前端版本 20260915d（v1.5.2：盯盘推送按用户 / 提示条移到页面上方 / 代理登录 / 账户分本 / 首页外盘指数与背景行情）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();

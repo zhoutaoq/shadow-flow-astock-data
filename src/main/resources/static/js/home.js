@@ -3,7 +3,7 @@
  *
  * 两块东西：
  *   1. 品牌带背景：canvas 里画真实行情（默认是长电科技 600584 的一段日K），
- *      横向循环滚动。画哪只票、哪一段由「系统配置」页定，
+ *      向左走一遍、走完停一下、再从右边重新走进来。画哪只票、哪一段由「系统配置」页定，
  *      下面 KC 只是取不到那份配置时的兜底素材。
  *   2. 核心能力轮播：自动播放 + 左右箭头 + 圆点，示意图是内联 SVG
  *
@@ -138,7 +138,11 @@ var KC = [
     }
 
     /* =====================================================================
-     * 1 · 品牌带背景：真实日K 横向循环滚动
+     * 1 · 品牌带背景：真实日K，一遍一遍地走
+     *
+     * 一圈 = 从右边走进来 → 铺满 → 左侧走光 → 空画面停一下 → 下一圈。
+     * 不做「首尾相接」的无缝滚动：那种画法把这段行情的结尾和开头直接焊死，
+     * 看上去是一条永远走不到头的传送带，看不出这段行情从哪里起、到哪里止。
      *
      * 做成「可重建」的：先用自带那段画上，拿到后台配置的行情再整块换一份。
      * 换的时候必须把旧的停干净（rAF + 那几个监听），否则两份逻辑一起画同一块画布。
@@ -150,9 +154,15 @@ var KC = [
         if (!ctx) return null;
 
         var N = RAW.length;                 // 82
-        var SERIES = RAW.concat(RAW);       // 铺两遍：滚满 N 根后画面回到原点，无缝
-        var VIS = 46;                       // 横向塞得下的格数
+        var SERIES = RAW;                   // 只铺一遍：走到最后一根，这一圈就到头了
+        /* 横向塞得下的格数。区间是可配的，短区间（比如只配了 20 个交易日）如果还按固定 46 格铺，
+           一段就只占屏幕左边一半，右边永远空着 —— 所以窗口不宽于数据本身：
+           数据短就少铺几格、每根宽一点，画面照样铺满。 */
+        var VIS = Math.min(46, N);
         var MS_PER_BAR = 900;               // 每根停留时长
+        var P_MIN = -(VIS - 1);             // 起步位：第一根刚从右边探进来，画面基本是空的
+        var P_MAX = N;                      // 收尾位：最后一根完全移出左边，画面又空了
+        var HOLD_MS = 1500;                 // 走完一圈后空画面停一下，把两圈分开
 
         /* 量程按这段行情自己的最低/最高定，上下各留 3% 边。
            标的与区间都是可配的，写死量程只会让别的票贴顶贴底或缩成一条直线。 */
@@ -172,8 +182,9 @@ var KC = [
             border = cssVar('--border'), pl = cssVar('--primary-light');
         var fillUp = null, fillDown = null;
 
-        var pos = 0;                        // 已滚过的根数（浮点），在 [0, N) 循环
+        var pos = 0;                        // 当前偏移（根，浮点）；一圈从 P_MIN 走到 P_MAX
         var raf = 0, lastT = 0, running = false, inView = true;
+        var holdUntil = 0;                  // 非 0 表示这一圈已走完，正在空画面停顿
         var themeWatcher = null, viewWatcher = null;
 
         function buildGradients() {
@@ -280,18 +291,24 @@ var KC = [
                 ctx.fillRect(x - bw / 2, Math.min(yo, yc), bw, Math.max(Math.abs(yc - yo), 1));
             }
 
-            /* --- 当前价虚线 + 光点：跟着画面最右侧那根走，看起来"在跑" --- */
+            /* --- 当前价虚线 + 光点：跟着画面最右侧那根走，看起来"在跑" ---
+               两个边界都要管住：
+               · 走到收尾时最后一根已经移出左边，不加 lx > 0 会留下一条底下没有蜡烛的虚线；
+               · 单遍滚动到后半段时，「最右侧那根」就是这段行情的最后一根，它会一路往左走 ——
+                 虚线若一直连到右边缘，就会被拉成横贯整屏的一条长线（实测 778px）。
+                 所以虚线只跟到这根右边两格，行情还在往右延伸时两格就够了，正好和原来一样。 */
             var li = Math.min(SERIES.length - 1, Math.floor(pos + VIS) - 1);
             if (li >= i0) {
                 var lx = xAt(li), ly = yOf(SERIES[li][3]);
-                if (lx < W - 2) {
+                if (lx > 0 && lx < W - 2) {
+                    var dashTo = Math.min(W, lx + slot * 2);
                     ctx.save();
                     ctx.setLineDash([4, 5]);
                     ctx.strokeStyle = rgba(pl, 0.5);
                     ctx.lineWidth = 1;
                     ctx.beginPath();
                     ctx.moveTo(lx, Math.round(ly) + 0.5);
-                    ctx.lineTo(W, Math.round(ly) + 0.5);
+                    ctx.lineTo(dashTo, Math.round(ly) + 0.5);
                     ctx.stroke();
                     ctx.restore();
 
@@ -316,8 +333,22 @@ var KC = [
             if (!running) return;
             var dt = lastT ? Math.min(t - lastT, 100) : 16;
             lastT = t;
-            pos += dt / MS_PER_BAR;
-            if (pos >= N) pos -= N;      // 无缝回绕：第 N 根位置 == 第 0 根
+
+            if (holdUntil) {
+                /* 这一圈已经走完：画面保持空白停一下，
+                   让「上一圈」和「下一圈」之间有一个看得见的断点，
+                   而不是把结尾接回开头继续往下滚。 */
+                if (t >= holdUntil) {
+                    holdUntil = 0;
+                    pos = P_MIN;
+                }
+            } else {
+                pos += dt / MS_PER_BAR;
+                if (pos >= P_MAX) {
+                    pos = P_MAX;
+                    holdUntil = t + HOLD_MS;
+                }
+            }
             draw();
             raf = requestAnimationFrame(frame);
         }

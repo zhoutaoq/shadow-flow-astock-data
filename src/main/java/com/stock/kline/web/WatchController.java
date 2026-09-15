@@ -22,8 +22,10 @@ import java.util.Map;
  * 盯盘配置：登录后读写<b>自己那份</b>配置。
  *
  * <p>v1.3 起盯盘配置跟账号走（见 {@link WatchConfigStore}）：
- * 进来的人是谁就读写谁的 <code>./data/watch/watch-{userId}.json</code>；
- * 超管读写的就是系统默认那份，后台轮询与钉钉推送也只认它。
+ * 进来的人是谁就读写谁的 <code>./data/watch/watch-{userId}.json</code>。
+ *
+ * <p>v1.5.2 起每份配置都真的跑起来：超管那份同时是系统默认配置（系统级通知的出口），
+ * 其余用户开了盯盘就按自己的间隔被轮询、告警进自己配的机器人。
  *
  * <p>接口面仍然只有「读 / 存」两个动作：保存动作由 store 完成，
  * 先改内存（立刻生效）再落盘，调度器监听到变更会按新的间隔重新排定时任务。
@@ -109,10 +111,13 @@ public class WatchController {
             rules.add(one);
         }
         data.put("rules", rules);
-        // 钉钉配置（页面回显）：v1.4 起只有 webhook 一个字段
+        // 钉钉配置（页面回显）：v1.4 起只有 webhook 一个字段；
+        // v1.5.2 起附一个「这条配置推给谁」的状态，页面据此显示推送目标
         Map<String, Object> dt = new LinkedHashMap<>();
         dt.put("webhook", s.getDingtalk() == null || s.getDingtalk().getWebhook() == null
                 ? "" : s.getDingtalk().getWebhook());
+        dt.put("ownGroup", store.hasOwnWebhook(userId));
+        dt.put("targetConfigured", !store.webhookOf(userId).isEmpty());
         data.put("dingtalk", dt);
         // 涨跌停放量阈值（页面回显）：amountWan 单位万元，times 是相对上一间隔的倍数
         data.put("surge", s.getSurge() == null ? new WatchSettings.SurgeCfg() : s.getSurge());

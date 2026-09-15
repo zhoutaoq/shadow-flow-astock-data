@@ -3,7 +3,11 @@ package com.stock.kline.account;
 import java.math.BigDecimal;
 
 /**
- * 持仓：一条 = 一只标的的成本价与持仓数量，挂在某个用户账户下。
+ * 持仓：一条 = 一只标的的成本价与持仓数量，挂在<b>某个账户</b>下（需求 v1.5.2 第 ④ 条）。
+ *
+ * <p>归属两层都要带：{@code userId} 用于鉴权（一行都碰不到别人的），
+ * {@code accountId} 用于定位到具体账户 —— 「同一只标的一本账只能有一条持仓」这个约束
+ * 是在账户维度上成立的，不同账户可以各自持有同一只标的。
  *
  * <p>收益口径（需求 v1.5.1 第 ③ 条）：
  * <ul>
@@ -12,13 +16,15 @@ import java.math.BigDecimal;
  * </ul>
  *
  * <p>现价与昨收在查询时用新浪实时行情现取（见 {@code AccountService}），不落盘，
- * 所以落盘字段只有标的、成本价、数量。
+ * 所以落盘字段只有归属、标的、成本价、数量。
  */
 public class Position {
 
     private Long id;
-    /** 归属用户 id：持仓必须关联到账户上 */
+    /** 归属用户 id：鉴权用 */
     private long userId;
+    /** 归属账户 id：持仓挂在账户下 */
+    private long accountId;
     /** 标的代码（6 位沪深A股） */
     private String code;
     /** 标的名称：页面录入时可留空，由名录补 */
@@ -44,6 +50,14 @@ public class Position {
 
     public void setUserId(long userId) {
         this.userId = userId;
+    }
+
+    public long getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(long accountId) {
+        this.accountId = accountId;
     }
 
     public String getCode() {

@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260915b">
-    <link rel="stylesheet" href="/css/home.css?v=20260915b">
-    <link rel="stylesheet" href="/css/account.css?v=20260915b">
+    <link rel="stylesheet" href="/css/common.css?v=20260915d">
+    <link rel="stylesheet" href="/css/home.css?v=20260915d">
+    <link rel="stylesheet" href="/css/account.css?v=20260915d">
 </head>
 <body>
 <header class="topbar">
@@ -246,9 +246,9 @@
 
 </main>
 
-<script src="/js/common.js?v=20260915b"></script>
-<script src="/js/date-picker.js?v=20260915b"></script>
-<script src="/js/home.js?v=20260915b"></script>
+<script src="/js/common.js?v=20260915d"></script>
+<script src="/js/date-picker.js?v=20260915d"></script>
+<script src="/js/home.js?v=20260915d"></script>
 <script>
     /* 全站功能入口：与顶部导航同一套，两种运行模式共用（第 4 项是内联图标，不转义） */
     var QUICK = [
@@ -286,29 +286,83 @@
     }
 
     /** 指数行情带：拿不到数据就整块不显示，不留空壳 */
+    var TAPE_INTERVAL = 3000;   // 行情带刷新间隔
+    var tapeNodes = null;       // code -> {point, chg, amt}；null 表示还没建过
+
+    /** 涨跌配色：红涨绿跌，0 或取不到值走中性色 */
+    function tapeDir(pct) {
+        var n = Number(pct);
+        return (isNaN(n) || n === 0) ? 'flat' : (n > 0 ? 'up' : 'down');
+    }
+
+    /**
+     * 刷一遍行情带。
+     *
+     * 第一次把 DOM 建出来，之后只改数字、不整块重建 —— 每 3 秒重建一次的话，
+     * 价格会闪、鼠标正悬停在某一格上时状态也会丢。
+     * 只有指数集合本身变了（多一条 / 少一条）才重建结构。
+     */
+    function paintTape(list) {
+        var box = document.getElementById('tape');
+        var nodeCount = tapeNodes ? Object.keys(tapeNodes).length : -1;
+        var same = nodeCount === list.length
+            && list.every(function (x) { return tapeNodes[x.code]; });
+        if (!same) {
+            box.innerHTML = '';
+            tapeNodes = {};
+            list.forEach(function (x) {
+                var item = document.createElement('div');
+                item.className = 'tape-item';
+                var name = document.createElement('div');
+                name.className = 'tape-name';
+                name.textContent = x.name;
+                var point = document.createElement('div');
+                point.className = 'tape-point';
+                var chg = document.createElement('div');
+                chg.className = 'tape-chg';
+                // 海外指数没有成交额，这个格子留着但不占位（下面按 amount 有无切换 hidden）
+                var amt = document.createElement('div');
+                amt.className = 'tape-amt';
+                item.appendChild(name);
+                item.appendChild(point);
+                item.appendChild(chg);
+                item.appendChild(amt);
+                box.appendChild(item);
+                tapeNodes[x.code] = {point: point, chg: chg, amt: amt};
+            });
+        }
+        list.forEach(function (x) {
+            var n = tapeNodes[x.code];
+            if (!n) return;
+            var dir = tapeDir(x.changePercent);
+            n.point.className = 'tape-point ' + dir;
+            n.point.textContent = fmtNum(x.point, 2);
+            n.chg.className = 'tape-chg ' + dir;
+            n.chg.innerHTML = signed(x.change, 2) + ' <b>' + signed(x.changePercent, 2) + '%</b>';
+            n.amt.textContent = x.amount ? '成交 ' + fmtVol(x.amount) : '';
+            n.amt.hidden = !x.amount;
+        });
+        box.hidden = false;
+    }
+
     async function loadIndices() {
         try {
             var r = await get('/api/market/indices');
             var list = (r && r.success && r.data) ? r.data : [];
             if (!list.length) return;
-            document.getElementById('tape').innerHTML = list.map(function (x) {
-                var pct = Number(x.changePercent);
-                var dir = isNaN(pct) || pct === 0 ? 'flat' : (pct > 0 ? 'up' : 'down');
-                return '<div class="tape-item">'
-                    + '<div class="tape-name">' + esc(x.name) + '</div>'
-                    + '<div class="tape-point ' + dir + '">' + fmtNum(x.point, 2) + '</div>'
-                    + '<div class="tape-chg ' + dir + '">' + signed(x.change, 2)
-                    + ' <b>' + signed(x.changePercent, 2) + '%</b></div>'
-                    // 海外指数没有成交额，这一行整体不渲染，不留「成交 -」空壳
-                    + (x.amount ? '<div class="tape-amt">成交 ' + fmtVol(x.amount) + '</div>' : '')
-                    + '</div>';
-            }).join('');
-            document.getElementById('tape').hidden = false;
+            paintTape(list);
             document.getElementById('heroLive').hidden = false;
-            document.getElementById('tapeTime').textContent = new Date().toTimeString().slice(0, 8);
         } catch (e) {
             /* 行情拿不到不影响首页其它功能，静默即可 */
         }
+    }
+
+    /** 背景行情上的时间：每秒走一格，跟本机时钟对齐 */
+    function startTapeClock() {
+        var el = document.getElementById('tapeTime');
+        var tick = function () { el.textContent = new Date().toTimeString().slice(0, 8); };
+        tick();
+        setInterval(tick, 1000);
     }
 
     /**
@@ -380,6 +434,9 @@
 
     (async function () {
         loadIndices();
+        // 行情带自己按固定间隔刷：不跟着整页刷新走，价格才是「在动」的
+        setInterval(loadIndices, TAPE_INTERVAL);
+        startTapeClock();
         await loadMode();
         renderQuick(QUICK);
         // 登录态要在账户取数之前拿到：未登录时这块整块不显示

@@ -17,7 +17,9 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 大盘指数行情：一次请求取回首页顶部的几个主要指数。
@@ -44,10 +46,12 @@ public class MarketIndexService {
     private static final Logger log = LoggerFactory.getLogger(MarketIndexService.class);
 
     /**
-     * 缓存时长：指数刷新没必要比这个更快，也能挡住连续 F5。
+     * 缓存时长：首页那条行情带每 3 秒拉一次，缓存必须比它短，否则轮询拿到的永远是同一份旧值。
+     * 取 2 秒 —— 比页面的 3 秒间隔略短，既保证每次轮询都真取到新数，又能把
+     * 「多开几个标签页 / 多人同时看首页」的并发压成最多每 2 秒一次上游请求。
      * 两个来源共用这个时长，但各自算各自的过期时间。
      */
-    private static final long CACHE_MS = 20_000L;
+    private static final long CACHE_MS = 2_000L;
     private static final int TIMEOUT_MS = 3000;
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -85,22 +89,36 @@ public class MarketIndexService {
     /**
      * 海外指数：{东财 secid, 页面展示名}，数组顺序就是页面上的展示顺序。
      *
-     * <p>展示名按页面口径固定，不直接用东财的「日经225 / 韩国KOSPI / 纳斯达克」，
+     * <p>展示名按需求口径固定，不直接用东财的「日经225 / 韩国KOSPI / 纳斯达克」，
      * 免得和国内那几条的命名风格打架；点位本身仍以接口值为准。
+     *
+     * <p><b>费城半导体指数（SOX）不在东财的国际指数板块里</b> —— 板块
+     * <code>fs=m:100</code> 全量 63 条里没有它，<code>100.SOX</code> 也查不到数据。
+     * 它的 secid 是 <code>251.SOX</code>（搜索接口回的 QuoteID，MktNum=251），
+     * 与其它国际指数不同市场，但同一个 ulist 接口能一次取回，所以混在这一组里没有额外代价。
      */
     private static final String[][] OVERSEAS = {
-            {"100.N225", "日经指数"},
-            {"100.KS11", "韩国综合指数"},
-            {"100.SPX", "标普500"},
-            {"100.NDX", "纳斯达克"},
+            {"100.SPX", "标普500指数"},
+            {"100.NDX", "纳斯达克指数"},
+            {"251.SOX", "费城半导体指数"},
+            {"100.N225", "日经225"},
+            {"100.KS11", "韩国综指"},
     };
 
     private final ObjectMapper mapper = new ObjectMapper();
+
+    /**
+     * 失败日志节流：首页那条带子每 3 秒来一次，上游不通时若每次都打，
+     * 一天能刷出几万行日志把 app.log 撑爆。同一边一分钟最多报一条，够定位问题。
+     */
+    private static final long WARN_THROTTLE_MS = 60_000L;
 
     private volatile List<MarketIndex> domesticCache;
     private volatile long domesticAt;
     private volatile List<MarketIndex> overseasCache;
     private volatile long overseasAt;
+    private volatile long domesticWarnAt;
+    private volatile long overseasWarnAt;
 
     /** 指数快照：国内在前、海外在后；某个来源取不到时只影响它自己那一段 */
     public List<MarketIndex> indices() {
@@ -113,29 +131,30 @@ public class MarketIndexService {
     private List<MarketIndex> domestic() {
         long now = System.currentTimeMillis();
         List<MarketIndex> hit = domesticCache;
-        if (hit != null && now - domesticAt < CACHE_MS) {
-            return hit;
+        if (now - domesticAt < CACHE_MS) {
+            return hit == null ? Collections.<MarketIndex>emptyList() : hit;
         }
         List<MarketIndex> fresh = fetchDomestic();
+        // 取不到也记时间戳：首页每 3 秒轮询一次，不盖这个戳就会变成
+        // 「只要上游不通，每个访客每 3 秒都真打一次上游」。旧值留着继续用。
+        domesticAt = now;
         if (!fresh.isEmpty()) {
             domesticCache = fresh;
-            domesticAt = now;
             return fresh;
         }
-        // 这次没取到：有旧值就先给旧的，没有就空着让前端隐藏
         return hit == null ? Collections.<MarketIndex>emptyList() : hit;
     }
 
     private List<MarketIndex> overseas() {
         long now = System.currentTimeMillis();
         List<MarketIndex> hit = overseasCache;
-        if (hit != null && now - overseasAt < CACHE_MS) {
-            return hit;
+        if (now - overseasAt < CACHE_MS) {
+            return hit == null ? Collections.<MarketIndex>emptyList() : hit;
         }
         List<MarketIndex> fresh = fetchOverseas();
+        overseasAt = now;
         if (!fresh.isEmpty()) {
             overseasCache = fresh;
-            overseasAt = now;
             return fresh;
         }
         return hit == null ? Collections.<MarketIndex>emptyList() : hit;
@@ -150,8 +169,7 @@ public class MarketIndexService {
         try {
             body = doGet(url, SINA_REFERER, SINA_CHARSET);
         } catch (IOException e) {
-            log.warn("[market] 国内指数行情调用失败 url={} 耗时 {} ms err={}",
-                    url, System.currentTimeMillis() - begin, e.getMessage());
+            warnThrottled(true, url, System.currentTimeMillis() - begin, e);
             return Collections.emptyList();
         }
         List<MarketIndex> out = new ArrayList<>(DOMESTIC_CODES.length);
@@ -161,7 +179,7 @@ public class MarketIndexService {
                 out.add(mi);
             }
         }
-        log.info("[market] 国内指数取回 {} 条，耗时 {} ms", out.size(), System.currentTimeMillis() - begin);
+        log.debug("[market] 国内指数取回 {} 条，耗时 {} ms", out.size(), System.currentTimeMillis() - begin);
         return out;
     }
 
@@ -179,15 +197,29 @@ public class MarketIndexService {
         try {
             body = doGet(url, EM_REFERER, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            log.warn("[market] 海外指数行情调用失败 url={} 耗时 {} ms err={}",
-                    url, System.currentTimeMillis() - begin, e.getMessage());
+            warnThrottled(false, url, System.currentTimeMillis() - begin, e);
             return Collections.emptyList();
         }
         List<MarketIndex> out = new ArrayList<>(OVERSEAS.length);
         try {
             JsonNode diff = mapper.readTree(body).path("data").path("diff");
+            // 先按代码归位，再按 OVERSEAS 的顺序取 —— 接口回的次序不保证稳定，
+            // 直接照它遍历会让首页那几条指数的排列顺序跟着上游变。
+            Map<String, JsonNode> byCode = new HashMap<>();
             for (JsonNode node : diff) {
-                MarketIndex mi = parseEmNode(node);
+                String code = node.path("f12").asText("");
+                if (!code.isEmpty()) {
+                    byCode.put(code, node);
+                }
+            }
+            for (String[] item : OVERSEAS) {
+                int dot = item[0].indexOf('.');
+                String code = dot < 0 ? item[0] : item[0].substring(dot + 1);
+                JsonNode node = byCode.get(code);
+                if (node == null) {
+                    continue;
+                }
+                MarketIndex mi = parseEmNode(node, item[0], item[1]);
                 if (mi != null) {
                     out.add(mi);
                 }
@@ -196,8 +228,28 @@ public class MarketIndexService {
             log.warn("[market] 海外指数返回体解析失败 err={} body={}", e.getMessage(), body);
             return Collections.emptyList();
         }
-        log.info("[market] 海外指数取回 {} 条，耗时 {} ms", out.size(), System.currentTimeMillis() - begin);
+        log.debug("[market] 海外指数取回 {} 条，耗时 {} ms", out.size(), System.currentTimeMillis() - begin);
         return out;
+    }
+
+    /**
+     * 取数失败：一分钟最多报一条。
+     *
+     * @param domestic true 报国内（新浪）那一边，false 报海外（东财）那一边
+     */
+    private void warnThrottled(boolean domestic, String url, long cost, IOException e) {
+        long now = System.currentTimeMillis();
+        long last = domestic ? domesticWarnAt : overseasWarnAt;
+        if (now - last < WARN_THROTTLE_MS) {
+            return;
+        }
+        if (domestic) {
+            domesticWarnAt = now;
+        } else {
+            overseasWarnAt = now;
+        }
+        log.warn("[market] {}指数行情调用失败 url={} 耗时 {} ms err={}",
+                domestic ? "国内" : "海外", url, cost, e.getMessage());
     }
 
     private MarketIndex parseSinaLine(String line) {
@@ -233,21 +285,17 @@ public class MarketIndexService {
 
     /**
      * 东财单条：f12 代码 / f2 现价 / f3 涨跌幅 / f4 涨跌额。
+     * 展示名由调用方（OVERSEAS 那一行）给，不取接口里的 f14。
      * 海外指数没有成交额（f6 恒为 0），成交额位留空，前端据此不渲染那一行。
      */
-    private MarketIndex parseEmNode(JsonNode node) {
-        String code = node.path("f12").asText("");
+    private MarketIndex parseEmNode(JsonNode node, String secid, String displayName) {
         BigDecimal point = emNumber(node.get("f2"));
-        if (code.isEmpty() || point == null || point.signum() <= 0) {
+        if (point == null || point.signum() <= 0) {
+            // 点位为 0 / 无数据（东财用 "-" 表示）时不展示，与国内那半边同一口径
             return null;
         }
-        for (String[] item : OVERSEAS) {
-            if (item[0].endsWith("." + code)) {
-                return new MarketIndex(item[0], item[1], point,
-                        emNumber(node.get("f4")), emNumber(node.get("f3")), null);
-            }
-        }
-        return null;
+        return new MarketIndex(secid, displayName, point,
+                emNumber(node.get("f4")), emNumber(node.get("f3")), null);
     }
 
     /** 从 <code>var hq_str_sh000001="..."</code> 里取出 sh000001 */

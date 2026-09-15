@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -50,10 +51,8 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
     private final Environment env;
     private final ExecutorService sendPool;
 
-    /** 启动时的盯盘名单基线：code → 名称 */
-    private volatile Map<String, String> baselineStocks = new LinkedHashMap<>();
-    /** 启动时的告警规则基线：逐条 intervals@percent，保序 */
-    private volatile List<String> baselineRules = new ArrayList<>();
+    /** userId → 该用户上次推送时的名单与规则基线 */
+    private final Map<Long, Baseline> baselines = new ConcurrentHashMap<>();
 
     public WatchNotifier(WatchProperties props, WatchConfigStore store,
                          DingTalkNotifier notifier, Environment env) {
@@ -73,13 +72,22 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         });
     }
 
+    /** 一个用户的基线：上次推送时的名单（code → 名称）与规则签名 */
+    private static class Baseline {
+        final Map<String, String> stocks;
+        final List<String> rules;
+
+        Baseline(WatchSettings snap) {
+            this.stocks = toNameMap(snap.getStocks());
+            this.rules = ruleSignature(snap);
+        }
+    }
+
     @PostConstruct
     public void init() {
         // store 的启动 reload 通知发生在更早的 @PostConstruct，这里先记基线、再注册监听，
         // 这样启动那次不当作"变更"，后续页面改名单/规则才被识别为真实变更。
-        WatchSettings snap = store.snapshot();
-        baselineStocks = toNameMap(snap.getStocks());
-        baselineRules = ruleSignature(snap);
+        baselines.put(store.systemUserId(), new Baseline(store.snapshot()));
         store.addListener(this::onStoreChange);
     }
 
@@ -111,12 +119,21 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         String version = resolveVersion();
         log.info("[watch] 生产发布启动通知：版本 {}，标的 {} 只", version,
                 snap.getStocks() == null ? 0 : snap.getStocks().size());
-        dispatch(buildStartup(snap, version), "启动通知");
+        // 启动通知是给运维看的系统消息，固定进系统默认群（超管那份配置出口的机器人）
+        dispatch(buildStartup(snap, version), "启动通知", store.webhookOf(store.systemUserId()));
     }
 
-    /** store 变更回调：只在与启动基线不同的名单/规则变化时推送差异 */
-    private void onStoreChange(WatchSettings snap) {
-        if (!props.getDingtalk().configured()) {
+    /** store 变更回调：只在与该用户上次基线不同的名单/规则变化时，往他自己的群推差异 */
+    private void onStoreChange(long userId, WatchSettings snap) {
+        String webhook = store.webhookOf(userId);
+        if (webhook.isEmpty()) {
+            return;
+        }
+        Baseline base = baselines.get(userId);
+        if (base == null) {
+            // 第一次看到这个用户的配置（他刚落了一份）：只记基线，
+            // 跟启动通知同一个道理 —— 那不是"变更"，推出去会莫名其妙。
+            baselines.put(userId, new Baseline(snap));
             return;
         }
         Map<String, String> now = toNameMap(snap.getStocks());
@@ -124,21 +141,20 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         List<String> added = new ArrayList<>();
         List<String> removed = new ArrayList<>();
         for (Map.Entry<String, String> e : now.entrySet()) {
-            if (!baselineStocks.containsKey(e.getKey())) {
+            if (!base.stocks.containsKey(e.getKey())) {
                 added.add(nameLine(e.getKey(), e.getValue()));
             }
         }
-        for (Map.Entry<String, String> e : baselineStocks.entrySet()) {
+        for (Map.Entry<String, String> e : base.stocks.entrySet()) {
             if (!now.containsKey(e.getKey())) {
                 removed.add(nameLine(e.getKey(), e.getValue()));
             }
         }
-        boolean rulesChanged = !nowRules.equals(baselineRules);
+        boolean rulesChanged = !nowRules.equals(base.rules);
         if (added.isEmpty() && removed.isEmpty() && !rulesChanged) {
-            return; // 只动了 webhook / 开关 / 间隔，不属于「股票或规则变更」，不推
+            return; // 只动了机器人 / 开关 / 间隔，不属于「股票或规则变更」，不推
         }
-        baselineStocks = now;
-        baselineRules = nowRules;
+        baselines.put(userId, new Baseline(snap));
 
         StringBuilder sb = new StringBuilder("盯盘配置已变更\n");
         if (!added.isEmpty()) {
@@ -151,7 +167,7 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         if (rulesChanged) {
             sb.append("告警规则已更新：").append(ruleText(snap)).append('\n');
         }
-        dispatch(sb.toString().trim(), "配置变更通知");
+        dispatch(sb.toString().trim(), "配置变更通知", webhook);
     }
 
     /** 启动消息：【生产发布】+ 版本号 + IP + 服务地址 + 盯盘名单 + 告警规则 */
@@ -183,12 +199,12 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         return fromJar == null || fromJar.trim().isEmpty() ? "dev" : fromJar.trim();
     }
 
-    private void dispatch(String content, String kind) {
+    private void dispatch(String content, String kind, String webhook) {
         sendPool.execute(() -> {
-            if (notifier.send(content)) {
+            if (notifier.sendTo(webhook, content)) {
                 log.info("[watch] 已推送{}：{}", kind, content);
             } else {
-                log.warn("[watch] 钉钉未推送（webhook 未配置或调用失败），{}内容：{}", kind, content);
+                log.warn("[watch] 钉钉未推送（未配置机器人或调用失败），{}内容：{}", kind, content);
             }
         });
     }

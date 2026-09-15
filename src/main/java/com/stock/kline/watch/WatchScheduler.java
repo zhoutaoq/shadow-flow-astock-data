@@ -26,6 +26,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p><b>关键约束：只有「开关」和「间隔」真的变了才重排定时任务。</b>
  * 名单 / 规则 / 钉钉这些每轮都会从 {@link WatchConfigStore} 现读，改它们不影响本轮节奏。
  *
+ * <p><b>v1.5.2</b>：每个用户可以有自己的间隔，所以这里排的是「基础节拍」——
+ * 所有运行中的用户里最短的那个间隔；具体哪一拍轮到谁，由 {@link PriceWatchTask} 按
+ * 各用户自己的间隔判断。这样多人各自改间隔时，调度器只在「最短间隔」真的变了才重排。
+ *
  * <p>早先这里是无条件 {@code cancel() + 重排}，于是每保存一次配置都会把下一轮的倒计时
  * 清零 —— {@code scheduleWithFixedDelay} 的首次延迟是整个 interval，页面上连点几次「保存」，
  * 下一轮就被硬生生往后推 N 个间隔。线上实测：7s 间隔下，10:20:30/35/40/47 连存 4 次，
@@ -68,7 +72,7 @@ public class WatchScheduler {
 
     @PostConstruct
     public void start() {
-        store.addListener(settings -> apply());
+        store.addListener((userId, settings) -> apply());
         apply();
     }
 
@@ -81,15 +85,16 @@ public class WatchScheduler {
     /**
      * 按当前配置重排定时任务。
      *
-     * <p>只有开关或间隔变化时才动定时器；名单 / 规则 / 钉钉的变化由每轮现读兜住，
-     * 不重排才能保证「保存配置」不会打断正在走的这一轮节奏。
+     * <p>排的是「基础节拍」= 所有运行中用户里最短的轮询间隔（见 {@link WatchConfigStore#baseIntervalSeconds()}）；
+     * 只有这个节拍或「是否还有人在盯盘」变化时才动定时器 —— 名单 / 规则 / 某个人的间隔变化
+     * 由每轮现读兜住，不重排才能保证「保存配置」不会打断正在走的这一轮节奏。
      */
     public synchronized void apply() {
-        boolean enabled = store.isEnabled();
-        long seconds = Math.max(1, store.getIntervalSeconds());
+        boolean enabled = store.anyEnabled();
+        long seconds = Math.max(1, store.baseIntervalSeconds());
 
         if (applied && enabled == appliedEnabled && seconds == appliedInterval) {
-            log.debug("[watch] 配置变更与调度无关（间隔仍为 {}s），保持当前节奏", seconds);
+            log.debug("[watch] 配置变更与调度无关（基础节拍仍为 {}s），保持当前节奏", seconds);
             return;
         }
 
@@ -99,7 +104,7 @@ public class WatchScheduler {
         appliedInterval = seconds;
 
         if (!enabled) {
-            log.info("[watch] 盯盘开关已关闭，停止调度");
+            log.info("[watch] 没有运行中的盯盘配置，停止调度");
             return;
         }
         future = exec.scheduleWithFixedDelay(() -> {
@@ -109,7 +114,7 @@ public class WatchScheduler {
                 log.warn("[watch] 盯盘执行异常: {}", e.getMessage());
             }
         }, seconds, seconds, TimeUnit.SECONDS);
-        log.info("[watch] 盯盘调度已生效：每 {} 秒一轮", seconds);
+        log.info("[watch] 盯盘调度已生效：基础节拍每 {} 秒一拍，各用户按自己的间隔跑", seconds);
     }
 
     private void cancel() {

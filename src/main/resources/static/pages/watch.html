@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>盯盘</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260915b">
-    <link rel="stylesheet" href="/css/watch.css?v=20260915b">
+    <link rel="stylesheet" href="/css/common.css?v=20260915d">
+    <link rel="stylesheet" href="/css/watch.css?v=20260915d">
 </head>
 <body>
 <header class="topbar">
@@ -91,6 +91,7 @@
                 <header class="wcard-hd">
                     <span class="wcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3L11 14"/><path d="M22 3l-7 18-4-7-7-4z"/></svg></span>
                     <h2>推送</h2>
+                    <span class="wcard-note" id="pushTarget"></span>
                 </header>
                 <div class="wcard-bd">
                     <div class="field">
@@ -139,8 +140,8 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260915b"></script>
-<script src="/js/stock-picker.js?v=20260915b"></script>
+<script src="/js/common.js?v=20260915d"></script>
+<script src="/js/stock-picker.js?v=20260915d"></script>
 <script>
     let picker = null;
     let cfg = null;
@@ -197,6 +198,10 @@
     function renderDingtalk() {
         const dt = cfg.dingtalk || {};
         document.getElementById('fWebhook').value = dt.webhook || '';
+        // 这条配置的告警会进哪个群：自己配了就进自己的，没配才落到默认群
+        document.getElementById('pushTarget').textContent = !dt.targetConfigured
+            ? '未配置机器人'
+            : (dt.ownGroup ? '推送到我的群' : '推送到默认群');
     }
 
     /** 回显放量阈值：cfg.surge 缺失（老落盘文件）时用默认 2000 万 / 10 倍 */

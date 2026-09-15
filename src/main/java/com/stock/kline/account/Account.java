@@ -3,9 +3,13 @@ package com.stock.kline.account;
 import java.math.BigDecimal;
 
 /**
- * 用户账户：一人一条，记录账户期初市值与可用金额。
+ * 账户：一个用户可以有多本账（需求 v1.5.2 第 ④ 条，参考同花顺「一级账户、二级持仓」）。
  *
- * <p>口径（需求 v1.5.1 第 ③ 条）：
+ * <p>一个账户 = 一套独立的期初市值 / 可用金额 / 持仓 / 操作记录。
+ * 账户之间完全隔离：在「A 账户」买入不会影响「B 账户」的持仓与余额，
+ * 盯盘名单仍然挂在用户维度（同一只标的在哪个账户里都是同一份行情）。
+ *
+ * <p>口径（沿用需求 v1.5.1 第 ③ 条）：
  * <ul>
  *   <li><b>期初市值</b> initValue —— 用户自己填的账户本金基准，总收益 = 当前总市值 - 期初市值；</li>
  *   <li><b>可用金额</b> cash —— 买入按「成本价 × 数量」扣减、卖出按「成本价 × 数量」加回。
@@ -18,8 +22,12 @@ import java.math.BigDecimal;
  */
 public class Account {
 
+    /** 账户 id：同一个用户下唯一，新建账户时由仓储分配 */
+    private long id;
     /** 归属用户 id */
     private long userId;
+    /** 账户名称：同一用户下不重名 */
+    private String name;
     /** 账户期初市值（元） */
     private BigDecimal initValue = BigDecimal.ZERO;
     /** 可用金额（元） */
@@ -29,12 +37,28 @@ public class Account {
     private String createTime;
     private String updateTime;
 
+    public long getId() {
+        return id;
+    }
+
+    public void setId(long id) {
+        this.id = id;
+    }
+
     public long getUserId() {
         return userId;
     }
 
     public void setUserId(long userId) {
         this.userId = userId;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
     }
 
     public BigDecimal getInitValue() {

@@ -72,8 +72,20 @@ public class DingTalkNotifier {
      * @return 是否推送成功（webhook 未配置时返回 false，由调用方决定是否记日志）
      */
     public boolean send(String content) {
-        return post(props.getDingtalk().getWebhook(),
-                keywordTag() + " " + LocalDateTime.now().format(TS) + " " + content);
+        return sendTo(props.getDingtalk().getWebhook(), content);
+    }
+
+    /**
+     * 推送一条盯盘文本消息到<b>指定</b>的机器人，前缀口径与 {@link #send(String)} 完全一致。
+     *
+     * <p>v1.5.2 起盯盘按用户维度跑：每个用户有自己的名单与会话，消息自然要进各自的群，
+     * 所以推送目标由调用方（取该用户配置里的 webhook）给，而不是只认全局那一个。
+     *
+     * @param webhook 目标机器人地址；留空表示未配置，返回 false
+     * @return 是否推送成功
+     */
+    public boolean sendTo(String webhook, String content) {
+        return post(webhook, keywordTag() + " " + LocalDateTime.now().format(TS) + " " + content);
     }
 
     /**

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>实时通知配置 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260915b">
+    <link rel="stylesheet" href="/css/common.css?v=20260915d">
 </head>
 <body>
 <header class="topbar">
@@ -19,8 +19,7 @@
     <section class="panel" id="tokenPanel" style="display:none">
         <h2 style="margin:0 0 4px">我的数据接口令牌</h2>
         <div class="sp-hint">
-            令牌只存在服务端、记在你的账号下：抓数时用「发起这一请求的人」自己的令牌，
-            没配过则回落到系统级默认令牌（盯盘等后台任务没有登录态，用的就是系统级那一份）。
+            令牌记在你的账号下：抓数时用你自己保存的这一份，没填过就用公共的那份。
         </div>
         <div class="form-row" style="margin-top:12px">
             <div class="field grow">
@@ -122,7 +121,7 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=20260915b"></script>
+<script src="/js/common.js?v=20260915d"></script>
 <script>
     /** 需要遮蔽显示的键：值里是令牌/口令 */
     function isSecretKey(key) {
@@ -187,11 +186,9 @@
     }
 
     function renderSysTokenState() {
-        document.getElementById('fSysCur').value = sysToken
-            ? maskValue(sysToken)
-            : '（未配置，回落到 application.yml 里的 waizao.api.token）';
+        document.getElementById('fSysCur').value = sysToken ? maskValue(sysToken) : '（未配置）';
         document.getElementById('sysTokenState').innerHTML =
-            '这一份落在配置表的「归属用户 = 0」那行，改完立即生效，不用重启。';
+            '这一份所有账号共用，保存后马上生效。';
     }
 
     function render() {

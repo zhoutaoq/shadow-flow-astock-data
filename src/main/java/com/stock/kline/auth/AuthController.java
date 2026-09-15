@@ -74,6 +74,9 @@ public class AuthController {
      *
      * <p>匿名访问也返回 200，用 {@code loggedIn} 区分 —— 前端每个页面都要问一次，
      * 返回 401 会在控制台刷一片红。
+     *
+     * <p>代理登录中额外返回 {@code impersonator}（代理者的用户名）：每个页面的顶栏都要
+     * 显示一条「正在以谁的身份查看 + 退出」，所以这个信息必须从这里就能拿到。
      */
     @GetMapping("/me")
     public ApiResponse<Map<String, Object>> me(
@@ -87,10 +90,49 @@ public class AuthController {
             u.setUsername(s.getUsername());
             u.setRole(s.getRole());
             data.put("user", UserView.of(u));
+            if (s.isImpersonated()) {
+                Map<String, Object> imp = new LinkedHashMap<>();
+                imp.put("id", s.getImpersonatorId());
+                imp.put("username", s.getImpersonatorUsername());
+                data.put("impersonator", imp);
+            }
         }
         data.put("registrationEnabled", authService.registrationEnabled());
         data.put("rules", AuthService.rules());
         return ApiResponse.ok(data);
+    }
+
+    /**
+     * 退出代理登录：把超管原来的令牌还回去，并作废这次代理的登录态。
+     *
+     * <p>只有「本来就处在代理中」的登录态能调它 —— 令牌里记着代理者的用户 id 与原令牌，
+     * 普通登录（包括被代理的那个用户自己登录）调它只会得到一句拒绝。
+     */
+    @PostMapping("/impersonate/stop")
+    public ApiResponse<Map<String, Object>> stopImpersonate(
+            @RequestHeader(value = AuthInterceptor.TOKEN_HEADER, required = false) String token) {
+        SessionService.Session s = sessions.get(token);
+        if (s == null || !s.isImpersonated()) {
+            return ApiResponse.fail("当前不在代理登录中");
+        }
+        SessionService.Session back = sessions.get(s.getImpersonatorToken());
+        if (back == null) {
+            // 超管自己的登录态已经过期 / 已登出：代理态直接作废，让操作者重新登录
+            sessions.remove(token);
+            return ApiResponse.fail("原账号的登录已失效，请重新登录");
+        }
+        sessions.remove(token);
+        log.info("[auth] {} 退出代理登录（代理 {}），已还原为 {}",
+                s.getImpersonatorUsername(), s.getUsername(), back.getUsername());
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("token", back.getToken());
+        User u = new User();
+        u.setId(back.getUserId());
+        u.setUsername(back.getUsername());
+        u.setRole(back.getRole());
+        data.put("user", UserView.of(u));
+        return ApiResponse.ok(data, "已退出代理登录");
     }
 
     /** 本人改密：需要原密码 */

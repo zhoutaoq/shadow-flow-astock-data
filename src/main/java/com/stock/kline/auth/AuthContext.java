@@ -16,6 +16,8 @@ public final class AuthContext {
 
     /** request 属性名 */
     public static final String ATTR_USER = "auth.currentUser";
+    /** 代理登录时，代理者（超管）的用户：request 属性名 */
+    public static final String ATTR_IMPERSONATOR = "auth.impersonator";
 
     private AuthContext() {
     }
@@ -40,5 +42,25 @@ public final class AuthContext {
     public static boolean isAdmin() {
         User u = current();
         return u != null && u.isAdmin();
+    }
+
+    /**
+     * 代理登录中的代理者（超管）；不在代理中返回 null。
+     *
+     * <p>注意 {@link #current()} 给的是<b>被代理的那个用户</b> —— 这是故意的：
+     * 所有按用户取数的接口都该按目标用户走。代理者身份只用于退出代理与日志留痕。
+     */
+    public static User impersonator() {
+        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
+        if (attrs == null) {
+            return null;
+        }
+        Object v = attrs.getAttribute(ATTR_IMPERSONATOR, RequestAttributes.SCOPE_REQUEST);
+        return v instanceof User ? (User) v : null;
+    }
+
+    /** 是否正处于代理登录中 */
+    public static boolean isImpersonating() {
+        return impersonator() != null;
     }
 }

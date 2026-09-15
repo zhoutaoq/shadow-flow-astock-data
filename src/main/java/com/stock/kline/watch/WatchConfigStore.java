@@ -12,17 +12,18 @@ import org.springframework.stereotype.Component;
 import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Consumer;
 
 /**
  * 盯盘配置的唯一来源：<b>每个用户一份</b>，内存里留一份，落盘一份 JSON。
@@ -30,8 +31,8 @@ import java.util.function.Consumer;
  * <p>v1.3 起盯盘配置跟着账号走（SaaS 化的第一步）：
  * <ul>
  *   <li>落盘位置 {@code ./data/watch/watch-{userId}.json}；</li>
- *   <li><b>系统默认配置绑定在 admin 账号上</b> —— 后台轮询、钉钉推送都只认这一份，
- *       普通用户改自己的配置不会影响别人的告警；</li>
+ *   <li>超管那份同时是「系统默认配置」：系统级推送（启动通知、用户反馈兜底）
+ *       与未自配机器人的用户都走它的 webhook；</li>
  *   <li>老版本的 {@code watch-config.json} 在首次启动时自动迁成超管的配置。</li>
  * </ul>
  *
@@ -49,7 +50,11 @@ import java.util.function.Consumer;
  * <p>页面保存时先改内存再落盘：内存这步保证「保存完立刻生效」，
  * 落盘这步保证重启后还在。落盘失败不影响本次生效，只记日志。
  *
- * <p><b>v1.2 兼容</b>：老落盘文件只有 <code>thresholdPercent</code>，没有 <code>rules</code>；
+ * <p>v1.5.2 起<b>每个配置独立生效</b>：不是只有超管那一份被后台轮询，
+ * 谁开了盯盘、谁配了名单，谁就按自己的节奏被轮询，告警进自己配的机器人 ——
+ * 所以本类对外按 {@code userId} 提供取用接口（{@link #activeUserIds()} 是入口）。
+ *
+ * <p>v1.2 兼容：老落盘文件只有 <code>thresholdPercent</code>，没有 <code>rules</code>；
  * 解析时把旧字段重塑成 1 条规则，让旧数据无缝迁移。
  */
 @Component
@@ -60,6 +65,8 @@ public class WatchConfigStore {
     /** 每个用户一个落盘文件：watch/watch-{userId}.json */
     private static final String FILE_PREFIX = "watch/watch-";
     private static final String FILE_SUFFIX = ".json";
+    /** 落盘文件的文件名前缀（不含目录），扫目录时用它认「哪些用户配过盯盘」 */
+    private static final String FILE_NAME_PREFIX = "watch-";
     /** 老版本（v1.2 / v1.3 早期）的落盘文件名，作为超管配置的迁移来源 */
     private static final String LEGACY_FILE_NAME = "watch-config.json";
     /** admin 账号还没建出来时的兜底 id：超管总是第一个用户 */
@@ -94,7 +101,7 @@ public class WatchConfigStore {
     private final ObjectProvider<WatchListLoader> loaderProvider;
     private final ObjectMapper mapper = new ObjectMapper();
     private final ObjectWriter writer = new ObjectMapper().writerWithDefaultPrettyPrinter();
-    private final List<Consumer<WatchSettings>> listeners = new CopyOnWriteArrayList<>();
+    private final List<ChangeListener> listeners = new CopyOnWriteArrayList<>();
 
     /** userId → 该用户的配置 */
     private final ConcurrentMap<Long, WatchSettings> byUser = new ConcurrentHashMap<>();
@@ -111,6 +118,18 @@ public class WatchConfigStore {
         this.loaderProvider = loaderProvider;
     }
 
+    /**
+     * 配置变更回调：<b>谁改的</b>和改成什么一起给出来。
+     *
+     * <p>v1.5.2 之前只有一个（超管的）配置会被后台消费，回调不带用户也能用；
+     * 现在每个用户的变更都要各自落地 —— 调度器要按各自间隔重排、
+     * 通知器要往各自的群推变更说明，所以用户 id 是必需的。
+     */
+    @FunctionalInterface
+    public interface ChangeListener {
+        void onChanged(long userId, WatchSettings settings);
+    }
+
     @PostConstruct
     public void init() {
         reload();
@@ -122,15 +141,104 @@ public class WatchConfigStore {
         long uid = defaultUserId();
         WatchSettings s = loadOrDefaults(uid);
         byUser.put(uid, s);
-        // 系统推送只认超管那份配置
+        // 系统级推送（启动通知、用户反馈兜底）认超管那份的 webhook
         writeDingtalkBack(s);
-        notifyListeners();
+        notifyListeners(uid, copy(s));
         log.info("[watch] 系统默认盯盘配置（{}）已载入 {}：开关 {}，间隔 {}s，{} 条规则，{} 只标的",
                 authService.adminUsername(), fileOf(uid), s.isEnabled(), s.getIntervalSeconds(),
                 s.getRules().size(), s.getStocks().size());
     }
 
+    /* ---------------- 哪些用户在盯盘（后台轮询的入口） ---------------- */
+
+    /**
+     * 需要后台轮询的用户：<b>开了盯盘开关、且名单非空</b>的那些，按 id 升序，超管恒在首位。
+     *
+     * <p>「配过盯盘的用户」以 <code>./data/watch/watch-{id}.json</code> 是否存在为准 ——
+     * 不能拿全站用户列表去逐个 {@link #get(long)}，那会给没配过的用户凭空落一份空配置。
+     *
+     * <p>超管那份单独补进来：它即使名单为空也要参与，
+     * 因为它同时是系统级推送（启动通知 / 用户反馈）的出口。
+     */
+    public synchronized List<Long> activeUserIds() {
+        long admin = defaultUserId();
+        Set<Long> ids = new LinkedHashSet<>();
+        for (long id : userIdsOnDisk()) {
+            WatchSettings s = get(id);
+            if (s.isEnabled() && !s.getStocks().isEmpty()) {
+                ids.add(id);
+            }
+        }
+        if (get(admin).isEnabled()) {
+            ids.add(admin);
+        }
+        List<Long> out = new ArrayList<>(ids);
+        Collections.sort(out);
+        // 超管排最前：它是系统默认那份，日志与推送顺序上都该先出现
+        out.remove(admin);
+        out.add(0, admin);
+        return out;
+    }
+
+    /** 有独立盯盘配置的用户是否至少有一个在运行 */
+    public synchronized boolean anyEnabled() {
+        for (long id : activeUserIds()) {
+            if (get(id).isEnabled()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 所有运行中的用户里最短的轮询间隔，作为调度器的基础节拍。
+     *
+     * <p>每个用户可以有自己的间隔，调度器只按这个最短值醒来，
+     * 具体某一轮轮到谁，由 {@code PriceWatchTask} 按各自的间隔自行判断。
+     */
+    public synchronized long baseIntervalSeconds() {
+        long min = -1;
+        for (long id : activeUserIds()) {
+            long v = Math.max(MIN_INTERVAL, get(id).getIntervalSeconds());
+            if (min < 0 || v < min) {
+                min = v;
+            }
+        }
+        return min < 0 ? Math.max(MIN_INTERVAL, get(defaultUserId()).getIntervalSeconds()) : min;
+    }
+
+    /** 扫描落盘目录，认出所有配过盯盘的用户 id（文件不存在就代表没配过） */
+    private List<Long> userIdsOnDisk() {
+        List<Long> out = new ArrayList<>();
+        Path dir = dataDir.root().resolve("watch");
+        if (!Files.isDirectory(dir)) {
+            return out;
+        }
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, FILE_NAME_PREFIX + "*.json")) {
+            for (Path p : ds) {
+                String name = p.getFileName().toString();
+                String mid = name.substring(FILE_NAME_PREFIX.length(), name.length() - FILE_SUFFIX.length());
+                if (mid.isEmpty() || !mid.chars().allMatch(Character::isDigit)) {
+                    continue;
+                }
+                try {
+                    out.add(Long.parseLong(mid));
+                } catch (NumberFormatException ignore) {
+                    // 文件名里数字超长，不可能是合法用户 id，跳过
+                }
+            }
+        } catch (IOException e) {
+            log.warn("[watch] 扫描盯盘配置目录失败 {}：{}", dir, e.getMessage());
+        }
+        return out;
+    }
+
     /* ---------------- 系统默认配置 = 超管的配置 ---------------- */
+
+    /** 系统默认配置归属的用户 id（超管）；系统级通知（启动通知）就推这个人的群 */
+    public long systemUserId() {
+        return defaultUserId();
+    }
 
     /** 系统默认配置（超管的）快照 */
     public synchronized WatchSettings snapshot() {
@@ -147,16 +255,12 @@ public class WatchConfigStore {
 
     /** 多规则快照（外部只读，不要 push 进来） */
     public synchronized List<WatchSettings.Rule> rules() {
-        List<WatchSettings.Rule> out = new ArrayList<>();
-        for (WatchSettings.Rule r : get(defaultUserId()).getRules()) {
-            out.add(new WatchSettings.Rule(r.getIntervals(), r.getPercent()));
-        }
-        return out;
+        return rulesOf(defaultUserId());
     }
 
     /** 放量阈值的快照（外部只读，不要 push 进来） */
     public synchronized WatchSettings.SurgeCfg surge() {
-        return copySurge(get(defaultUserId()).getSurge());
+        return surgeOf(defaultUserId());
     }
 
     /** 盯盘标的（供轮询使用）；名称缺失时按名录补一次 */
@@ -169,6 +273,55 @@ public class WatchConfigStore {
         return getFile(defaultUserId());
     }
 
+    /* ---------------- 按用户取用的只读快照 ---------------- */
+
+    /** 某个用户此刻在跑的盯盘标的；名称缺失时按名录补一次 */
+    public synchronized List<WatchTarget> targetsOf(long userId) {
+        return toTargets(get(userId));
+    }
+
+    public synchronized boolean enabledOf(long userId) {
+        return get(userId).isEnabled();
+    }
+
+    public synchronized long intervalOf(long userId) {
+        return get(userId).getIntervalSeconds();
+    }
+
+    /** 某个用户的告警规则快照（外部只读，不要 push 进来） */
+    public synchronized List<WatchSettings.Rule> rulesOf(long userId) {
+        List<WatchSettings.Rule> out = new ArrayList<>();
+        for (WatchSettings.Rule r : get(userId).getRules()) {
+            out.add(new WatchSettings.Rule(r.getIntervals(), r.getPercent()));
+        }
+        return out;
+    }
+
+    /** 某个用户的放量阈值快照 */
+    public synchronized WatchSettings.SurgeCfg surgeOf(long userId) {
+        return copySurge(get(userId).getSurge());
+    }
+
+    /**
+     * 这个用户的告警该推到哪：本人配了机器人就用本人的，没配才落到系统默认那个。
+     *
+     * <p>不配也照推是为了不让告警凭空消失 —— 页面上的「钉钉机器人」留空就是「用默认群」的意思。
+     */
+    public synchronized String webhookOf(long userId) {
+        String own = get(userId).getDingtalk() == null ? null : get(userId).getDingtalk().getWebhook();
+        if (own != null && !own.trim().isEmpty()) {
+            return own.trim();
+        }
+        String sys = props.getDingtalk().getWebhook();
+        return sys == null || sys.trim().isEmpty() ? "" : sys.trim();
+    }
+
+    /** 这个用户是否配了自己的机器人（页面据此显示推送目标） */
+    public synchronized boolean hasOwnWebhook(long userId) {
+        String own = get(userId).getDingtalk() == null ? null : get(userId).getDingtalk().getWebhook();
+        return own != null && !own.trim().isEmpty();
+    }
+
     /* ---------------- 按用户读写 ---------------- */
 
     /** 当前配置的一份拷贝，外部改它不会影响内存里的值 */
@@ -179,8 +332,9 @@ public class WatchConfigStore {
     /**
      * 保存某个用户的配置：先更新内存（立刻生效），再落盘。
      *
-     * <p>只有改的是超管那份（系统默认）才回写钉钉、通知调度器重排 ——
-     * 普通用户改自己的名单不该把别人的轮询节奏也带偏。
+     * <p>超管那份额外回写全局 webhook（它是系统级推送的出口）。
+     * 任何用户的变更都会通知监听方 —— 调度器按新的基础节拍重排、
+     * 通知器把变更说明推到<b>改配置那个人自己的群</b>。
      *
      * @return 校验并规范化后的最新配置
      */
@@ -202,9 +356,7 @@ public class WatchConfigStore {
             writeDingtalkBack(incoming);
         }
         persist(userId, incoming);
-        if (systemDefault) {
-            notifyListeners();
-        }
+        notifyListeners(userId, copy(incoming));
         log.info("[watch] 用户 {} 的盯盘配置已更新：开关 {}，间隔 {}s，{} 条规则，{} 只标的",
                 userId, incoming.isEnabled(), incoming.getIntervalSeconds(),
                 incoming.getRules().size(), incoming.getStocks().size());
@@ -216,8 +368,8 @@ public class WatchConfigStore {
         return fileOf(userId);
     }
 
-    /** 配置变更监听（调度器用它重排定时任务） */
-    public void addListener(Consumer<WatchSettings> listener) {
+    /** 配置变更监听（调度器用它重排定时任务，通知器用它推变更说明） */
+    public void addListener(ChangeListener listener) {
         if (listener != null) {
             listeners.add(listener);
         }
@@ -280,11 +432,10 @@ public class WatchConfigStore {
         return FALLBACK_ADMIN_ID;
     }
 
-    private void notifyListeners() {
-        WatchSettings snap = snapshot();
-        for (Consumer<WatchSettings> l : listeners) {
+    private void notifyListeners(long userId, WatchSettings snap) {
+        for (ChangeListener l : listeners) {
             try {
-                l.accept(snap);
+                l.onChanged(userId, snap);
             } catch (Exception e) {
                 log.warn("[watch] 配置变更回调失败: {}", e.getMessage());
             }
@@ -336,9 +487,10 @@ public class WatchConfigStore {
         return copy;
     }
 
-    private List<WatchTarget> targetsOf(long userId) {
+    /** 某份配置里的盯盘标的转成轮询用的目标列表（名称缺失时按名录补） */
+    private List<WatchTarget> toTargets(WatchSettings s) {
         List<WatchTarget> list = new ArrayList<>();
-        for (WatchSettings.StockRef r : get(userId).getStocks()) {
+        for (WatchSettings.StockRef r : s.getStocks()) {
             if (r == null || r.getCode() == null) {
                 continue;
             }
