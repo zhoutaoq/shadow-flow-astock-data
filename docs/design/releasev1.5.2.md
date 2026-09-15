@@ -23,5 +23,23 @@ fix:
 3、背景行情一次展示完了后，完整走完之后再展示下一次循环，不要收尾连接上。
 
 
+### 补丁 v1.5.3（v1.5.2 上线后发现，外盘实际取不到数）
+
+v1.5.2 上线到 111.231.171.218 后，首页只出 5 条国内指数，外盘 5 条全缺。原因是**东财主干
+域名在该机房出口被拒**：`push2.eastmoney.com`（含 `1./7./82.` 等数字子域）TCP 能建连，
+TLS 之后直接空回复 —— curl 报 `Empty reply from server`、Java 报
+`Unexpected end of file from server`，换 Referer / UA / 80 端口都一样。
+同一台机器上 `push2delay.eastmoney.com` 正常，且实测 12 秒内标普 / 纳指 / 费半点位都在动，
+是**实时数据**（名字里的 delay 不代表延迟行情）。
+
+改法：`MarketIndexService` 的东财宿主改成**按序回退的数组**
+（`push2.eastmoney.com` → `push2delay.eastmoney.com`），取到数据即用；
+逐宿主失败落 DEBUG，全部失败才按分钟节流报一条 WARN。
+
+顺带说明：这不是 v1.5.2 引入的问题 —— 17:32 的旧日志（改动前的 4 个 secid）已经在报同一个错，
+20:59 那条「海外指数取回 4 条」说明它是**间歇性**的（取决于 DNS 给出的出口 IP）。
+本机也一样（本地代理拦 push2、放行 push2delay），所以本机直调后端即可确定性验证回退分支。
+
+
 
 

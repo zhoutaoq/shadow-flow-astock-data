@@ -81,9 +81,23 @@ public class MarketIndexService {
 
     // ---------------------------------------------------------------- 海外（东方财富）
 
-    /** fltt=2 让东财直接返回真实小数（不按小数位做 ×100 缩放），省掉自己还原那一步 */
-    private static final String EM_URL = "https://push2.eastmoney.com/api/qt/ulist.np/get"
-            + "?fltt=2&fields=f2,f3,f4,f12,f14&secids=";
+    /**
+     * 东财行情宿主，按顺序试第一个成功的。
+     * fltt=2 让东财直接返回真实小数（不按小数位做 ×100 缩放），省掉自己还原那一步。
+     *
+     * <p>主干域名 <code>push2.eastmoney.com</code> 在部分机房出口会被拒 —— 实测线上
+     * <code>111.231.171.218</code> 上 TCP 能建连，但 TLS 之后直接空回复（curl 报
+     * <i>Empty reply from server</i>，Java 报 <i>Unexpected end of file from server</i>），
+     * 换 Referer / UA / 80 端口 / 各数字子域（<code>1. 7. 82.</code>）都一样。
+     * <code>push2delay.eastmoney.com</code> 在同一台机器上正常，且实测 12 秒内标普 / 纳指 /
+     * 费半的点位都在动，是<b>实时数据</b>（名字里的 delay 不代表延迟行情）。
+     * 两个宿主都留着、按顺序取第一个成功的：换机房或东财解封都不用改代码。
+     */
+    private static final String[] EM_HOSTS = {
+            "https://push2.eastmoney.com",
+            "https://push2delay.eastmoney.com",
+    };
+    private static final String EM_PATH = "/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f4,f12,f14&secids=";
     private static final String EM_REFERER = "https://quote.eastmoney.com/";
 
     /**
@@ -191,20 +205,45 @@ public class MarketIndexService {
             }
             secids.append(item[0]);
         }
-        String url = EM_URL + secids;
         long begin = System.currentTimeMillis();
-        String body;
-        try {
-            body = doGet(url, EM_REFERER, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            warnThrottled(false, url, System.currentTimeMillis() - begin, e);
-            return Collections.emptyList();
+        String lastUrl = null;
+        IOException lastError = null;
+        for (String host : EM_HOSTS) {
+            String url = host + EM_PATH + secids;
+            lastUrl = url;
+            String body;
+            try {
+                body = doGet(url, EM_REFERER, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                // 逐宿主记 DEBUG：主干不可用时每个宿主都会中招，落 DEBUG 免得跟着 3 秒轮询刷日志；
+                // 全部宿主失败才按分钟节流报一条 WARN（见下）
+                log.debug("[market] 海外指数宿主 {} 取数失败 err={}", host, e.getMessage());
+                lastError = e;
+                continue;
+            }
+            List<MarketIndex> parsed = parseOverseas(body);
+            if (!parsed.isEmpty()) {
+                log.debug("[market] 海外指数取回 {} 条（宿主 {}），耗时 {} ms",
+                        parsed.size(), host, System.currentTimeMillis() - begin);
+                return parsed;
+            }
+            lastError = new IOException("宿主 " + host + " 返回体无有效数据");
         }
+        if (lastError != null) {
+            warnThrottled(false, lastUrl, System.currentTimeMillis() - begin, lastError);
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * 解析东财 ulist 返回体，按 OVERSEAS 的固定顺序输出。
+     * 接口回的次序不保证稳定，直接照它遍历会让首页那几条指数的排列顺序跟着上游变，
+     * 所以先按 f12 代码归位再按 OVERSEAS 取。
+     */
+    private List<MarketIndex> parseOverseas(String body) {
         List<MarketIndex> out = new ArrayList<>(OVERSEAS.length);
         try {
             JsonNode diff = mapper.readTree(body).path("data").path("diff");
-            // 先按代码归位，再按 OVERSEAS 的顺序取 —— 接口回的次序不保证稳定，
-            // 直接照它遍历会让首页那几条指数的排列顺序跟着上游变。
             Map<String, JsonNode> byCode = new HashMap<>();
             for (JsonNode node : diff) {
                 String code = node.path("f12").asText("");
@@ -225,10 +264,10 @@ public class MarketIndexService {
                 }
             }
         } catch (IOException e) {
-            log.warn("[market] 海外指数返回体解析失败 err={} body={}", e.getMessage(), body);
+            log.warn("[market] 海外指数返回体解析失败 err={} body={}", e.getMessage(),
+                    body == null ? "" : body.substring(0, Math.min(200, body.length())));
             return Collections.emptyList();
         }
-        log.debug("[market] 海外指数取回 {} 条，耗时 {} ms", out.size(), System.currentTimeMillis() - begin);
         return out;
     }
 
