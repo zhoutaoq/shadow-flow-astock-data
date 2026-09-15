@@ -90,6 +90,38 @@ CREATE TABLE IF NOT EXISTS waizao_user (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '系统用户（SaaS 账号）';
 
 -- ============================================================
+-- 我的账户（v1.5.1）：账户设置 + 持仓配置
+-- 账户一人一条；持仓挂到账户上（user_id），一只标的只能有一条
+-- 收益类字段（现价/市值/当日收益/总收益）一律实时算，不入表
+-- ============================================================
+
+-- 账户：期初市值 + 可用金额
+CREATE TABLE IF NOT EXISTS waizao_account (
+    user_id     BIGINT         NOT NULL                COMMENT '归属用户 id（一人一条）',
+    init_value  DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '账户期初市值（元）',
+    cash        DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '可用金额（元）：买入扣减、卖出加回',
+    remark      VARCHAR(255)   NULL                    COMMENT '备注',
+    create_time DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (user_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-我的账户';
+
+-- 持仓：标的 + 成本价 + 持仓数量
+CREATE TABLE IF NOT EXISTS waizao_position (
+    id          BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+    user_id     BIGINT         NOT NULL                COMMENT '归属用户 id',
+    stock_code  VARCHAR(16)    NOT NULL                COMMENT '标的代码',
+    stock_name  VARCHAR(128)   NOT NULL DEFAULT ''     COMMENT '标的名称',
+    cost_price  DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '成本价（元）',
+    quantity    INT            NOT NULL DEFAULT 0      COMMENT '持仓数量（股）',
+    create_time DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_waizao_position_user_code (user_id, stock_code),
+    KEY idx_waizao_position_user (user_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-持仓配置';
+
+-- ============================================================
 -- 回测（数据源固定：供应商 waizao + 日K表 waizao_stock_kline_daily）
 -- 费率一律以小数存储：页面按 % 录入，0.01% 存 0.0001
 -- ============================================================

@@ -68,7 +68,7 @@ public class SinaQuoteClient {
         }
         BigDecimal pct = q.changePercent();
         log.info("[watch] 行情调用成功 {} 现价 {} 涨跌幅 {} 行情时间 {} 耗时 {} ms",
-                target, q.getPrice(),
+                target, q.priceText(),
                 pct == null ? "—" : pct.toPlainString() + "%",
                 q.getTimeText(), cost);
         return q;

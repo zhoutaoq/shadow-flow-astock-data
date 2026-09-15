@@ -28,6 +28,9 @@ public class AuthWebConfig implements WebMvcConfigurer {
      *
      * <p>v1.5 起「实时通知配置」（{@code /api/sys-config/**}）也要求登录 ——
      * 令牌是挂在用户名下的，页面上看到的、改的都是自己的那一份。
+     *
+     * <p>v1.5.1 加「我的账户」（{@code /api/account/**}）：账户与持仓是用户级私人数据，
+     * 且买卖操作会动可用金额与盯盘名单，绝不能匿名可读写。
      */
     private static final String[] PROTECTED = {
             "/api/backtest/**",
@@ -35,6 +38,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
             "/api/fetch/**",
             "/api/admin/**",
             "/api/sys-config/**",
+            "/api/account/**",
             "/api/auth/logout",
             "/api/auth/password"
     };

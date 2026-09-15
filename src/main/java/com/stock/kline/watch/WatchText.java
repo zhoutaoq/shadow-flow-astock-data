@@ -41,7 +41,7 @@ final class WatchText {
         return new BigDecimal(Double.toString(d)).stripTrailingZeros().toPlainString();
     }
 
-    /** 涨跌幅带符号：null → "—"，正值加 "+" */
+    /** 涨跌幅带符号：null → "—"，正值加 "+"；比率已经两位小数，这里只加符号 */
     static String signed(BigDecimal v) {
         if (v == null) {
             return "—";
@@ -49,9 +49,9 @@ final class WatchText {
         return (v.signum() > 0 ? "+" : "") + v.toPlainString() + "%";
     }
 
-    /** 现价文本：null → "—" */
+    /** 现价文本：null → "—"，股价一律两位小数 */
     static String price(BigDecimal v) {
-        return v == null ? "—" : v.toPlainString();
+        return v == null ? "—" : v.setScale(2, BigDecimal.ROUND_HALF_UP).toPlainString();
     }
 
     /** 本机第一个可用的局域网 IPv4；拿不到给 "未知"。优先内网地址（10/172.16-31/192.168），其次任意 IPv4 */

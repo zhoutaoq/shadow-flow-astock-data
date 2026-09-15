@@ -776,6 +776,7 @@ const NAV_ITEMS = [
     {text: 'K线查看', href: '/pages/chart.html'},
     {text: '策略回测', href: '/pages/backtest.html', login: true},
     {text: '盯盘', href: '/pages/watch.html', login: true},
+    {text: '我的账户', href: '/pages/account.html', login: true},
     {text: '实时通知配置', href: '/pages/config.html', login: true},
     {text: '用户反馈', href: '/pages/feedback.html'},
     {text: '用户管理', href: '/pages/users.html', admin: true}
@@ -1030,7 +1031,7 @@ async function submitChangePassword(hide) {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260915a（v1.5.0：令牌按用户隔离 / 页脚贴底 / 亮暗色按时间自动判断）');
+    console.info('[金牛数据] 前端版本 20260915b（v1.5.1：股价统一两位小数 / 涨跌停告警补三要素 / 我的账户与持仓）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();

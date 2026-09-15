@@ -9,6 +9,9 @@ import java.math.BigDecimal;
  */
 public class Quote {
 
+    /** 股价统一保留两位小数：新浪原样返回三位（如 12.345），展示与推送一律先规整 */
+    private static final int PRICE_SCALE = 2;
+
     private final String code;
     private final String name;
     /** 现价（元）；停牌或未取到时为 null */
@@ -53,6 +56,40 @@ public class Quote {
         return price.subtract(preClose)
                 .multiply(BigDecimal.valueOf(100))
                 .divide(preClose, 2, BigDecimal.ROUND_HALF_UP);
+    }
+
+    /**
+     * 价格文本，固定两位小数（null 返回 null 由调用方决定怎么显示）。
+     *
+     * <p>推送与页面都走这里，免得各处 toPlainString 出来三位小数。
+     */
+    public String priceText() {
+        return scale(price);
+    }
+
+    /** 昨收文本，固定两位小数 */
+    public String preCloseText() {
+        return scale(preClose);
+    }
+
+    /** 最高文本，固定两位小数 */
+    public String highText() {
+        return scale(high);
+    }
+
+    /** 最低文本，固定两位小数 */
+    public String lowText() {
+        return scale(low);
+    }
+
+    /** 涨跌幅文本（不带 % 号），保留两位小数；取不到返回 null */
+    public String changePercentText() {
+        return scale(changePercent());
+    }
+
+    /** 按 {@link #PRICE_SCALE} 位四舍五入成文本；null 原样返回 null */
+    private static String scale(BigDecimal v) {
+        return v == null ? null : v.setScale(PRICE_SCALE, BigDecimal.ROUND_HALF_UP).toPlainString();
     }
 
     public String getCode() {

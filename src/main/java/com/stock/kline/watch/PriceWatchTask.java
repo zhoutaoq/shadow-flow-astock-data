@@ -191,8 +191,9 @@ public class PriceWatchTask {
     private boolean check(WatchTarget t, Quote q) {
         State st = states.computeIfAbsent(q.getCode(), k -> new State());
         int limitState = limitStateOf(q);
-        // 本轮增量必须在写新一轮基数之前算：它就是"这一个轮询间隔"的成交额
+        // 本轮增量必须在写新一轮基数之前算：它就是"这一个轮询间隔"的量额
         BigDecimal amountDelta = intervalAmountDelta(st, q);
+        BigDecimal volumeDelta = intervalVolumeDelta(st, q);
 
         // 写新采样 + trim 旧采样（保留所有规则都够用的窗口）
         long maxWindowSec = maxRuleSeconds();
@@ -220,14 +221,14 @@ public class PriceWatchTask {
                 log.info("[watch] {} 建立封板基线：{}（首轮不推送）", q.getName(), limitWord(limitState));
             } else {
                 if (prev == LIMIT_UP) {
-                    sendLimitAlert(q, LIMIT_UP, false);
+                    sendLimitAlert(q, LIMIT_UP, false, volumeDelta, amountDelta);
                     pushed = true;
                 } else if (prev == LIMIT_DOWN) {
-                    sendLimitAlert(q, LIMIT_DOWN, false);
+                    sendLimitAlert(q, LIMIT_DOWN, false, volumeDelta, amountDelta);
                     pushed = true;
                 }
                 if (limitState == LIMIT_UP || limitState == LIMIT_DOWN) {
-                    sendLimitAlert(q, limitState, true);
+                    sendLimitAlert(q, limitState, true, volumeDelta, amountDelta);
                     pushed = true;
                 }
             }
@@ -240,7 +241,7 @@ public class PriceWatchTask {
             st.lastAmount = q.getAmount();
             st.prevAmountDelta = null;
             st.volumeSurge = false;
-            log.info("[watch] {} 建立基线：现价 {}（首轮不推送）", q.getName(), q.getPrice());
+            log.info("[watch] {} 建立基线：现价 {}（首轮不推送）", q.getName(), q.priceText());
             return false;
         }
 
@@ -433,6 +434,19 @@ public class PriceWatchTask {
     }
 
     /**
+     * 本轮相对上一轮的累计成交量增量，即"这一个轮询间隔"的成交量（股）。
+     *
+     * <p>与 {@link #intervalAmountDelta} 同口径：首轮没有基数、或累计值回退时返回 null。
+     */
+    private static BigDecimal intervalVolumeDelta(State st, Quote q) {
+        if (q.getVolume() == null || st.lastVolume == null) {
+            return null;
+        }
+        BigDecimal diff = q.getVolume().subtract(st.lastVolume);
+        return diff.signum() < 0 ? null : diff;
+    }
+
+    /**
      * 是否放量：单个轮询间隔成交额超过配置的成交额阈值（万元），
      * 或大于配置倍数 × 上一个间隔成交额。两个阈值都在盯盘页面配置（默认 2000 万 / 10 倍）。
      *
@@ -527,24 +541,29 @@ public class PriceWatchTask {
     /**
      * 推送封板 / 开板通知。
      *
-     * <p>消息带上当日累计成交量与成交额，方便直接看封板力度。
+     * <p>消息必须包含三要素：本窗口成交量、本窗口成交额、总成交额。
+     * 前两项是"这一个轮询间隔"相对上一轮的增量（首轮或数据回退时取不到，回落显示 —）；
+     * 总成交额是当日累计值，直接看封板力度。
      *
-     * @param state  涨停还是跌停
-     * @param closed true = 刚封上板，false = 刚打开板
+     * @param state       涨停还是跌停
+     * @param closed      true = 刚封上板，false = 刚打开板
+     * @param windowVol   本窗口成交量（股），null 表示无法判断
+     * @param windowAmt   本窗口成交额（元），null 表示无法判断
      */
-    private void sendLimitAlert(Quote q, int state, boolean closed) {
+    private void sendLimitAlert(Quote q, int state, boolean closed,
+                                BigDecimal windowVol, BigDecimal windowAmt) {
         String word;
         if (state == LIMIT_UP) {
             word = closed ? "涨停" : "打开涨停";
         } else {
             word = closed ? "跌停" : "打开跌停";
         }
-        BigDecimal pct = q.changePercent();
-        String pctText = pct == null ? "—" : pct.toPlainString() + "%";
+        String pctText = q.changePercentText() == null ? "—" : q.changePercentText() + "%";
         String msg = q.getName() + " " + word
-                + "，现价 " + q.getPrice().toPlainString() + " 元，涨跌幅为 " + pctText
-                + "，成交量 " + formatVolume(q.getVolume())
-                + "，成交额 " + formatAmount(q.getAmount()) + "。";
+                + "，现价 " + q.priceText() + " 元，涨跌幅为 " + pctText
+                + "，本窗口成交量 " + formatVolume(windowVol)
+                + "，本窗口成交额 " + formatAmount(windowAmt)
+                + "，总成交额 " + formatAmount(q.getAmount()) + "。";
         if (notifier.send(msg)) {
             log.info("[watch] 已推送：{}", msg);
         } else {
@@ -562,11 +581,11 @@ public class PriceWatchTask {
      */
     private boolean sendSurgeAlert(Quote q, int state, BigDecimal curAmount, BigDecimal prevAmount) {
         String word = state == LIMIT_UP ? "涨停" : "跌停";
-        BigDecimal pct = q.changePercent();
         StringBuilder sb = new StringBuilder();
         sb.append(q.getName()).append(' ').append(word).append("放量");
-        sb.append("，现价 ").append(q.getPrice().toPlainString()).append(" 元");
-        sb.append("，涨跌幅 ").append(pct == null ? "—" : pct.toPlainString()).append('%');
+        sb.append("，现价 ").append(q.priceText()).append(" 元");
+        String pctText = q.changePercentText();
+        sb.append("，涨跌幅 ").append(pctText == null ? "—" : pctText).append('%');
         sb.append("，本区间成交额 ").append(formatAmount(curAmount));
         if (prevAmount != null) {
             sb.append("（上区间 ").append(formatAmount(prevAmount));

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>我的账户</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260915b">
+    <link rel="stylesheet" href="/css/account.css?v=20260915b">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据</a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <section class="panel" id="gatePanel" style="display:none">
+        <h2>我的账户</h2>
+        <div class="modal-actions">
+            <button onclick="openAuthModal({onSuccess: reload})">去登录</button>
+        </div>
+    </section>
+
+    <div id="acctPanel" style="display:none">
+
+        <!-- ============ 页头 ============ -->
+        <div class="ahead">
+            <div class="ahead-l">
+                <h1 class="ahead-t">我的账户</h1>
+                <div class="asum" id="asum"></div>
+            </div>
+            <div class="ahead-r">
+                <button class="btn-ghost" onclick="reload()">重新载入</button>
+                <button class="btn-ghost" onclick="openPositionModal()">＋ 添加持仓</button>
+                <button onclick="saveAccount()">保存账户</button>
+            </div>
+        </div>
+
+        <div class="agrid">
+
+            <!-- ① 账户设置 -->
+            <section class="acard acard-narrow">
+                <header class="acard-hd">
+                    <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg></span>
+                    <h2>账户设置</h2>
+                    <span class="acard-note" id="acctFile"></span>
+                </header>
+                <div class="acard-bd">
+                    <div class="afield">
+                        <label for="fInit">账户期初市值</label>
+                        <div class="aunit">
+                            <input type="number" id="fInit" min="0" step="1000" inputmode="decimal" placeholder="例如 1000000">
+                            <span class="unit">元</span>
+                        </div>
+                    </div>
+                    <div class="afield">
+                        <label for="fCash">可用金额</label>
+                        <div class="aunit">
+                            <input type="number" id="fCash" step="1000" inputmode="decimal" placeholder="例如 250000">
+                            <span class="unit">元</span>
+                        </div>
+                        <span class="akpi-d">买入按成本价 × 数量扣减，卖出则加回；也可手工修正</span>
+                    </div>
+                    <div class="afield">
+                        <label for="fRemark">备注</label>
+                        <input type="text" id="fRemark" maxlength="255" autocomplete="off" spellcheck="false" placeholder="选填">
+                    </div>
+                    <div class="akpi-d" id="acctSaveTip"></div>
+                </div>
+            </section>
+
+            <!-- ② 收益汇总 -->
+            <section class="acard acard-wide">
+                <header class="acard-hd">
+                    <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg></span>
+                    <h2>收益汇总</h2>
+                    <span class="acard-note" id="quoteTip"></span>
+                </header>
+                <div class="acard-bd">
+                    <div class="akpi-grid">
+                        <div class="akpi">
+                            <div class="akpi-t">当前总市值</div>
+                            <div class="akpi-v" id="kTotalValue">-</div>
+                            <div class="akpi-d">持仓市值 + 可用金额</div>
+                        </div>
+                        <div class="akpi">
+                            <div class="akpi-t">持仓市值</div>
+                            <div class="akpi-v" id="kPosValue">-</div>
+                            <div class="akpi-d" id="kPosCost">成本 -</div>
+                        </div>
+                        <div class="akpi">
+                            <div class="akpi-t">当日收益</div>
+                            <div class="akpi-v" id="kDayProfit">-</div>
+                            <div class="akpi-d" id="kDayPct">按昨收 → 现价计算</div>
+                        </div>
+                        <div class="akpi">
+                            <div class="akpi-t">总收益</div>
+                            <div class="akpi-v" id="kTotalProfit">-</div>
+                            <div class="akpi-d" id="kTotalPct">相对账户期初市值</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ③ 持仓配置 -->
+            <section class="acard">
+                <header class="acard-hd">
+                    <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+                    <h2>持仓配置</h2>
+                    <span class="acard-note" id="posCount"></span>
+                </header>
+                <div class="acard-bd">
+                    <div class="atable-wrap">
+                        <table class="atable">
+                            <thead>
+                            <tr>
+                                <th>标的</th>
+                                <th>名称</th>
+                                <th>成本价</th>
+                                <th>现价</th>
+                                <th>数量</th>
+                                <th>成本市值</th>
+                                <th>当前市值</th>
+                                <th>当日收益</th>
+                                <th>总收益</th>
+                                <th>操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="posBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ④ 操作记录：实时生效、不落盘 -->
+            <section class="acard">
+                <header class="acard-hd">
+                    <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span>
+                    <h2>操作记录</h2>
+                    <span class="acard-note">实时生效，不落盘</span>
+                </header>
+                <div class="acard-bd">
+                    <div class="arec-form">
+                        <div class="afield">
+                            <label>操作标的</label>
+                            <div id="recPicker"></div>
+                        </div>
+                        <div class="afield">
+                            <label>方向</label>
+                            <div class="aseg" id="recAction">
+                                <button type="button" class="buy on" data-act="buy">买入</button>
+                                <button type="button" class="sell" data-act="sell">卖出</button>
+                            </div>
+                        </div>
+                        <div class="afield">
+                            <label for="fQty">数量</label>
+                            <div class="aunit">
+                                <input type="number" id="fQty" min="1" step="100" inputmode="numeric" placeholder="100">
+                                <span class="unit">股</span>
+                            </div>
+                        </div>
+                        <div class="afield">
+                            <label for="fPrice">成交价</label>
+                            <div class="aunit">
+                                <input type="number" id="fPrice" min="0" step="0.01" inputmode="decimal" placeholder="选标的自动带出">
+                                <span class="unit">元</span>
+                            </div>
+                        </div>
+                        <div class="afield">
+                            <label>&nbsp;</label>
+                            <button id="btnRecord" onclick="submitRecord()">记一笔</button>
+                        </div>
+                    </div>
+                    <div class="akpi-d" id="recTip">买入按成交价 × 数量扣减可用金额并把标的加入盯盘（新标的会顺带建仓）；卖出加回金额，清仓则移出盯盘。已有持仓按持仓成本价记账，成交价可不填。</div>
+                    <div class="arec-list" id="recList"></div>
+                </div>
+            </section>
+
+        </div>
+    </div>
+</main>
+
+<script src="/js/common.js?v=20260915b"></script>
+<script src="/js/stock-picker.js?v=20260915b"></script>
+<script>
+    let cfg = null;          // /api/account 账户设置
+    let summary = null;      // /api/account/summary 汇总
+    let limits = null;       // /api/account/limits
+    let recAction = 'buy';   // 当前选中的操作方向
+    let posPicker = null;    // 持仓弹窗里的选择器
+    let recPicker = null;    // 操作记录里的选择器（只从已持仓里选）
+
+    function showGate() {
+        document.getElementById('gatePanel').style.display = '';
+        document.getElementById('acctPanel').style.display = 'none';
+    }
+
+    /** 红涨绿跌：返回 up / down / '' 三态（0 或拿不到时不配色） */
+    function dir(v) {
+        const n = Number(v);
+        if (v === null || v === undefined || isNaN(n) || n === 0) return '';
+        return n > 0 ? 'up' : 'down';
+    }
+
+    /** 金额：两位小数 + 千分位；null / 拿不到显示 — */
+    function money(v) {
+        return fmtNum(v, 2);
+    }
+
+    /** 带符号金额：+1,234.00 / -1,234.00 */
+    function moneySigned(v) {
+        const n = Number(v);
+        if (v === null || v === undefined || isNaN(n)) return '—';
+        return (n > 0 ? '+' : n < 0 ? '-' : '') + fmtNum(Math.abs(n), 2);
+    }
+
+    /** 带符号百分比：+1.23% / -1.23%；null 显示 — */
+    function pctSigned(v) {
+        const n = Number(v);
+        if (v === null || v === undefined || isNaN(n)) return '—';
+        return (n > 0 ? '+' : n < 0 ? '-' : '') + Math.abs(n).toFixed(2) + '%';
+    }
+
+    async function reload() {
+        const [accR, sumR] = await Promise.all([
+            api('/api/account', {method: 'GET'}),
+            api('/api/account/summary', {method: 'GET'})
+        ]);
+        if (!accR || !accR.success) {
+            showGate();
+            return;
+        }
+        cfg = accR.data || {};
+        summary = (sumR && sumR.success) ? sumR.data : null;
+        document.getElementById('gatePanel').style.display = 'none';
+        document.getElementById('acctPanel').style.display = '';
+        render();
+    }
+
+    function render() {
+        const s = summary || {};
+        const pl = (cfg && cfg.positions) || [];
+
+        // 账户设置回显：只在没有未保存改动时覆盖，避免把用户正在输的值冲掉
+        if (!dirtyAccount) {
+            document.getElementById('fInit').value = (cfg.initValue != null) ? cfg.initValue : 0;
+            document.getElementById('fCash').value = (cfg.cash != null) ? cfg.cash : 0;
+            document.getElementById('fRemark').value = cfg.remark || '';
+        }
+
+        renderSummary(s);
+        renderPositions(s.positions || []);
+        renderSummaryChips(s);
+        renderQuoteTip(s);
+    }
+
+    function renderSummary(s) {
+        setKpi('kTotalValue', money(s.totalValue), '');
+        setKpi('kPosValue', money(s.positionValue), '');
+        document.getElementById('kPosCost').textContent = '成本 ' + money(s.positionCost);
+
+        setKpi('kDayProfit', moneySigned(s.dayProfit), dir(s.dayProfit));
+        document.getElementById('kDayPct').textContent = s.dayProfitPercent == null
+            ? '按昨收 → 现价计算'
+            : pctSigned(s.dayProfitPercent) + '（按昨收市值）';
+
+        setKpi('kTotalProfit', moneySigned(s.totalProfit), dir(s.totalProfit));
+        document.getElementById('kTotalPct').textContent = s.totalProfitPercent == null
+            ? '相对账户期初市值'
+            : pctSigned(s.totalProfitPercent) + '（期初 ' + money(s.initValue) + '）';
+    }
+
+    function setKpi(id, text, cls) {
+        const el = document.getElementById(id);
+        el.textContent = text;
+        el.classList.remove('up', 'down');
+        if (cls) el.classList.add(cls);
+    }
+
+    /** 页头摘要：期初 / 可用 / 持仓数 */
+    function renderSummaryChips(s) {
+        const n = (s.positions || []).length;
+        const maxP = (limits && limits.maxPositions) || 200;
+        document.getElementById('asum').innerHTML =
+            '<span class="achip">期初市值 ' + money(s.initValue) + '</span>'
+            + '<span class="achip">可用金额 ' + money(s.cash) + '</span>'
+            + '<span class="achip">持仓市值 ' + money(s.positionValue) + '</span>'
+            + '<span class="achip ' + dir(s.totalProfit) + '">总收益 ' + moneySigned(s.totalProfit) + '</span>'
+            + '<span class="achip">' + n + ' / ' + maxP + ' 只持仓</span>';
+    }
+
+    /** 行情提示：有持仓但一条行情都没取到时，明确告诉用户现价是成本价兜底 */
+    function renderQuoteTip(s) {
+        const ps = s.positions || [];
+        const quoted = ps.filter(p => p.quoted).length;
+        const el = document.getElementById('quoteTip');
+        if (!ps.length) {
+            el.textContent = '';
+        } else if (quoted === 0) {
+            el.textContent = '未取到实时行情，现价暂按成本价显示';
+        } else if (quoted < ps.length) {
+            el.textContent = quoted + '/' + ps.length + ' 只已取到实时行情';
+        } else {
+            el.textContent = '现价取自实时行情';
+        }
+        document.getElementById('posCount').textContent = ps.length + ' 条';
+    }
+
+    function renderPositions(rows) {
+        const body = document.getElementById('posBody');
+        if (!rows.length) {
+            body.innerHTML = '<tr><td class="empty" colspan="10">还没有持仓，点右上角「＋ 添加持仓」，或直接在下面「操作记录」里买入一只</td></tr>';
+            return;
+        }
+        body.innerHTML = rows.map(p => {
+            const dayDir = dir(p.dayProfit);
+            const totDir = dir(p.totalProfit);
+            return '<tr>'
+                + '<td class="code">' + esc(p.code) + '</td>'
+                + '<td class="name">' + esc(p.name || '')
+                + (p.quoted ? '' : '<span class="abadge">成本价兜底</span>') + '</td>'
+                + '<td>' + money(p.costPrice) + '</td>'
+                + '<td>' + money(p.price) + '</td>'
+                + '<td>' + fmtNum(p.quantity, 0) + '</td>'
+                + '<td>' + money(p.costValue) + '</td>'
+                + '<td>' + money(p.marketValue) + '</td>'
+                + '<td class="' + dayDir + '">' + moneySigned(p.dayProfit)
+                + '<br><small>' + (p.dayProfitPercent == null ? '—' : pctSigned(p.dayProfitPercent)) + '</small></td>'
+                + '<td class="' + totDir + '">' + moneySigned(p.totalProfit)
+                + '<br><small>' + pctSigned(p.totalProfitPercent) + '</small></td>'
+                + '<td><span class="arow-act">'
+                + '<button class="btn-ghost btn-sm" onclick="openPositionModal(' + p.id + ')">改</button>'
+                + '<button class="btn-ghost btn-sm" onclick="removePosition(' + p.id + ')">删</button>'
+                + '</span></td>'
+                + '</tr>';
+        }).join('');
+    }
+
+    /* ============ 持仓弹窗 ============ */
+
+    let editingId = null;
+
+    function openPositionModal(id) {
+        editingId = id || null;
+        const row = id ? (summary.positions || []).find(p => p.id === id) : null;
+
+        let mask = document.getElementById('posMask');
+        if (!mask) {
+            mask = document.createElement('div');
+            mask.className = 'mask';
+            mask.id = 'posMask';
+            mask.innerHTML = '<div class="modal" style="width:460px">'
+                + '<h3 id="posTitle">添加持仓</h3>'
+                + '<div class="field"><label>标的</label><div id="posPickerBox"></div></div>'
+                + '<div class="field"><label for="posCost">成本价（元）</label>'
+                + '<input type="number" id="posCost" min="0" step="0.01" inputmode="decimal"></div>'
+                + '<div class="field"><label for="posQty">持仓数量（股）</label>'
+                + '<input type="number" id="posQty" min="1" step="100" inputmode="numeric"></div>'
+                + '<div class="modal-actions">'
+                + '<button class="btn-ghost" id="posCancel">取消</button>'
+                + '<button id="posSave">保存</button>'
+                + '</div></div>';
+            document.body.appendChild(mask);
+            mask.querySelector('#posCancel').addEventListener('click', () => mask.classList.remove('show'));
+            mask.addEventListener('mousedown', e => {
+                if (e.target === mask) mask.classList.remove('show');
+            });
+            mask.querySelector('#posSave').addEventListener('click', submitPosition);
+            if (!posPicker) {
+                posPicker = createStockPicker(mask.querySelector('#posPickerBox'), {multiple: false});
+            }
+        }
+        mask.querySelector('#posTitle').textContent = row ? '修改持仓' : '添加持仓';
+        if (!posPicker) {
+            posPicker = createStockPicker(mask.querySelector('#posPickerBox'), {multiple: false});
+        }
+        posPicker.setItems(row ? [{code: row.code, name: row.name}] : []);
+        mask.querySelector('#posCost').value = row ? row.costPrice : '';
+        mask.querySelector('#posQty').value = row ? row.quantity : '';
+        mask.classList.add('show');
+    }
+
+    async function submitPosition() {
+        const picked = posPicker.getFirst();
+        if (!picked || !picked.code) {
+            return toast('请选择持仓标的', 'err');
+        }
+        const cost = parseFloat(document.getElementById('posCost').value);
+        const qty = parseInt(document.getElementById('posQty').value, 10);
+        if (isNaN(cost) || cost <= 0) {
+            return toast('成本价必须大于 0', 'err');
+        }
+        if (isNaN(qty) || qty <= 0) {
+            return toast('持仓数量必须大于 0', 'err');
+        }
+        const body = {code: picked.code, name: picked.name || '', costPrice: cost, quantity: qty};
+        const r = editingId
+            ? await put('/api/account/positions/' + editingId, body)
+            : await post('/api/account/positions', body);
+        if (!r || !r.success) {
+            return;
+        }
+        document.getElementById('posMask').classList.remove('show');
+        toast(r.message || '已保存', 'ok');
+        await reload();
+    }
+
+    async function removePosition(id) {
+        const row = (summary.positions || []).find(p => p.id === id);
+        if (!confirm('确定删除持仓「' + (row ? row.name : id) + '」？')) {
+            return;
+        }
+        const r = await del('/api/account/positions/' + id);
+        if (r && r.success) {
+            toast('持仓已删除', 'ok');
+            await reload();
+        }
+    }
+
+    /* ============ 账户保存 ============ */
+
+    let dirtyAccount = false;
+
+    async function saveAccount() {
+        const init = parseFloat(document.getElementById('fInit').value);
+        const cash = parseFloat(document.getElementById('fCash').value);
+        if (isNaN(init) || init < 0) {
+            return toast('账户期初市值不能为空或负数', 'err');
+        }
+        if (isNaN(cash)) {
+            return toast('可用金额要填一个数字', 'err');
+        }
+        const r = await put('/api/account', {
+            initValue: init,
+            cash: cash,
+            remark: document.getElementById('fRemark').value.trim()
+        });
+        if (!r || !r.success) {
+            return;
+        }
+        dirtyAccount = false;
+        toast('账户设置已保存', 'ok');
+        await reload();
+    }
+
+    /* ============ 操作记录 ============ */
+
+    async function loadRecords() {
+        const r = await get('/api/account/records');
+        const box = document.getElementById('recList');
+        if (!box) return;
+        const rows = (r && r.success && r.data) ? r.data : [];
+        if (!rows.length) {
+            box.innerHTML = '<div class="arec-empty">还没有操作记录</div>';
+            return;
+        }
+        box.innerHTML = rows.map(x => {
+            const buy = x.action === 'buy';
+            return '<div class="arec-row">'
+                + '<span class="arec-act ' + (buy ? 'buy' : 'sell') + '">' + (buy ? '买入' : '卖出') + '</span>'
+                + '<span class="arec-time">' + esc(x.name || x.code) + ' · ' + esc(x.code) + '</span>'
+                + '<span>' + money(x.price) + ' 元</span>'
+                + '<span>' + fmtNum(x.quantity, 0) + ' 股</span>'
+                + '<span>' + moneySigned(x.turnover) + '</span>'
+                + '<span class="arec-time">' + esc(x.time || '') + '</span>'
+                + '</div>';
+        }).join('');
+    }
+
+    async function submitRecord() {
+        const picked = recPicker ? recPicker.getFirst() : null;
+        if (!picked || !picked.code) {
+            return toast('请选择操作标的', 'err');
+        }
+        const qty = parseInt(document.getElementById('fQty').value, 10);
+        if (isNaN(qty) || qty <= 0) {
+            return toast('数量必须大于 0', 'err');
+        }
+        const priceRaw = document.getElementById('fPrice').value;
+        let price = null;
+        if (String(priceRaw).trim() !== '') {
+            price = parseFloat(priceRaw);
+            if (isNaN(price) || price <= 0) {
+                return toast('成交价必须大于 0（留空则按持仓成本价）', 'err');
+            }
+        }
+        const btn = document.getElementById('btnRecord');
+        btn.disabled = true;
+        try {
+            const body = {action: recAction, code: picked.code, name: picked.name || '', quantity: qty};
+            if (price != null) {
+                body.price = price;
+            }
+            const r = await post('/api/account/records', body);
+            if (!r || !r.success) {
+                return;
+            }
+            toast(r.message || '已生效', 'ok');
+            document.getElementById('fQty').value = '';
+            document.getElementById('fPrice').value = '';
+            await reload();
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    /** 选好标的后预填成交价：已持仓取成本价，未持仓取实时行情价（都拿不到就留空） */
+    async function fillPrice() {
+        const picked = recPicker ? recPicker.getFirst() : null;
+        const input = document.getElementById('fPrice');
+        if (!picked || !picked.code || !input) {
+            return;
+        }
+        const r = await get('/api/account/price?code=' + encodeURIComponent(picked.code));
+        if (r && r.success && r.data && r.data.price != null && String(input.value).trim() === '') {
+            input.value = r.data.price;
+        }
+    }
+
+    function bindActionSegment() {
+        const box = document.getElementById('recAction');
+        box.querySelectorAll('button').forEach(b => {
+            b.addEventListener('click', () => {
+                recAction = b.getAttribute('data-act');
+                box.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+                // 切到买入时，若该标的还没有价格就带出行情价
+                if (recAction === 'buy') {
+                    fillPrice();
+                }
+            });
+        });
+    }
+
+    /* ============ 初始化 ============ */
+
+    (async function init() {
+        await loadMode();
+        if (!(await requireLogin())) {
+            return;
+        }
+        const lr = await get('/api/account/limits');
+        if (lr && lr.success) {
+            limits = lr.data;
+        }
+        // 账户表单标脏：改动过就不让 render 覆盖用户正在输的值
+        ['fInit', 'fCash', 'fRemark'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => { dirtyAccount = true; });
+        });
+        bindActionSegment();
+        if (!recPicker) {
+            recPicker = createStockPicker(document.getElementById('recPicker'), {
+                multiple: false,
+                // 选完标的后自动带出成交价（已持仓 = 成本价，未持仓 = 实时行情价）
+                onChange: () => { fillPrice(); }
+            });
+        }
+        await reload();
+    })();
+</script>
+</body>
+</html>

@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260915a">
-    <link rel="stylesheet" href="/css/home.css?v=20260915a">
+    <link rel="stylesheet" href="/css/common.css?v=20260915b">
+    <link rel="stylesheet" href="/css/home.css?v=20260915b">
+    <link rel="stylesheet" href="/css/account.css?v=20260915b">
 </head>
 <body>
 <header class="topbar">
@@ -192,6 +193,33 @@
     <!-- 指数行情带：数据到才显示 -->
     <section class="tape" id="tape" hidden></section>
 
+    <!-- 我的账户：账户期初市值 + 当日/累计收益，按可用金额与持仓算当前总市值。
+         数据按登录用户隔离，未登录或拿不到数据时整块隐藏 -->
+    <section class="acct" id="acctPanel" hidden>
+        <div class="acct-head">
+            <div class="acct-title">我的账户</div>
+            <span class="acct-sub" id="acctSub"></span>
+        </div>
+        <div class="acct-grid">
+            <div class="acct-kpi">
+                <div class="acct-kpi-t">当前总市值</div>
+                <div class="acct-kpi-v" id="acctMv">-</div>
+                <div class="acct-kpi-d" id="acctMvDesc">持仓市值 + 可用金额</div>
+            </div>
+            <div class="acct-kpi">
+                <div class="acct-kpi-t">当日收益</div>
+                <div class="acct-kpi-v" id="acctDay">-</div>
+                <div class="acct-kpi-d" id="acctDayDesc">按昨收 → 现价计算</div>
+            </div>
+            <div class="acct-kpi">
+                <div class="acct-kpi-t">总收益</div>
+                <div class="acct-kpi-v" id="acctTotal">-</div>
+                <div class="acct-kpi-d" id="acctTotalDesc">相对账户期初市值</div>
+            </div>
+        </div>
+        <div class="acct-hold" id="acctHold"></div>
+    </section>
+
     <!-- 有数据库模式才有"已入库"口径；无库模式整块换成模式说明 -->
     <section class="cards" id="statCards" hidden>
         <div class="card">
@@ -218,9 +246,9 @@
 
 </main>
 
-<script src="/js/common.js?v=20260915a"></script>
-<script src="/js/date-picker.js?v=20260915a"></script>
-<script src="/js/home.js?v=20260915a"></script>
+<script src="/js/common.js?v=20260915b"></script>
+<script src="/js/date-picker.js?v=20260915b"></script>
+<script src="/js/home.js?v=20260915b"></script>
 <script>
     /* 全站功能入口：与顶部导航同一套，两种运行模式共用（第 4 项是内联图标，不转义） */
     var QUICK = [
@@ -232,6 +260,8 @@
             '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>'],
         ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值',
             '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 8-3 8h18s-3-2-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'],
+        ['我的账户', '/pages/account.html', '账号期初市值、持仓与买卖操作记录',
+            '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/>'],
         ['实时通知配置', '/pages/config.html', '维护自己的数据接口令牌，登录后可用',
             '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 3h3v3"/>'],
         ['用户反馈', '/pages/feedback.html', '写下问题或建议，提交即实时推送钉钉',
@@ -281,10 +311,80 @@
         }
     }
 
+    /**
+     * 我的账户：只对已登录用户显示。
+     *
+     * <p>未登录 / 拿不到数据时整块保持 hidden —— 首页是匿名可用的，
+     * 给路人展示一块「—」的空壳没有意义。
+     */
+    async function loadAccount() {
+        if (!ME.loggedIn) return;
+        var r = await get('/api/account/summary');
+        if (!r || !r.success || !r.data) return;
+        var s = r.data;
+
+        function dir(v) {
+            var n = Number(v);
+            if (v === null || v === undefined || isNaN(n) || n === 0) return '';
+            return n > 0 ? 'up' : 'down';
+        }
+        function signed(v) {
+            var n = Number(v);
+            if (v === null || v === undefined || isNaN(n)) return '—';
+            return (n > 0 ? '+' : n < 0 ? '-' : '') + fmtNum(Math.abs(n), 2);
+        }
+        function pct(v) {
+            var n = Number(v);
+            if (v === null || v === undefined || isNaN(n)) return '—';
+            return (n > 0 ? '+' : n < 0 ? '-' : '') + Math.abs(n).toFixed(2) + '%';
+        }
+        function setV(id, id2, text, cls) {
+            var el = document.getElementById(id);
+            el.textContent = text;
+            el.classList.remove('up', 'down');
+            if (cls) el.classList.add(cls);
+            var d = document.getElementById(id2);
+            if (d) { d.classList.remove('up', 'down'); if (cls) d.classList.add(cls); }
+        }
+
+        setV('acctMv', 'acctMvDesc', fmtNum(s.totalValue, 2));
+        document.getElementById('acctMvDesc').textContent =
+            '持仓市值 ' + fmtNum(s.positionValue, 2) + ' + 可用 ' + fmtNum(s.cash, 2);
+
+        setV('acctDay', 'acctDayDesc', signed(s.dayProfit), dir(s.dayProfit));
+        document.getElementById('acctDayDesc').textContent =
+            s.dayProfitPercent == null ? '按昨收 → 现价计算' : pct(s.dayProfitPercent) + '（按昨收市值）';
+
+        setV('acctTotal', 'acctTotalDesc', signed(s.totalProfit), dir(s.totalProfit));
+        document.getElementById('acctTotalDesc').textContent =
+            s.totalProfitPercent == null ? '相对账户期初市值' : pct(s.totalProfitPercent) + '（期初 ' + fmtNum(s.initValue, 2) + '）';
+
+        document.getElementById('acctSub').innerHTML =
+            '<span>' + (s.positions || []).length + ' 只持仓</span>';
+
+        // 持仓缩略：最多 3 条，点整块进账户页看全量
+        var ps = (s.positions || []).slice(0, 3);
+        var hold = document.getElementById('acctHold');
+        hold.innerHTML = ps.length
+            ? ps.map(function (p) {
+                return '<div class="acct-hold-item">'
+                    + '<span class="acct-hold-name">' + esc(p.name || p.code) + '</span>'
+                    + '<span class="acct-hold-val">' + fmtNum(p.price, 2) + '</span>'
+                    + '<span class="acct-hold-pct ' + dir(p.totalProfit) + '">' + pct(p.totalProfitPercent) + '</span>'
+                    + '</div>';
+            }).join('') + '<a class="acct-hold-item acct-more" href="/pages/account.html">查看全部持仓 →</a>'
+            : '<a class="acct-hold-item acct-more" href="/pages/account.html">还没有持仓，去添加 →</a>';
+
+        document.getElementById('acctPanel').hidden = false;
+    }
+
     (async function () {
         loadIndices();
         await loadMode();
         renderQuick(QUICK);
+        // 登录态要在账户取数之前拿到：未登录时这块整块不显示
+        await loadMe();
+        loadAccount();
         if (MODE.noDb) {
             return;
         }
