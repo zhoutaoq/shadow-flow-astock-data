@@ -779,6 +779,7 @@ const NAV_ITEMS = [
     {text: '我的账户', href: '/pages/account.html', login: true},
     {text: '实时通知配置', href: '/pages/config.html', login: true},
     {text: '用户反馈', href: '/pages/feedback.html'},
+    {text: '系统配置', href: '/pages/system.html', admin: true},
     {text: '用户管理', href: '/pages/users.html', admin: true}
 ];
 

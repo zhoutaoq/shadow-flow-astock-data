@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>系统配置 - 金牛数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260915b">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据</a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <div id="cfgPanel" style="display:none">
+
+        <div class="cfg-panel-head">
+            <h2>系统配置</h2>
+            <div class="cfg-panel-actions">
+                <button class="btn-ghost" onclick="reload()">放弃改动</button>
+                <button onclick="save()" id="btnSave">保存并应用</button>
+            </div>
+        </div>
+
+        <section class="cards">
+            <div class="card">
+                <div class="card-title">当前标的</div>
+                <div class="card-value" id="cName">—</div>
+                <div class="card-desc" id="cCode"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">行情区间</div>
+                <div class="card-value" id="cRange" style="font-size:var(--fs-20)">—</div>
+            </div>
+            <div class="card">
+                <div class="card-title">交易日</div>
+                <div class="card-value" id="cDays">—</div>
+                <div class="card-desc">区间内的交易日数量</div>
+            </div>
+            <div class="card">
+                <div class="card-title">区间涨跌幅</div>
+                <div class="card-value" id="cPct">—</div>
+                <div class="card-desc">按区间首尾收盘价计算</div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>首页背景行情</h2>
+            <div class="form-row">
+                <div class="field grow">
+                    <label>标的</label>
+                    <div id="codePick"></div>
+                </div>
+                <div class="field">
+                    <label>起始日期</label>
+                    <input type="date" id="fStart">
+                </div>
+                <div class="field">
+                    <label>结束日期</label>
+                    <input type="date" id="fEnd">
+                </div>
+            </div>
+            <div class="sp-hint">首页顶部的背景就是这段行情的一段走势动画，区间最长一年。</div>
+            <div class="modal-actions" style="margin-top:14px;justify-content:flex-start">
+                <button class="btn-ghost" onclick="resetDefault()">恢复默认</button>
+                <button class="btn-ghost" onclick="location.href='/'">去看首页</button>
+            </div>
+            <div class="sp-hint" id="stateLine"></div>
+        </section>
+
+    </div>
+</main>
+
+<script src="/js/common.js?v=20260915b"></script>
+<script src="/js/date-picker.js?v=20260915b"></script>
+<script src="/js/stock-picker.js?v=20260915b"></script>
+<script>
+    /** 与后端口径一致：背景区间最长一年 */
+    const MAX_SPAN_DAYS = 365;
+
+    let current = null;
+    let picker = null;
+
+    function fmtPct(v) {
+        if (v === null || v === undefined || isNaN(v)) return '—';
+        return (v > 0 ? '+' : v < 0 ? '-' : '') + Math.abs(v).toFixed(1) + '%';
+    }
+
+    function setCard(id, text) {
+        document.getElementById(id).textContent = text;
+    }
+
+    /** 把当前生效的一份摊到卡片与表单上 */
+    function render() {
+        const c = current || {};
+        const bars = c.bars || [];
+        const start = c.startDate || '';
+        const end = c.endDate || '';
+
+        setCard('cName', c.name || '—');
+        setCard('cCode', c.code || '');
+        setCard('cRange', start && end ? (start + ' ~ ' + end) : '—');
+        setCard('cDays', bars.length ? String(bars.length) : '—');
+
+        // 涨跌配色走 .up / .down 令牌：涨红跌绿
+        let pct = null;
+        if (bars.length > 1 && bars[0][3]) {
+            pct = (bars[bars.length - 1][3] - bars[0][3]) / bars[0][3] * 100;
+        }
+        const pctEl = document.getElementById('cPct');
+        pctEl.textContent = fmtPct(pct);
+        pctEl.classList.remove('up', 'down');
+        if (pct > 0) {
+            pctEl.classList.add('up');
+        } else if (pct < 0) {
+            pctEl.classList.add('down');
+        }
+
+        document.getElementById('stateLine').textContent = !c.configured
+            ? '首页现在用的是系统自带的这段背景，保存后就会换成上面这份。'
+            : (bars.length ? '最近更新 ' + (c.updateTime || '—') : '这段行情暂时取不到，首页仍显示系统自带的背景。');
+
+        if (!picker) {
+            picker = createStockPicker(document.getElementById('codePick'), {});
+        }
+        picker.setItems(c.code ? [{code: c.code, name: c.name || ''}] : []);
+        document.getElementById('fStart').value = start;
+        document.getElementById('fEnd').value = end;
+    }
+
+    async function reload() {
+        const r = await get('/api/home/hero');
+        if (!r || !r.success) {
+            return;
+        }
+        current = r.data || {};
+        render();
+    }
+
+    /** 区间天数（含首尾），与后端一致 */
+    function spanDays(start, end) {
+        const a = parseYmd(start);
+        const b = parseYmd(end);
+        if (!a || !b) return 0;
+        return Math.round((b - a) / 86400000) + 1;
+    }
+
+    let saving = false;
+
+    async function save() {
+        if (saving) return;
+        // 手输的代码补成选中项，省得用户以为框里有字就算选上了
+        picker.tryManual();
+        const one = picker.getFirst();
+        if (!one || !one.code) {
+            return toast('先选一个标的', 'err');
+        }
+        const start = document.getElementById('fStart').value;
+        const end = document.getElementById('fEnd').value;
+        if (!start || !end) {
+            return toast('起始日期和结束日期都要填', 'err');
+        }
+        if (start > end) {
+            return toast('起始日期不能晚于结束日期', 'err');
+        }
+        const span = spanDays(start, end);
+        if (span > MAX_SPAN_DAYS) {
+            return toast('日期区间最长一年（' + MAX_SPAN_DAYS + ' 天），当前 ' + span + ' 天', 'err');
+        }
+        const btn = document.getElementById('btnSave');
+        saving = true;
+        btn.classList.add('loading');
+        btn.innerHTML = '<span class="auth-spin"></span>正在取行情…';
+        let r;
+        try {
+            r = await post('/api/admin/home-hero', {
+                code: one.code,
+                name: one.name || '',
+                startDate: start,
+                endDate: end
+            });
+        } finally {
+            saving = false;
+            btn.classList.remove('loading');
+            btn.textContent = '保存并应用';
+        }
+        if (!r || !r.success) {
+            return;
+        }
+        current = r.data || {};
+        render();
+        toast('首页背景已换成 ' + (current.name || '') + ' ' + (current.code || '')
+            + ' · ' + current.startDate + ' ~ ' + current.endDate, 'ok');
+    }
+
+    async function resetDefault() {
+        if (!confirm('恢复默认后，首页背景回到系统自带的那段行情，确认？')) {
+            return;
+        }
+        const r = await post('/api/admin/home-hero/reset', {});
+        if (!r || !r.success) {
+            return;
+        }
+        current = r.data || {};
+        render();
+        toast('已恢复默认背景', 'ok');
+    }
+
+    (async function init() {
+        await loadMode();
+        if (!(await requireLogin())) {
+            return;
+        }
+        // 菜单本来就不给非超管显示这一项，直接输地址进来的就回首页
+        if (!isAdmin()) {
+            location.replace('/');
+            return;
+        }
+        document.getElementById('cfgPanel').style.display = '';
+        // 日期控件平时由 common.js 在页面就绪时统一增强；这一页自己再兜一次，
+        // 免得别的脚本出错时这里退化成裸控件（重复调用是安全的，每个 input 只增强一次）
+        if (typeof initDatePickers === 'function') {
+            initDatePickers(document.getElementById('cfgPanel'));
+        }
+        await reload();
+    })();
+</script>
+</body>
+</html>

@@ -2,7 +2,9 @@
  * 金牛数据 · 首页视觉
  *
  * 两块东西：
- *   1. 品牌带背景：canvas 里画真实行情（长电科技 600584 的一段日K），横向循环滚动
+ *   1. 品牌带背景：canvas 里画真实行情（默认是长电科技 600584 的一段日K），
+ *      横向循环滚动。画哪只票、哪一段由「系统配置」页定，
+ *      下面 KC 只是取不到那份配置时的兜底素材。
  *   2. 核心能力轮播：自动播放 + 左右箭头 + 圆点，示意图是内联 SVG
  *
  * 约束：
@@ -12,13 +14,14 @@
  * ========================================================================= */
 
 /* =========================================================================
- * 背景素材：长电科技 600584 · 2026-03-02 ~ 2026-06-30（82 个交易日）
+ * 兜底素材：长电科技 600584 · 2026-03-02 ~ 2026-06-30（82 个交易日）
  *
  * 每行 [开, 高, 低, 收, 成交量(手)]，顺序按交易日升序。
  * 取自 /api/kline/chart?code=600584&startDate=2026-03-01&endDate=2026-06-30
  * 区间：46.77 → 103.55，区间涨幅 +121.4%；最低 38.02 / 最高 109.33。
  *
- * 换素材：整段替换即可，下面代码只依赖"数组长度 + 5 列格式"，不用改。
+ * 这套数据是页面自带的一份，页面不依赖任何接口也能把背景画出来；
+ * 后台配了别的标的与区间时会被整段替换掉（见文件末尾的 loadHero）。
  * ========================================================================= */
 var KC = [
     [46.78, 47.68, 46.7, 46.77, 636264],
@@ -136,25 +139,33 @@ var KC = [
 
     /* =====================================================================
      * 1 · 品牌带背景：真实日K 横向循环滚动
+     *
+     * 做成「可重建」的：先用自带那段画上，拿到后台配置的行情再整块换一份。
+     * 换的时候必须把旧的停干净（rAF + 那几个监听），否则两份逻辑一起画同一块画布。
      * ===================================================================== */
-    function initKlineCanvas() {
+    function createKlineCanvas(RAW) {
         var cv = document.getElementById('heroCanvas');
-        if (!cv || !cv.getContext) return;
+        if (!cv || !cv.getContext || !RAW || RAW.length < 2) return null;
         var ctx = cv.getContext('2d');
-        if (!ctx || !KC.length) return;
+        if (!ctx) return null;
 
-        var RAW = KC;
         var N = RAW.length;                 // 82
         var SERIES = RAW.concat(RAW);       // 铺两遍：滚满 N 根后画面回到原点，无缝
         var VIS = 46;                       // 横向塞得下的格数
         var MS_PER_BAR = 900;               // 每根停留时长
 
-        /* 量程固定：整段最低 38.02 / 最高 109.33，上下各留一点边。
-           固定量程才看得出"这是一段真实历史"，不随画面内容缩放。 */
-        var LO = 36.0, HI = 111.5;
+        /* 量程按这段行情自己的最低/最高定，上下各留 3% 边。
+           标的与区间都是可配的，写死量程只会让别的票贴顶贴底或缩成一条直线。 */
+        var lo = Infinity, hi = -Infinity;
+        for (var q = 0; q < N; q++) {
+            if (RAW[q][2] < lo) lo = RAW[q][2];
+            if (RAW[q][1] > hi) hi = RAW[q][1];
+        }
+        var pad = (hi - lo) * 0.03 || 1;
+        var LO = lo - pad, HI = hi + pad;
 
         var maxVol = 0;
-        for (var q = 0; q < N; q++) if (RAW[q][4] > maxVol) maxVol = RAW[q][4];
+        for (var v0 = 0; v0 < N; v0++) if (RAW[v0][4] > maxVol) maxVol = RAW[v0][4];
 
         var W = 0, H = 0, slot = 0;
         var up = cssVar('--up'), down = cssVar('--down'),
@@ -162,6 +173,8 @@ var KC = [
         var fillUp = null, fillDown = null;
 
         var pos = 0;                        // 已滚过的根数（浮点），在 [0, N) 循环
+        var raf = 0, lastT = 0, running = false, inView = true;
+        var themeWatcher = null, viewWatcher = null;
 
         function buildGradients() {
             if (!W) return;
@@ -299,8 +312,6 @@ var KC = [
         }
 
         /* ---- 生命周期 ---- */
-        var raf = 0, lastT = 0, running = false;
-
         function frame(t) {
             if (!running) return;
             var dt = lastT ? Math.min(t - lastT, 100) : 16;
@@ -331,32 +342,50 @@ var KC = [
             draw();
         }
 
+        function onResize() {
+            resize();
+            draw();
+        }
+
+        function onVisibility() {
+            if (document.hidden) stop(); else if (inView) start();
+        }
+
         /* 静态降级：停在一段有起伏的位置，别选在横盘区 */
         if (REDUCE) pos = 26;
 
         resize();
         draw();
 
-        window.addEventListener('resize', function () { resize(); draw(); });
-        document.addEventListener('visibilitychange', function () {
-            if (document.hidden) stop(); else if (inView) start();
-        });
+        window.addEventListener('resize', onResize);
+        document.addEventListener('visibilitychange', onVisibility);
 
         if (window.MutationObserver) {
-            new MutationObserver(refreshColors)
-                .observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
+            themeWatcher = new MutationObserver(refreshColors);
+            themeWatcher.observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
         }
 
         /* 滚出视口就停，省点 CPU */
-        var inView = true;
         if (window.IntersectionObserver) {
-            new IntersectionObserver(function (es) {
+            viewWatcher = new IntersectionObserver(function (es) {
                 inView = es[0].isIntersecting;
                 if (inView && !document.hidden) start(); else stop();
-            }, {threshold: 0}).observe(cv);
+            }, {threshold: 0});
+            viewWatcher.observe(cv);
         }
 
         if (!REDUCE) start();
+
+        return {
+            /** 换素材前先把它停掉，免得旧的那份继续占着画布空转 */
+            destroy: function () {
+                stop();
+                window.removeEventListener('resize', onResize);
+                document.removeEventListener('visibilitychange', onVisibility);
+                if (themeWatcher) themeWatcher.disconnect();
+                if (viewWatcher) viewWatcher.disconnect();
+            }
+        };
     }
 
     /* =====================================================================
@@ -451,6 +480,71 @@ var KC = [
         play();
     }
 
-    initKlineCanvas();
+    /* =====================================================================
+     * 3 · 品牌带背景的素材：优先用后台配的那段
+     * ===================================================================== */
+
+    /** 页面自带的那段对应的出处（后台没配过时用） */
+    var HERO_DEFAULT = {
+        code: '600584', name: '长电科技',
+        startDate: '2026-03-02', endDate: '2026-06-30'
+    };
+
+    var hero = null;
+
+    /** 换素材：旧的先停干净再画新的 */
+    function mountHero(bars) {
+        if (hero) {
+            hero.destroy();
+            hero = null;
+        }
+        hero = createKlineCanvas(bars);
+    }
+
+    function dotDate(v) {
+        return String(v || '').replace(/-/g, '.');
+    }
+
+    /** 背景右下角那行出处：标的 代码 · 区间 · 区间涨跌幅 */
+    function paintHeroSrc(info, bars) {
+        var el = document.querySelector('.hero-src');
+        if (!el || !bars || bars.length < 2) return;
+        var first = bars[0][3], last = bars[bars.length - 1][3];
+        var pct = first ? (last - first) / first * 100 : 0;
+        var start = info.startDate, end = info.endDate;
+        var range = '';
+        if (start && end) {
+            // 同年只写一次年份：2026.03.02–06.30，跨年才两头都写全
+            range = start.slice(0, 4) === end.slice(0, 4)
+                ? dotDate(start) + '–' + end.slice(5).replace(/-/g, '.')
+                : dotDate(start) + '–' + dotDate(end);
+        }
+        el.innerHTML = '背景行情　' + esc(info.name || '') + ' ' + esc(info.code || '')
+            + (range ? ' · ' + range : '')
+            + ' · <b>' + (pct > 0 ? '+' : pct < 0 ? '-' : '') + Math.abs(pct).toFixed(1) + '%</b>';
+    }
+
+    /**
+     * 后台配了首页背景就换成那一份；没配过、或者这次没取到，就一直用页面自带的。
+     *
+     * <p>走原生 fetch 而不是 common.js 的 get()：首页是匿名入口，
+     * 背景取不到不该弹任何提示打扰访客。
+     */
+    function loadHero() {
+        fetch('/api/home/hero').then(function (res) {
+            return res.json();
+        }).then(function (json) {
+            var d = (json && json.success && json.data) ? json.data : null;
+            if (!d || !d.configured || !d.bars || d.bars.length < 2) return;
+            mountHero(d.bars);
+            paintHeroSrc(d, d.bars);
+        }).catch(function () {
+            /* 保持自带背景 */
+        });
+    }
+
+    mountHero(KC);
+    paintHeroSrc(HERO_DEFAULT, KC);
+    loadHero();
     initShowcase();
 })();
