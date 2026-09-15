@@ -390,18 +390,25 @@
  * ========================================================================= */
 .tape {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
-    gap: 1px;
+    /* auto-fill（不是 auto-fit）：轨道宽度恒定。指数共 9 条，按 240px 下限正好排 5 + 4；
+       换成 auto-fit 的话落单的第 9 条会被拉伸成整行宽，很难看。
+       末行剩下的空轨道由容器同色底兜住，看不出空洞。 */
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     margin-bottom: var(--sp-6);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
-    background: var(--border);
+    background: var(--bg-panel);
     overflow: hidden;
 }
 
 .tape-item {
     padding: var(--sp-4) var(--sp-4) var(--sp-3);
     background: var(--bg-panel);
+    /* 分隔线画在条目自己身上：1px 右/下边框配负 margin，最外圈那道正好压在容器边框上，
+       不会出现双线；容器底色与条目同色，于是末行不满时空出来的格子只是留白，不是一块色斑。 */
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    margin: 0 -1px -1px 0;
     transition: background .15s ease;
 }
 
