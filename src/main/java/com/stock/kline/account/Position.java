@@ -18,7 +18,7 @@ import java.math.BigDecimal;
  * </ul>
  *
  * <p>现价与昨收在查询时用新浪实时行情现取（见 {@code AccountService}），不落盘。
- * 落盘字段因此分三类：归属与标的、成本价与数量、
+ * 落盘字段因此分三类：归属与标的、成本价与数量（含 v1.5.6 的<b>可用数量</b>）、
  * 以及 v1.5.5 新增的<b>建仓日</b>与<b>当天买入池</b>（当天买入的数量与金额，
  * 它是「当天买入」的当日盈亏基准，跨天自动作废）。
  */
@@ -37,6 +37,18 @@ public class Position {
     private BigDecimal costPrice = BigDecimal.ZERO;
     /** 持仓数量（股） */
     private int quantity;
+    /**
+     * 可用数量（股，需求 v1.5.6 第 ① 条）：这条持仓里<b>能卖出</b>的数量。
+     *
+     * <p>与「持仓数量」分开记：持仓是账面有的，可用是当下能动的（限售、当日买入待转可用、
+     * 手工冻结都会让两者不一致）。卖出只能在这条线上走 —— 页面上「卖出」的候选标的与
+     * 可填数量都以它为准，超出一股都不给过。
+     *
+     * <p><b>null = 没单独设过</b>（v1.5.6 之前的老数据 / 老前端提交），等价于「持仓数量全部可用」，
+     * 这样老数据升级后照样能卖。业务侧的取值一律走 {@code AccountService#usableQty}，
+     * 那里会把 null 折成持仓数量、并把越界值夹到 [0, 持仓数量]。
+     */
+    private Integer availableQty;
     /**
      * 建仓日 yyyy-MM-dd（需求 v1.5.5 第 ③ 条），<b>非必填</b>。
      *
@@ -107,6 +119,14 @@ public class Position {
 
     public void setQuantity(int quantity) {
         this.quantity = quantity;
+    }
+
+    public Integer getAvailableQty() {
+        return availableQty;
+    }
+
+    public void setAvailableQty(Integer availableQty) {
+        this.availableQty = availableQty;
     }
 
     public String getOpenDate() {

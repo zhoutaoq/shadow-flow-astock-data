@@ -1,10 +1,12 @@
 /* =========================================================================
- * 我的账户页（v1.5.1 建立，v1.5.5 改版）
+ * 我的账户页（v1.5.1 建立，v1.5.5 改版，v1.5.6 收按钮 + 可用数量 + 雪球跳转）
  *
- * 结构：页头（标题 + 实时摘要 + 动作）→ 账户资金（只读）+ 收益汇总 → 持仓表格
- *      → 操作记录（实时生效、不落盘）。
+ * 结构：页头（标题 + 实时摘要）→ 账户资金（只读）+ 收益汇总 → 持仓列表
+ *      → 操作记录。
  * v1.5.5 起「期初市值 / 可用金额」与「记一笔买卖」都不再平铺在页面上，
- * 统一收进弹窗（.modal），页面只负责展示。
+ * 统一收进弹窗（.modal），页面只负责展示；
+ * v1.5.6 起二级页头不再堆按钮：「添加持仓 / 添加操作记录」落在持仓列表卡头（.acard-acts），
+ * 导出/导入在账户列表（一级）。
  * 颜色、圆角、间距一律走 common.css 的令牌，亮/暗主题无需改本文件。
  * 红涨绿跌：跟全站一致，涨用 --up、跌用 --down。
  * ========================================================================= */
@@ -125,6 +127,18 @@
     color: var(--text-dim);
     font-variant-numeric: tabular-nums;
 }
+
+/* 卡头右侧的动作按钮组（v1.5.6：持仓列表的「＋ 添加持仓 / ＋ 添加操作记录」落在这里） */
+.acard-acts {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 10px;
+    flex-shrink: 0;
+}
+
+/* 导出/导入用的隐藏文件选择器：点按钮时代替它弹窗 */
+.afile { display: none; }
 
 .acard-bd {
     padding: var(--sp-4) 18px var(--sp-5);
@@ -289,6 +303,19 @@ table.atable tbody tr:last-child td { border-bottom: none; }
     font-family: var(--font-mono);
     color: var(--text-dim);
     font-size: var(--fs-12);
+}
+
+/* 标的代码链到雪球个股页（v1.5.6）：保持代码的等宽观感，只在悬浮时给出可点的提示 */
+.atable .code-link {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px dashed var(--border);
+    transition: color .15s, border-color .15s;
+}
+
+.atable .code-link:hover {
+    color: var(--primary);
+    border-bottom-color: currentColor;
 }
 
 .atable .name { color: var(--text-strong); }
@@ -650,6 +677,7 @@ a.acct-hold-item.acct-more:hover { background: var(--bg-tint); }
 
 .acc-ops {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
 }
 

@@ -65,6 +65,13 @@ public class AccountSummary {
         private String name;
         private BigDecimal costPrice = BigDecimal.ZERO;
         private int quantity;
+        /**
+         * 可用数量（股，v1.5.6）：这条持仓里能卖出的数量，卖出上限。
+         *
+         * <p>这里是<b>折算过</b>的值 —— 老数据里没单独设过时等于持仓数量，
+         * 页面直接拿来用即可，不必再判空。
+         */
+        private int availableQty;
         /** 建仓日 yyyy-MM-dd，非必填，没填为 null */
         private String openDate;
         /** 当天买入、且仍在持仓中的数量（股）：这部分当日盈亏从当日买入均价起算 */
@@ -150,6 +157,14 @@ public class AccountSummary {
 
         public void setQuantity(int quantity) {
             this.quantity = quantity;
+        }
+
+        public int getAvailableQty() {
+            return availableQty;
+        }
+
+        public void setAvailableQty(int availableQty) {
+            this.availableQty = availableQty;
         }
 
         public String getOpenDate() {

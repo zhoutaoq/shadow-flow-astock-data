@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916a">
-    <link rel="stylesheet" href="/css/account.css?v=20260916a">
+    <link rel="stylesheet" href="/css/common.css?v=20260916b">
+    <link rel="stylesheet" href="/css/account.css?v=20260916b">
 </head>
 <body>
 <header class="topbar">
@@ -33,8 +33,10 @@
             </div>
             <div class="ahead-r">
                 <button class="btn-ghost" onclick="reload()">重新载入</button>
+                <button class="btn-ghost" onclick="pickImportFile()">导入账户</button>
                 <button onclick="openAccountModal('create')">＋ 新建账户</button>
             </div>
+            <input type="file" id="impFile" accept=".zip,application/zip" class="afile" onchange="submitImport(this)">
         </div>
 
         <div class="acc-grid" id="accGrid"></div>
@@ -53,13 +55,6 @@
                     <h1 class="ahead-t" id="curName">账户</h1>
                 </div>
                 <div class="asum" id="asum"></div>
-            </div>
-            <div class="ahead-r">
-                <button class="btn-ghost" onclick="reload()">重新载入</button>
-                <button class="btn-ghost" onclick="openAccountModal('rename', curId)">重命名</button>
-                <button class="btn-ghost" onclick="openFundModal()">维护资金</button>
-                <button class="btn-ghost" onclick="openPositionModal()">＋ 添加持仓</button>
-                <button onclick="openRecordModal()">＋ 记一笔</button>
             </div>
         </div>
 
@@ -113,12 +108,16 @@
                 </div>
             </section>
 
-            <!-- ③ 持仓配置 -->
+            <!-- ③ 持仓列表：录入动作就落在这张卡片的页头，页面右上角不再堆按钮 -->
             <section class="acard">
                 <header class="acard-hd">
                     <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
-                    <h2>持仓配置</h2>
+                    <h2>持仓列表</h2>
                     <span class="acard-note" id="posCount"></span>
+                    <div class="acard-acts">
+                        <button class="btn-ghost btn-sm" onclick="openPositionModal()">＋ 添加持仓</button>
+                        <button class="btn-ghost btn-sm" onclick="openRecordModal()">＋ 添加操作记录</button>
+                    </div>
                 </header>
                 <div class="acard-bd">
                     <div class="atable-wrap">
@@ -130,7 +129,8 @@
                                 <th>建仓日</th>
                                 <th>成本价</th>
                                 <th>现价</th>
-                                <th>数量</th>
+                                <th>持仓数量</th>
+                                <th>可用数量</th>
                                 <th>成本市值</th>
                                 <th>当前市值</th>
                                 <th>当日收益</th>
@@ -144,13 +144,12 @@
                 </div>
             </section>
 
-            <!-- ④ 操作记录：实时生效、不落盘。表单收进弹窗（需求 v1.5.5 第 ② 条） -->
+            <!-- ④ 操作记录：随账户一起落盘。录入走「＋ 添加操作记录」弹窗（按钮在持仓列表卡头） -->
             <section class="acard">
                 <header class="acard-hd">
                     <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span>
                     <h2>操作记录</h2>
                     <span class="acard-note" id="recCount"></span>
-                    <button class="btn-ghost btn-sm" onclick="openRecordModal()">＋ 记一笔</button>
                 </header>
                 <div class="acard-bd">
                     <div class="arec-head">
@@ -159,7 +158,7 @@
                         <span>成交价</span>
                         <span>数量</span>
                         <span>当日已实现</span>
-                        <span>时间</span>
+                        <span>日期</span>
                     </div>
                     <div class="arec-list" id="recList"></div>
                 </div>
@@ -169,18 +168,18 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260916a"></script>
-<script src="/js/date-picker.js?v=20260916a"></script>
-<script src="/js/stock-picker.js?v=20260916a"></script>
+<script src="/js/common.js?v=20260916b"></script>
+<script src="/js/date-picker.js?v=20260916b"></script>
+<script src="/js/stock-picker.js?v=20260916b"></script>
 <script>
     let overview = null;     // /api/account/accounts 一级列表
     let cfg = null;          // /api/account 当前账户设置
     let summary = null;      // /api/account/summary 当前账户汇总
     let limits = null;       // /api/account/limits
     let curId = 0;           // 当前进入的账户 id；0 = 停在账户列表
-    let recAction = 'buy';   // 「记一笔」弹窗里当前选中的方向
+    let recAction = 'buy';   // 「添加操作记录」弹窗里当前选中的方向
     let posPicker = null;    // 持仓弹窗里的选择器
-    let recPicker = null;    // 「记一笔」弹窗里的选择器
+    let recPicker = null;    // 「添加操作记录」弹窗里的选择器
 
     function showGate() {
         document.getElementById('gatePanel').style.display = '';
@@ -193,6 +192,23 @@
         const n = Number(v);
         if (v === null || v === undefined || isNaN(n) || n === 0) return '';
         return n > 0 ? 'up' : 'down';
+    }
+
+    /** 可用数量：后端已折算好（没单独设过 = 全部可用），这里只兜个底 */
+    function usableQty(p) {
+        if (!p) return 0;
+        const n = Number(p.availableQty);
+        if (p.availableQty === null || p.availableQty === undefined || isNaN(n)) return Number(p.quantity) || 0;
+        return Math.max(0, Math.min(n, Number(p.quantity) || 0));
+    }
+
+    /** 雪球个股页地址：6/9 开头是沪市、4/8 开头是北交所，其余（0/2/3）是深市 */
+    function xueqiuUrl(code) {
+        const c = String(code || '').trim();
+        if (!/^\d{6}$/.test(c)) return '';
+        const head = c.charAt(0);
+        const market = (head === '6' || head === '9') ? 'SH' : (head === '4' || head === '8') ? 'BJ' : 'SZ';
+        return 'https://xueqiu.com/S/' + market + c;
     }
 
     /** 金额：两位小数 + 千分位；null / 拿不到显示 — */
@@ -263,6 +279,7 @@
                 + '<div class="acc-ops">'
                 + '<button class="btn-ghost btn-sm" data-op="open">进入</button>'
                 + '<button class="btn-ghost btn-sm" data-op="rename">重命名</button>'
+                + '<button class="btn-ghost btn-sm" data-op="export">导出</button>'
                 + '<button class="btn-ghost btn-sm" data-op="delete">删除</button>'
                 + '</div>'
                 + '</div>';
@@ -279,6 +296,7 @@
                 const kind = op.getAttribute('data-op');
                 if (kind === 'open') return enterAccount(id);
                 if (kind === 'rename') return openAccountModal('rename', id);
+                if (kind === 'export') return exportAccount(id);
                 if (kind === 'delete') return removeAccount(id);
             });
         });
@@ -406,14 +424,20 @@
     function renderPositions(rows) {
         const body = document.getElementById('posBody');
         if (!rows.length) {
-            body.innerHTML = '<tr><td class="empty" colspan="11">这本账户还没有持仓，点右上角「＋ 添加持仓」，或到「操作记录」里「＋ 记一笔」买入一只</td></tr>';
+            body.innerHTML = '<tr><td class="empty" colspan="12">这本账户还没有持仓，点上方「＋ 添加持仓」，'
+                + '或「＋ 添加操作记录」买入一只</td></tr>';
             return;
         }
         body.innerHTML = rows.map(p => {
             const dayDir = dir(p.dayProfit);
             const totDir = dir(p.totalProfit);
+            const url = xueqiuUrl(p.code);
+            const usable = usableQty(p);
             return '<tr>'
-                + '<td class="code">' + esc(p.code) + '</td>'
+                + '<td class="code">' + (url
+                    ? '<a class="code-link" href="' + url + '" target="_blank" rel="noopener" title="在雪球查看">'
+                        + esc(p.code) + '</a>'
+                    : esc(p.code)) + '</td>'
                 + '<td class="name">' + esc(p.name || '')
                 + (p.quoted ? '' : '<span class="abadge">成本价兜底</span>')
                 + (p.dayBuyQty > 0 ? '<span class="abadge abadge-day">当日买入 ' + fmtNum(p.dayBuyQty, 0) + ' 股</span>' : '')
@@ -422,6 +446,7 @@
                 + '<td>' + money(p.costPrice) + '</td>'
                 + '<td>' + money(p.price) + '</td>'
                 + '<td>' + fmtNum(p.quantity, 0) + '</td>'
+                + '<td' + (usable <= 0 ? ' class="adim"' : '') + '>' + fmtNum(usable, 0) + '</td>'
                 + '<td>' + money(p.costValue) + '</td>'
                 + '<td>' + money(p.marketValue) + '</td>'
                 + '<td class="' + dayDir + '">' + moneySigned(p.dayProfit)
@@ -541,6 +566,83 @@
         }
     }
 
+    /* ============ 单账户导出 / 导入（v1.5.6 第 ③ 条） ============ */
+
+    /** 导出：把「账户 + 持仓 + 操作记录」打包成一个 zip 存到本机 */
+    async function exportAccount(id) {
+        const row = (overview && overview.accounts || []).find(a => a.id === id);
+        const name = (row && row.name) || '账户';
+        const headers = {};
+        const at = authToken();
+        if (at) {
+            headers['X-Auth-Token'] = at;
+        }
+        try {
+            const res = await fetch('/api/account/export?accountId=' + id, {headers});
+            if (res.status === 401) {
+                return onUnauthorized();
+            }
+            if (!res.ok) {
+                return toast('导出失败（' + res.status + '）', 'err');
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name + '-账户导出-' + today().replace(/-/g, '') + '.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            toast('已导出「' + name + '」', 'ok');
+        } catch (e) {
+            toast('导出失败：' + e.message, 'err');
+        }
+    }
+
+    /** 「导入账户」按钮：只是把系统文件选择器叫出来 */
+    function pickImportFile() {
+        const input = document.getElementById('impFile');
+        if (input) {
+            input.value = '';
+            input.click();
+        }
+    }
+
+    /**
+     * 上传导入文件：服务端解析后<b>新建一本账</b>，不动现有账户。
+     *
+     * <p>FormData 走 multipart，用的还是同一个登录令牌（请求头），不另起一套鉴权。
+     */
+    async function submitImport(input) {
+        const file = input && input.files && input.files[0];
+        if (!file) {
+            return;
+        }
+        const form = new FormData();
+        form.append('file', file, file.name);
+        const headers = {};
+        const at = authToken();
+        if (at) {
+            headers['X-Auth-Token'] = at;
+        }
+        let r = null;
+        try {
+            const res = await fetch('/api/account/import', {method: 'POST', body: form, headers});
+            if (res.status === 401) {
+                return onUnauthorized();
+            }
+            r = await res.json();
+        } catch (e) {
+            return toast('导入失败：' + e.message, 'err');
+        }
+        if (!r || !r.success) {
+            return toast((r && r.message) || '导入失败', 'err');
+        }
+        toast(r.message || '已导入', 'ok');
+        await openList();
+    }
+
     /* ============ 持仓弹窗 ============ */
 
     let editingId = null;
@@ -561,10 +663,13 @@
                 + '<input type="number" id="posCost" min="0" step="0.01" inputmode="decimal"></div>'
                 + '<div class="field"><label for="posQty">持仓数量（股）</label>'
                 + '<input type="number" id="posQty" min="1" step="100" inputmode="numeric"></div>'
+                + '<div class="field"><label for="posAvail">可用数量（股）</label>'
+                + '<input type="number" id="posAvail" min="0" step="100" inputmode="numeric"></div>'
                 + '<div class="field"><label for="posOpenDate">建仓日（选填）</label>'
                 + '<input type="date" id="posOpenDate"></div>'
-                + '<div class="modal-note">建仓日留空即不记；填成今天时，这条持仓的当日盈亏会以成本价为基准'
-                + '（页面直接配的持仓没有成交记录，只能用成本价当今天的起点）。</div>'
+                + '<div class="modal-note">建仓日默认今天：填成今天时，这条持仓的当日盈亏会以成本价为基准'
+                + '（页面直接配的持仓没有成交记录，只能用成本价当今天的起点）；'
+                + '清空则不记，当日盈亏按昨收算。可用数量是可卖出的部分，卖出时以它为上限。</div>'
                 + '<div class="modal-actions">'
                 + '<button class="btn-ghost" id="posCancel">取消</button>'
                 + '<button id="posSave">保存</button>'
@@ -586,8 +691,11 @@
         }
         posPicker.setItems(row ? [{code: row.code, name: row.name}] : []);
         mask.querySelector('#posCost').value = row ? row.costPrice : '';
-        mask.querySelector('#posQty').value = row ? row.quantity : '';
-        mask.querySelector('#posOpenDate').value = (row && row.openDate) ? row.openDate : '';
+        // 新增时数量与可用数量都默认 100（一手）、建仓日默认今天（刚买的就填今天）；
+        // 改的时候一律带出库里那一行的原值，别拿默认值覆盖用户记录过的信息
+        mask.querySelector('#posQty').value = row ? row.quantity : 100;
+        mask.querySelector('#posAvail').value = row ? usableQty(row) : 100;
+        mask.querySelector('#posOpenDate').value = row ? (row.openDate || '') : today();
         mask.classList.add('show');
     }
 
@@ -598,15 +706,23 @@
         }
         const cost = parseFloat(document.getElementById('posCost').value);
         const qty = parseInt(document.getElementById('posQty').value, 10);
+        const avail = parseInt(document.getElementById('posAvail').value, 10);
         if (isNaN(cost) || cost <= 0) {
             return toast('成本价必须大于 0', 'err');
         }
         if (isNaN(qty) || qty <= 0) {
             return toast('持仓数量必须大于 0', 'err');
         }
+        if (isNaN(avail) || avail < 0) {
+            return toast('可用数量要填一个不小于 0 的数字', 'err');
+        }
+        if (avail > qty) {
+            return toast('可用数量不能超过持仓数量（' + fmtNum(qty, 0) + ' 股）', 'err');
+        }
         const openDate = document.getElementById('posOpenDate').value;
         const body = {
             code: picked.code, name: picked.name || '', costPrice: cost, quantity: qty,
+            availableQty: avail,
             openDate: openDate ? openDate : null
         };
         const r = editingId
@@ -695,7 +811,33 @@
         await enterAccount(curId);
     }
 
-    /* ============ 操作记录（列表 + 「记一笔」弹窗） ============ */
+    /* ============ 操作记录（列表 + 「添加操作记录」弹窗） ============ */
+
+    /**
+     * 「卖出」的候选标的：这本账户里<b>可用数量 > 0</b> 的持仓。
+     *
+     * <p>返回 null 表示「买入」—— 买入走名录（新标的也要能买），不走这个清单。
+     */
+    function sellCandidates() {
+        if (recAction !== 'sell') return null;
+        return (summary && summary.positions || [])
+            .filter(p => usableQty(p) > 0)
+            .map(p => ({code: p.code, name: p.name || '', qty: usableQty(p)}));
+    }
+
+    /** 当前账户里某个代码的持仓（没有返回 null） */
+    function findPosition(code) {
+        return (summary && summary.positions || []).find(p => p.code === code) || null;
+    }
+
+    /** 记录的时间列：成交日期 + 录入时刻 */
+    function recordWhen(x) {
+        const d = x.tradeDate || '';
+        const t = x.time || '';
+        const hms = t.length >= 19 ? t.slice(11) : '';
+        if (d && hms) return d + ' ' + hms;
+        return d || t;
+    }
 
     async function loadRecords() {
         const r = await get('/api/account/records?accountId=' + curId);
@@ -719,16 +861,17 @@
                 + '<span>' + fmtNum(x.quantity, 0) + ' 股</span>'
                 + '<span class="' + dir(x.realizedProfit) + '">'
                 + (buy ? '—' : moneySigned(x.realizedProfit)) + '</span>'
-                + '<span class="arec-time">' + esc(x.time || '') + '</span>'
+                + '<span class="arec-time">' + esc(recordWhen(x)) + '</span>'
                 + '</div>';
         }).join('');
     }
 
     /**
-     * 「记一笔」弹窗（需求 v1.5.5 第 ② 条）。
+     * 「添加操作记录」弹窗（需求 v1.5.5 第 ② 条，v1.5.6 补默认值与卖出守门）。
      *
-     * <p>相比原来平铺在卡片里的表单，这里多了两样东西：成交价（买卖都按它动可用金额，
-     * 页面预填实时行情价）与「当天」勾选框（决定这笔量按买入价还是昨收算当日盈亏）。
+     * <p>相比原来平铺在卡片里的表单，这里多了几样东西：成交价（买卖都按它动可用金额，
+     * 页面预填实时行情价）、「当天」勾选框（决定这笔量按买入价还是昨收算当日盈亏）、
+     * <b>日期</b>（默认今天）与<b>卖出只能从持仓里选</b>。
      */
     function openRecordModal() {
         let mask = document.getElementById('recMask');
@@ -737,7 +880,7 @@
             mask.className = 'mask';
             mask.id = 'recMask';
             mask.innerHTML = '<div class="modal" style="width:500px">'
-                + '<h3>记一笔买卖</h3>'
+                + '<h3>添加操作记录</h3>'
                 + '<div class="field"><label>标的</label><div id="recPickerBox"></div></div>'
                 + '<div class="field"><label>方向</label>'
                 + '<div class="aseg" id="recAction">'
@@ -749,12 +892,14 @@
                 + '<div class="field"><label for="recPrice">成交价（元）</label>'
                 + '<input type="number" id="recPrice" min="0" step="0.01" inputmode="decimal"'
                 + ' placeholder="选好标的自动带出实时价，可手改"></div>'
+                + '<div class="field"><label for="recDate">日期</label>'
+                + '<input type="date" id="recDate"></div>'
                 + '<div class="field"><label class="chk"><input type="checkbox" id="recToday" checked>'
                 + '<span id="recTodayText">当天买入</span></label></div>'
                 + '<div class="modal-note" id="recNote"></div>'
                 + '<div class="modal-actions">'
                 + '<button class="btn-ghost" id="recCancel">取消</button>'
-                + '<button id="recSave">记一笔</button>'
+                + '<button id="recSave">保存</button>'
                 + '</div></div>';
             document.body.appendChild(mask);
             mask.querySelector('#recCancel').addEventListener('click', () => mask.classList.remove('show'));
@@ -764,21 +909,29 @@
             mask.querySelector('#recSave').addEventListener('click', submitRecord);
             recPicker = createStockPicker(mask.querySelector('#recPickerBox'), {
                 multiple: false,
-                // 选完标的自动带出成交价（已持仓 = 成本价，未持仓 = 实时行情价）
-                onChange: () => { fillPrice(true); }
+                // 卖出只认持仓：候选就是持仓里还有可用数量的那些，名录与手输一律不认
+                source: sellCandidates,
+                allowManual: () => recAction === 'buy' && typeof MODE !== 'undefined' && !!MODE.noDb,
+                emptyTip: () => recAction === 'sell'
+                    ? '这本账户里没有可卖出的持仓，先添加持仓或买入一只' : '',
+                // 选完标的自动带出成交价，并把「可用数量」摆到明面上
+                onChange: () => { paintRecordNote(); fillPrice(true); }
             });
             bindActionSegment();
+            if (typeof initDatePickers === 'function') {
+                initDatePickers(mask);
+            }
         }
         recAction = 'buy';
-        syncRecordModal();
-        mask.querySelector('#recQty').value = '';
+        mask.querySelector('#recQty').value = 100;
         mask.querySelector('#recPrice').value = '';
+        mask.querySelector('#recDate').value = today();
         mask.querySelector('#recToday').checked = true;
-        if (recPicker) recPicker.setItems([]);
+        syncRecordModal();
         mask.classList.add('show');
     }
 
-    /** 方向切换：按钮高亮 + 勾选框文案 + 说明文字一起跟着走 */
+    /** 方向切换：按钮高亮 + 候选清单 + 勾选框文案 + 说明文字一起跟着走 */
     function syncRecordModal() {
         const buy = recAction === 'buy';
         const box = document.getElementById('recAction');
@@ -791,11 +944,46 @@
                 ? '当天买入（这笔量的当日盈亏从买入价起算）'
                 : '卖的是当天买入的那部分（已实现按当日买入均价算）';
         }
+        if (recPicker) {
+            recPicker.setPlaceholder(buy
+                ? '输入代码或名称，从结果中点选'
+                : '从持仓里选一只要卖出的标的');
+            // 换了方向，之前选中的标的可能已经不在候选里（买入选的未必是持仓）
+            recPicker.setItems([]);
+            recPicker.refresh('');
+        }
+        paintRecordNote();
+    }
+
+    /**
+     * 说明文字：卖出时把「可用数量」写出来，用户不用去表里找。
+     *
+     * <p>数量输入框的 max 也跟着走，把上限提前挡住，别等提交才报错。
+     */
+    function paintRecordNote() {
         const note = document.getElementById('recNote');
-        if (note) {
-            note.textContent = buy
-                ? '买入按成交价扣减可用金额；已有持仓时成本价按加权平均重算。不勾选则视为隔夜持仓，当日盈亏按昨收算。'
-                : '卖出按成交价加回可用金额；不勾选则视为卖出隔夜持仓，那部分的当日已实现按昨收算。';
+        const qty = document.getElementById('recQty');
+        if (!note) return;
+        const picked = recPicker ? recPicker.getFirst() : null;
+        const pos = (picked && recAction === 'sell') ? findPosition(picked.code) : null;
+        const usable = pos ? usableQty(pos) : 0;
+        if (qty) {
+            if (pos) {
+                qty.setAttribute('max', String(Math.max(usable, 0)));
+            } else {
+                qty.removeAttribute('max');
+            }
+        }
+        if (recAction === 'buy') {
+            note.textContent = '买入按成交价扣减可用金额；已有持仓时成本价按加权平均重算。'
+                + '不勾选则视为隔夜持仓，当日盈亏按昨收算。';
+        } else if (pos) {
+            note.textContent = '卖出按成交价加回可用金额；' + (pos.name || pos.code)
+                + ' 当前可用 ' + fmtNum(usable, 0) + ' 股，卖出数量不能超过它。'
+                + '不勾选则视为卖出隔夜持仓，那部分的当日已实现按昨收算。';
+        } else {
+            note.textContent = '卖出按成交价加回可用金额，只能卖持仓里还有可用数量的标的。'
+                + '不勾选则视为卖出隔夜持仓，那部分的当日已实现按昨收算。';
         }
     }
 
@@ -817,11 +1005,27 @@
     async function submitRecord() {
         const picked = recPicker ? recPicker.getFirst() : null;
         if (!picked || !picked.code) {
+            if (recAction === 'sell' && recPicker && recPicker.hasUnresolvedInput()) {
+                return toast('卖出只能选持仓里的标的，请从下拉列表中点选', 'err');
+            }
             return toast('请选择操作标的', 'err');
         }
         const qty = parseInt(document.getElementById('recQty').value, 10);
         if (isNaN(qty) || qty <= 0) {
             return toast('数量必须大于 0', 'err');
+        }
+        if (recAction === 'sell') {
+            const pos = findPosition(picked.code);
+            if (!pos) {
+                return toast('这本账户里没有 ' + (picked.name || picked.code) + ' 的持仓，无法卖出', 'err');
+            }
+            const usable = usableQty(pos);
+            if (usable <= 0) {
+                return toast((pos.name || pos.code) + ' 当前没有可卖出的数量', 'err');
+            }
+            if (qty > usable) {
+                return toast('卖出数量不能超过可用数量 ' + fmtNum(usable, 0) + ' 股', 'err');
+            }
         }
         const priceRaw = document.getElementById('recPrice').value;
         let price = null;
@@ -839,6 +1043,7 @@
                 code: picked.code,
                 name: picked.name || '',
                 quantity: qty,
+                date: document.getElementById('recDate').value || today(),
                 today: document.getElementById('recToday').checked
             };
             if (price != null) {

@@ -113,9 +113,10 @@ CREATE TABLE IF NOT EXISTS waizao_account (
     KEY idx_waizao_account_user (user_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-我的账户';
 
--- 持仓：账户 + 标的 + 成本价 + 持仓数量
+-- 持仓：账户 + 标的 + 成本价 + 持仓数量 + 可用数量
 -- v1.5.5 补：建仓日（非必填）+ 当天买入池（当天买入且仍在持仓中的数量与金额，
 -- 它是「当天买入」那部分当日盈亏的比较基准，池子日期不是今天就作废）
+-- v1.5.6 补：可用数量（能卖出的部分；NULL = 没单独设过，等价于持仓数量全部可用）
 CREATE TABLE IF NOT EXISTS waizao_position (
     id             BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
     user_id        BIGINT         NOT NULL                COMMENT '归属用户 id',
@@ -124,6 +125,7 @@ CREATE TABLE IF NOT EXISTS waizao_position (
     stock_name     VARCHAR(128)   NOT NULL DEFAULT ''     COMMENT '标的名称',
     cost_price     DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '成本价（元），加仓按加权平均重算',
     quantity       INT            NOT NULL DEFAULT 0      COMMENT '持仓数量（股）',
+    available_qty  INT            NULL                    COMMENT '可用数量（股）：能卖出的部分；NULL = 全部可用',
     open_date      VARCHAR(10)    NULL                    COMMENT '建仓日 yyyy-MM-dd（非必填）',
     day_buy_date   VARCHAR(10)    NULL                    COMMENT '当天买入池归属日期 yyyy-MM-dd，跨天作废',
     day_buy_qty    INT            NOT NULL DEFAULT 0      COMMENT '当天买入且仍在持仓中的数量（股）',
@@ -135,6 +137,29 @@ CREATE TABLE IF NOT EXISTS waizao_position (
     KEY idx_waizao_position_user (user_id),
     KEY idx_waizao_position_account (account_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-持仓配置';
+
+-- 操作记录：账户下的一次买入 / 卖出（v1.5.6 建立，从内存改为落盘）
+-- 每次「记一笔」立即作用到持仓与可用金额上，这里留一份流水用于回看与导出
+-- 只增不改：账户被删时连同记录一起删；单账户保留条数上限由 AccountService 控制
+CREATE TABLE IF NOT EXISTS waizao_trade_record (
+    id              BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+    user_id         BIGINT         NOT NULL                COMMENT '归属用户 id',
+    account_id      BIGINT         NOT NULL DEFAULT 0      COMMENT '归属账户 id',
+    action          VARCHAR(8)     NOT NULL                COMMENT 'buy-买入 sell-卖出',
+    stock_code      VARCHAR(16)    NOT NULL                COMMENT '标的代码',
+    stock_name      VARCHAR(128)   NOT NULL DEFAULT ''     COMMENT '标的名称',
+    price           DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '成交价（元）',
+    quantity        INT            NOT NULL DEFAULT 0      COMMENT '数量（股）',
+    turnover        DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '成交额 = 成交价 × 数量（元）',
+    cash_after      DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '操作后可用金额（元），让流水自带余额快照',
+    same_day        TINYINT        NOT NULL DEFAULT 1      COMMENT '是否当天成交: 1-是 0-否',
+    realized_profit DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '卖出这一笔的当日已实现盈亏（元）',
+    trade_date      VARCHAR(10)    NULL                    COMMENT '成交日期 yyyy-MM-dd（默认录入当天）',
+    record_time     DATETIME       NULL                    COMMENT '录入时刻',
+    create_time     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    KEY idx_waizao_trade_record_account (user_id, account_id, id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-操作记录（买卖流水）';
 
 -- ============================================================
 -- 回测（数据源固定：供应商 waizao + 日K表 waizao_stock_kline_daily）

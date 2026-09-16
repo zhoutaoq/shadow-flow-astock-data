@@ -29,6 +29,9 @@ import java.util.regex.Pattern;
  * <p>超管 {@code admin} 在首次启动时自动创建，初始密码取 {@code app.admin.password}
  * （由启动环境变量 {@code ADMIN_PASSWORD} 覆盖）。账号已存在时不覆盖密码，
  * 否则页面改完一重启就回到初始值。
+ *
+ * <p>注册成功后会经 {@link RegistrationNotifier} 推一条钉钉埋点（注册时间 + 邮箱）。
+ * 那是「顺手通知」而不是注册流程的一环：异步发送、推不出去也只写日志，注册照常成功。
  */
 @Service
 public class AuthService {
@@ -47,11 +50,14 @@ public class AuthService {
     private final UserRepository users;
     private final AuthProperties props;
     private final SessionService sessions;
+    private final RegistrationNotifier registrationNotifier;
 
-    public AuthService(UserRepository users, AuthProperties props, SessionService sessions) {
+    public AuthService(UserRepository users, AuthProperties props, SessionService sessions,
+                       RegistrationNotifier registrationNotifier) {
         this.users = users;
         this.props = props;
         this.sessions = sessions;
+        this.registrationNotifier = registrationNotifier;
     }
 
     /** 首次启动时把超管账号建出来 */
@@ -97,6 +103,9 @@ public class AuthService {
         u.setPasswordHash(PasswordHasher.hash(password, salt));
         users.save(u);
         log.info("[auth] 新用户注册 {}", name);
+        // 注册埋点：推一条钉钉（注册时间 + 邮箱）。异步 + 内部吞异常，
+        // 推送出任何问题都不该让「注册」这件事失败 —— 用户这时候已经建好了
+        registrationNotifier.notifyRegistered(u);
         return u;
     }
 

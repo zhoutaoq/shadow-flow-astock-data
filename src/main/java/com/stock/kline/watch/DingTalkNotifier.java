@@ -20,8 +20,9 @@ import java.time.format.DateTimeFormatter;
  * <p>实际推送仍是 POST 一段 JSON 到 webhook，body 形如
  * <code>{"msgtype":"text","text":{"content":"..."}}</code>。
  *
- * <p>两个入口：{@link #send(String)} 走盯盘自己的 webhook（自动补「关键词 + 公网 IP + 推送时刻」前缀），
- * {@link #post(String, String)} 是通用入口，供用户反馈等模块指定 webhook 复用。
+ * <p>三个入口：{@link #send(String)} 走盯盘自己的 webhook（自动补「关键词 + 公网 IP + 推送时刻」前缀），
+ * {@link #post(String, String)} 是通用入口，供用户反馈等模块指定 webhook 复用，
+ * {@link #postAlways(String, String)} 与它相同但跳过交易时段闸门（注册埋点这类「人触发的独立事件」用）。
  */
 public class DingTalkNotifier {
 
@@ -110,6 +111,32 @@ public class DingTalkNotifier {
      * @return 是否推送成功（HTTP 2xx 且响应体已读取）
      */
     public boolean post(String webhook, String content) {
+        return post(webhook, content, false);
+    }
+
+    /**
+     * 与 {@link #post(String, String)} 相同，但<b>不看交易时段</b>（仍受总开关约束）。
+     *
+     * <p>时段闸门是为了治「盯盘进程在非交易时段照旧轮询」而设的：收盘后行情是当日快照、
+     * 价格不再变动，重启后第一轮会把「已经封板」误报成「刚封上」，18:00 收到涨停通知就是这么来的。
+     * 那是<b>轮询产生的噪声</b>，而下面这类消息不是：
+     * <ul>
+     *   <li><b>用户注册埋点</b>（{@code RegistrationNotifier}）—— 人什么时候注册就是什么时候，
+     *       没有任何「时段」可言。注册高峰常在晚上，走 {@link #post(String, String)} 会被静默掉，
+     *       埋点等于没做。</li>
+     * </ul>
+     *
+     * <p>这些事件都是低频的（一天几条），不会构成刷屏，所以放开时段是有意为之。
+     * 总开关 {@code watch.dingtalk.enabled} 依然是硬闸：本地开发关着它，一条都出不去。
+     *
+     * <p>⚠️ 新增调用方前先问一句：这条消息是「机器轮询的产物」还是「人触发的独立事件」？
+     * 前者必须继续走 {@link #post(String, String)}。
+     */
+    public boolean postAlways(String webhook, String content) {
+        return post(webhook, content, true);
+    }
+
+    private boolean post(String webhook, String content, boolean ignoreSessionGate) {
         // 总开关：开发环境默认关，一条都发不出去，避免本地反复启停往群里刷消息
         if (!props.getDingtalk().isEnabled()) {
             log.info("[dingtalk] 钉钉推送总开关已关闭（--watch.dingtalk.enabled=true 打开），本次不发送：{}",
@@ -117,9 +144,10 @@ public class DingTalkNotifier {
             return false;
         }
         // 时段闸门：非交易时段（含收盘后、午休、周末）一条都不发。
-        // 放在这里是因为 post() 是所有钉钉消息的唯一出口 ——
+        // 放在这里是因为这里是所有钉钉消息的唯一出口 ——
         // 盯盘告警、关键时点播报、启动通知、用户反馈全走它，一处拦截就是全部拦截。
-        if (!props.getDingtalk().pushAllowedNow()) {
+        // 唯一例外是 ignoreSessionGate（见 postAlways）：那是「人触发的独立事件」，不适用本闸门。
+        if (!ignoreSessionGate && !props.getDingtalk().pushAllowedNow()) {
             log.info("[dingtalk] 非交易时段（{}），本次不发送：{}",
                     props.getDingtalk().getTradeSessions(), oneLine(content));
             return false;

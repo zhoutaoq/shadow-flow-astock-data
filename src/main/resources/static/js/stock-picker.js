@@ -6,6 +6,8 @@
  *
  * 单选：createStockPicker(el, {})
  * 多选：createStockPicker(el, {multiple: true})
+ * 候选只来自某个固定集合（如账户页「卖出」只能选持仓里的标的）：
+ *     createStockPicker(el, {source: () => [{code, name}, ...], allowManual: false})
  *
  * 返回对象：
  *   getCodes()            已选代码数组
@@ -14,6 +16,8 @@
  *   hasUnresolvedInput()  输入框有字但没点选 → 提交前拦截用
  *   getInputText()        输入框当前文本（用于提示"你填的 XXX 没有对应标的"）
  *   setItems(list)        外部同步已选（不触发 onChange，避免循环）
+ *   setPlaceholder(text)  换掉输入框提示（方向切换时文案跟着变）
+ *   refresh(kw)           重新取一次候选（不自动展开下拉）
  *   clear()               清空
  *   pickByCode(code)      按代码反查并选中（从 URL 带参数进来时用）
  *   focus()
@@ -45,6 +49,16 @@ const STOCK_PICKER_DROP_MAX_W = 420;
     const allowManual = typeof opts.allowManual === 'function'
         ? opts.allowManual
         : () => !!(opts.allowManual || (typeof MODE !== 'undefined' && MODE.noDb));
+    /**
+     * 候选来源（可选）：给了就只从它返回的清单里选，不再去问 /api/dir/stocks。
+     *
+     * <p>用在「候选天然就是一个小集合」的场景 —— 账户页「卖出」只能卖持仓里的标的，
+     * 让用户从名录里随便挑一个再被后端拒绝，体验与实现都不对。函数可以是异步的，
+     * 返回 {@code null} 表示这次走回默认的名录查询（同一选择器可随页面状态来回切）。
+     */
+    const source = typeof opts.source === 'function' ? opts.source : null;
+    /** 候选为空时的提示（字符串或 {@code (kw) => string}）；返回空则用通用文案 */
+    const emptyTip = opts.emptyTip || null;
     /** chips 用 grid 布局时的列数（0 或 undefined = 行内默认样式） */
     const gridColumns = opts.gridColumns || 0;
 
@@ -125,14 +139,21 @@ const STOCK_PICKER_DROP_MAX_W = 420;
         }
     }
 
+    /** 没有候选时的提示文案：页面可用 opts.emptyTip 覆盖 */
+    function emptyText(kw) {
+        const custom = typeof emptyTip === 'function' ? emptyTip(kw) : emptyTip;
+        if (custom) {
+            return custom;
+        }
+        return '没有匹配的股票' + (kw ? '：' + kw : '')
+            + (allowManual()
+                ? '。可直接输入完整代码后回车（或到「实时通知配置」检查令牌）'
+                : '。可换个关键字，或先到「股票列表管理」导入股票列表');
+    }
+
     function renderDropBody(kw) {
         if (!options.length) {
-            dropEl.innerHTML = '<div class="sp-tip">没有匹配的股票'
-                + (kw ? '：' + esc(kw) : '')
-                + (allowManual()
-                    ? '。可直接输入完整代码后回车（或到「实时通知配置」检查令牌）'
-                    : '。可换个关键字，或先到「股票列表管理」导入股票列表')
-                + '</div>';
+            dropEl.innerHTML = '<div class="sp-tip">' + esc(emptyText(kw)) + '</div>';
             return;
         }
         dropEl.innerHTML = options.map((o, i) => {
@@ -277,25 +298,48 @@ const STOCK_PICKER_DROP_MAX_W = 420;
     }
 
     /**
-     * 服务端匹配：每次输入停顿后带着关键字去问一次，server 返回排好序的 topN。
+     * 取候选。
      *
-     * <p>名录不再下发到客户端（v1.2：股票集合常驻服务端内存，前端不缓存）；
+     * <p>默认走服务端匹配：每次输入停顿后带着关键字去问一次，server 返回排好序的 topN。
+     * 名录不再下发到客户端（v1.2：股票集合常驻服务端内存，前端不缓存）；
      * 服务端用并行 String[] 紧凑存储，5436 条只占约 350KB，匹配是单次 O(n) 扫描+少量排序，
      * 8 核 1.7G 内存机器上 p95 < 5ms，前端 200ms 防抖 + 串行请求足够。
+     *
+     * <p>给了 {@code opts.source}（且它返回了清单）时改成在本地过滤 —— 候选本来就是一小撮
+     * （例如「持仓里的标的」），不值得也不该去问名录。
+     *
+     * @param {boolean} silent true = 只把候选准备好，不主动展开下拉（方向切换后刷新用）
      */
-    async function search(kw) {
+    async function search(kw, silent) {
         lastKw = kw || '';
         const my = ++seq;
+        if (source) {
+            const all = (await source()) || [];
+            if (my !== seq) return;
+            const k = lastKw.trim().toLowerCase();
+            options = (k
+                ? all.filter(x => String(x.code || '').toLowerCase().indexOf(k) >= 0
+                    || String(x.name || '').toLowerCase().indexOf(k) >= 0)
+                : all).slice(0, limit);
+            activeIdx = options.length ? 0 : -1;
+            renderDropBody(lastKw);
+            if (isShown()) {
+                positionDrop();
+            } else if (!silent) {
+                open();
+            }
+            return;
+        }
         const q = ['limit=' + limit];
         if (lastKw) q.push('keyword=' + encodeURIComponent(lastKw));
         // 空查询不打招呼，节省请求；按规范输入第一个字再走接口
         if (lastKw === '' && !options.length) {
             dropEl.innerHTML = '<div class="sp-tip">输入代码或名称开始匹配</div>';
-            open();
+            if (!silent) open();
             return;
         }
         dropEl.innerHTML = '<div class="sp-tip"><span class="spinner"></span> 搜索中...</div>';
-        open();
+        if (!silent) open();
         const r = await get('/api/dir/stocks?' + q.join('&'));
         if (my !== seq) return;
         if (!r.success) {
@@ -444,6 +488,17 @@ const STOCK_PICKER_DROP_MAX_W = 420;
             }
         },
         clear: clearAll,
+        /** 换掉输入框提示文案（方向切换时「从持仓里选」这类提示要跟着变） */
+        setPlaceholder(text) {
+            inputEl.placeholder = text || '';
+        },
+        /**
+         * 重新取一次候选，<b>不自动展开下拉</b>（用户点输入框时才展开）。
+         * 用在「同一选择器的候选会变」的场景：账户页切到「卖出」后候选换成持仓里的标的。
+         */
+        refresh(kw) {
+            return search(kw || '', true);
+        },
         /** 按代码反查并选中；列表里没有时单选只填文本不算选中（提交会被拦截） */
         async pickByCode(code) {
             if (!code) return false;

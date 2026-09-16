@@ -4,10 +4,16 @@ import com.stock.kline.account.Account;
 import com.stock.kline.account.AccountOverview;
 import com.stock.kline.account.AccountService;
 import com.stock.kline.account.AccountSummary;
+import com.stock.kline.account.AccountTransferService;
 import com.stock.kline.account.Position;
 import com.stock.kline.account.TradeRecord;
 import com.stock.kline.auth.AuthContext;
 import com.stock.kline.model.ApiResponse;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,8 +23,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -46,9 +55,11 @@ import java.util.Map;
  *   <li>{@code PUT  /api/account/positions/{id}} 修改持仓；</li>
  *   <li>{@code DELETE /api/account/positions/{id}} 删除持仓；</li>
  *   <li>{@code DELETE /api/account/positions} 清空持仓；</li>
- *   <li>{@code GET  /api/account/records}    操作记录（内存、不落盘）；</li>
+ *   <li>{@code GET  /api/account/records}    操作记录（v1.5.6 起落盘，重启不丢）；</li>
  *   <li>{@code POST /api/account/records}    记一笔买 / 卖，实时生效；</li>
- *   <li>{@code DELETE /api/account/records}  清空操作记录。</li>
+ *   <li>{@code DELETE /api/account/records}  清空操作记录；</li>
+ *   <li>{@code GET  /api/account/export}     导出单个账户（zip：账户 + 持仓 + 操作记录）；</li>
+ *   <li>{@code POST /api/account/import}     导入账户导出文件（新建一本账）。</li>
  * </ul>
  *
  * <p>所有接口都取当前登录用户，账户数据严格按用户隔离。
@@ -58,9 +69,11 @@ import java.util.Map;
 public class AccountController {
 
     private final AccountService service;
+    private final AccountTransferService transfer;
 
-    public AccountController(AccountService service) {
+    public AccountController(AccountService service, AccountTransferService transfer) {
         this.service = service;
+        this.transfer = transfer;
     }
 
     /* ==================== 一级：账户 ==================== */
@@ -174,14 +187,16 @@ public class AccountController {
     }
 
     /**
-     * 记一笔买 / 卖：实时生效（改持仓 + 改可用金额 + 记当日已实现 + 买入选/卖出移盯盘），不落盘。
+     * 记一笔买 / 卖：实时生效（改持仓 + 改可用金额 + 记当日已实现 + 买入选/卖出移盯盘），落盘。
      *
      * <p>请求体形如
-     * <code>{"action":"buy","code":"600000","quantity":100,"price":10.5,"today":true}</code>。
+     * <code>{"action":"buy","code":"600000","quantity":100,"price":10.5,"today":true,"date":"2026-09-16"}</code>。
      * {@code price} 是实际成交价（页面预填实时行情价，可手改），买卖都按它动可用金额；
      * 缺省时回落到持仓成本价。{@code today} 是「当天买入 / 卖的是当天买入的」标记，
      * 缺省按 {@code true}：一旦勾上，这笔买入的当日盈亏从买入价起算、
      * 这笔卖出按当天买入均价算已实现（详见 {@code AccountService#addRecord}）。
+     * {@code date} 是成交日期（v1.5.6），缺省即今天；填成过去的日期按补录处理，
+     * 只改持仓与可用金额，不动「当天买入池」与当日已实现。
      */
     @PostMapping("/records")
     public ApiResponse<TradeRecord> addRecord(@RequestParam(value = "accountId", required = false) Long accountId,
@@ -204,13 +219,15 @@ public class AccountController {
         }
         BigDecimal price = decimal(body.get("price"));
         Object name = body.get("name");
+        Object date = body.get("date");
         TradeRecord r = service.addRecord(requireUserId(), requireAccountId(accountId),
                 act == null ? null : String.valueOf(act),
                 code == null ? null : String.valueOf(code),
                 name == null ? null : String.valueOf(name),
                 quantity,
                 price,
-                bool(body.get("today")));
+                bool(body.get("today")),
+                date == null ? null : String.valueOf(date));
         return ApiResponse.ok(r, (TradeRecord.ACTION_BUY.equals(r.getAction()) ? "买入" : "卖出")
                 + "已生效：可用金额 " + r.getCashAfter());
     }
@@ -247,6 +264,47 @@ public class AccountController {
         actions.add(TradeRecord.ACTION_SELL);
         limits.put("actions", actions);
         return ApiResponse.ok(limits);
+    }
+
+    /* ==================== 单账户导出 / 导入（v1.5.6 第 ③ 条） ==================== */
+
+    /**
+     * 导出某个账户：账户情况 + 持仓情况 + 操作记录，打包成一个 zip 下载。
+     *
+     * <p>返回的是文件流而不是 {@code ApiResponse}，前端按 blob 接、拼文件名存盘。
+     * 文件名走 RFC 5987（账户名是中文，直接塞进 header 会乱码）。
+     */
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> export(@RequestParam(value = "accountId", required = false) Long accountId) {
+        long userId = requireUserId();
+        long aid = requireAccountId(accountId);
+        byte[] body = transfer.exportZip(userId, aid);
+        ContentDisposition cd = ContentDisposition.attachment()
+                .filename(transfer.exportFileName(userId, aid), StandardCharsets.UTF_8)
+                .build();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("application/zip"));
+        headers.setContentDisposition(cd);
+        headers.setContentLength(body.length);
+        return new ResponseEntity<>(body, headers, HttpStatus.OK);
+    }
+
+    /**
+     * 导入一个账户导出文件（zip）：<b>新建一本账</b>，不动已有的任何一本。
+     *
+     * <p>账户名与现有账户重名时自动加「（导入）」后缀。
+     */
+    @PostMapping("/import")
+    public ApiResponse<Account> importAccount(@RequestParam("file") MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return ApiResponse.fail("请选择要导入的文件");
+        }
+        try {
+            Account a = transfer.importZip(requireUserId(), file.getBytes());
+            return ApiResponse.ok(a, "已导入为账户「" + a.getName() + "」");
+        } catch (IOException e) {
+            return ApiResponse.fail("文件读取失败：" + e.getMessage());
+        }
     }
 
     /* ==================== 内部 ==================== */

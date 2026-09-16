@@ -8,9 +8,10 @@ import java.util.List;
  * <p>沿用项目既有的「一份模型 + 两种落点」约定：
  * <ul>
  *   <li>数据库模式（{@code waizao.db.enabled=true}）：账户落 {@code waizao_account}，
- *       持仓落 {@code waizao_position}（带 {@code account_id}）；</li>
+ *       持仓落 {@code waizao_position}（带 {@code account_id}），
+ *       操作记录落 {@code waizao_trade_record}（v1.5.6 新增）；</li>
  *   <li>无数据库模式：落 {@code ./data/account/account-{userId}.json}，
- *       一个用户的<b>所有账户与持仓</b>放在同一个文件里 —— 它们天然是一棵树，
+ *       一个用户的<b>所有账户、持仓与操作记录</b>放在同一个文件里 —— 它们天然是一棵树，
  *       拆文件反而要处理跨文件一致性。</li>
  * </ul>
  *
@@ -20,6 +21,15 @@ import java.util.List;
 public interface AccountRepository {
 
     /* ==================== 账户 ==================== */
+
+    /**
+     * 有账户数据的所有用户 id，升序。
+     *
+     * <p>v1.5.6 第 ⑥ 条（每天 00:00 把可用数量对齐到持仓数量）需要<b>跨用户</b>遍历，
+     * 而其它接口都是「已知 userId 再取数据」，所以单开这一个方法。
+     * 只列有账户的用户：没有账户的用户没有任何持仓需要处理。
+     */
+    List<Long> listUserIds();
 
     /** 某个用户的全部账户，按账户 id 升序；没建过返回空列表 */
     List<Account> listAccounts(long userId);
@@ -49,4 +59,23 @@ public interface AccountRepository {
 
     /** 删除某个账户的全部持仓（清空持仓用） */
     void deleteAllPositions(long userId, long accountId);
+
+    /* ==================== 操作记录 ==================== */
+
+    /**
+     * 某个账户的操作记录，<b>旧的在前</b>（按 id 升序）。
+     *
+     * <p>v1.5.6 起操作记录与账户、持仓一起落盘（无数据库模式落在同一个
+     * {@code account-{userId}.json} 里，它们本来就是一棵树），进程重启不再清空。
+     */
+    List<TradeRecord> listRecords(long userId, long accountId);
+
+    /** 追加一条操作记录（id 由仓储分配），返回落库后的记录 */
+    TradeRecord saveRecord(TradeRecord record);
+
+    /** 只保留最新的 {@code keep} 条，更旧的删掉（记录只增不减会让文件无限膨胀） */
+    void trimRecords(long userId, long accountId, int keep);
+
+    /** 清空某个账户的操作记录（不动持仓与余额） */
+    void clearRecords(long userId, long accountId);
 }

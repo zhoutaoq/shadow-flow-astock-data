@@ -20,9 +20,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 我的账户：账户 / 持仓 / 操作记录的业务核心（需求 v1.5.1 第 ③ 条、v1.5.2 第 ④ 条）。
@@ -38,8 +35,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>另外两块职责保持不变：
  * <ul>
  *   <li><b>收益计算</b>：现价与昨收用新浪实时行情现取（与盯盘同一条链路），算完不落盘；</li>
- *   <li><b>操作记录</b>：买入 / 卖出实时生效、不落盘（只留内存，见 {@link TradeRecord}），
- *       买入把标的加入盯盘，卖出后<b>所有账户都不再持有</b>该标的才移出盯盘。</li>
+ *   <li><b>操作记录</b>：买入 / 卖出实时生效，<b>v1.5.6 起随账户、持仓一起落盘</b>
+ *       （见 {@link TradeRecord}），买入把标的加入盯盘，
+ *       卖出后<b>所有账户都不再持有</b>该标的才移出盯盘。</li>
  * </ul>
  *
  * <p>用户第一次进来时自动建一本「默认账户」—— 与 v1.5.1 的体验保持连续：
@@ -82,13 +80,13 @@ public class AccountService {
     public static final String DEFAULT_ACCOUNT_NAME = "默认账户";
 
     /** 单账户最多持仓条数：页面一次查一轮行情，太多既慢也容易被行情接口限流 */
-    private static final int MAX_POSITIONS = 200;
+    static final int MAX_POSITIONS = 200;
     /** 每个用户最多账户数：「多本账」是为了分账，不是当数据库用 */
     private static final int MAX_ACCOUNTS = 10;
     /** 账户名称最大长度 */
     private static final int MAX_NAME_LEN = 32;
-    /** 每个账户保留的操作记录条数上限（内存数据，不落盘，超出丢最旧的） */
-    private static final int MAX_RECORDS = 200;
+    /** 每个账户保留的操作记录条数上限（超出丢最旧的：记录只增不减会让落盘文件无限膨胀） */
+    static final int MAX_RECORDS = 200;
 
     /** 金额口径：一律四位小数存储，展示时前端保留两位 */
     private static final int MONEY_SCALE = 4;
@@ -111,10 +109,6 @@ public class AccountService {
     private final ObjectProvider<SinaQuoteClient> quoteClientProvider;
     private final ObjectProvider<WatchConfigStore> watchStoreProvider;
     private final ObjectProvider<StockDirectory> directoryProvider;
-
-    /** userId:accountId → 该账户的操作记录（新的在前）；<b>刻意不落盘</b> */
-    private final ConcurrentMap<String, List<TradeRecord>> records = new ConcurrentHashMap<>();
-    private final AtomicLong recordSeq = new AtomicLong(0);
 
     public AccountService(AccountRepository repository,
                           ObjectProvider<SinaQuoteClient> quoteClientProvider,
@@ -259,6 +253,64 @@ public class AccountService {
     }
 
     /**
+     * 按导入文件里的「账户情况」新建一本账（需求 v1.5.6 第 ③ 条）。
+     *
+     * <p>导入<b>不改动</b>已有的任何一本账，只新增 —— 导入出错大不了删掉这本，
+     * 用户原来的账户与持仓一行都不动。
+     *
+     * <p>账户名沿用导出时的名字；重名时自动加「（导入）」「（导入2）」这样的后缀，
+     * 免得和现有账户撞名（同一用户下账户名唯一）。名字超长直接截断到上限。
+     */
+    public Account createAccountForImport(long userId, String name, BigDecimal initValue,
+                                          BigDecimal cash, String remark) {
+        List<Account> exist = listAccounts(userId);
+        if (exist.size() >= MAX_ACCOUNTS) {
+            throw new IllegalArgumentException("最多 " + MAX_ACCOUNTS + " 本账户，先删掉一本再导入");
+        }
+        String base = name == null ? "" : name.trim();
+        if (base.isEmpty()) {
+            base = DEFAULT_ACCOUNT_NAME;
+        }
+        if (base.length() > MAX_NAME_LEN) {
+            base = base.substring(0, MAX_NAME_LEN);
+        }
+        Account a = newAccount(userId, uniqueName(base, exist));
+        a.setInitValue(checkInit(initValue));
+        a.setCash(nz(cash).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+        a.setRemark(remark);
+        String now = LocalDateTime.now().format(DF);
+        a.setCreateTime(now);
+        a.setUpdateTime(now);
+        return repository.createAccount(a);
+    }
+
+    /** 重名时依次试「（导入）」「（导入2）」…；名字已被截到上限时会先让位给后缀 */
+    private static String uniqueName(String base, List<Account> exist) {
+        if (!nameTaken(base, exist)) {
+            return base;
+        }
+        for (int i = 1; i <= MAX_ACCOUNTS + 1; i++) {
+            String suffix = i == 1 ? "（导入）" : "（导入" + i + "）";
+            int room = MAX_NAME_LEN - suffix.length();
+            String head = base.length() > room ? base.substring(0, Math.max(0, room)) : base;
+            String candidate = head + suffix;
+            if (!nameTaken(candidate, exist)) {
+                return candidate;
+            }
+        }
+        return base;
+    }
+
+    private static boolean nameTaken(String name, List<Account> exist) {
+        for (Account a : exist) {
+            if (name.equals(a.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 保存账户设置（名称 / 期初市值 / 可用金额 / 备注）。
      *
      * <p>可用金额允许为负（融资 / 手工记账场景），但页面会提示；
@@ -299,7 +351,7 @@ public class AccountService {
         return saveAccount(userId, accountId, incoming);
     }
 
-    /** 删除一本账（连同它的持仓与内存里的操作记录）；最后一本不让删 */
+    /** 删除一本账（连同它的持仓与操作记录）；最后一本不让删 */
     public void deleteAccount(long userId, long accountId) {
         Account a = getAccountRequired(userId, accountId);
         if (listAccounts(userId).size() <= 1) {
@@ -307,7 +359,6 @@ public class AccountService {
         }
         List<Position> positions = repository.listPositions(userId, accountId);
         repository.deleteAccount(userId, accountId);
-        records.remove(key(userId, accountId));
         for (Position p : positions) {
             watchPruneIfUnheld(userId, p.getCode());
         }
@@ -329,6 +380,10 @@ public class AccountService {
      * <p><b>建仓日（v1.5.5 第 ③ 条）</b>：非必填，页面手填；留空即 null。
      * 另外这个方法是用提交内容<b>重建</b>一行，所以「当天买入池」必须从库里那一行原样带过来 ——
      * 否则用户在页面上改一下数量就会把当天买入的痕迹抹掉、当日盈亏跟着跳。
+     *
+     * <p><b>可用数量（v1.5.6 第 ① 条）</b>：同样是从头重建，所以先校验
+     * {@code 0 ≤ 可用数量 ≤ 持仓数量}（超了就报错，不静默夹）；没提交（null）时沿用库里那一行，
+     * 新行没提交就是 null —— 语义是「全部可用」，老前端与老数据都照旧能卖。
      */
     public Position savePosition(long userId, long accountId, Position incoming) {
         if (incoming == null) {
@@ -361,6 +416,14 @@ public class AccountService {
         if (incoming.getId() == null && exist.size() >= MAX_POSITIONS) {
             throw new IllegalArgumentException("单本账户最多 " + MAX_POSITIONS + " 条持仓");
         }
+        Integer available = incoming.getAvailableQty();
+        if (available == null && prev != null) {
+            // 没提交（老前端 / 只改了别的字段）就沿用原值，别把用户设过的可用数量抹掉
+            available = prev.getAvailableQty();
+        }
+        if (available != null && (available < 0 || available > qty)) {
+            throw new IllegalArgumentException("可用数量要在 0 到持仓数量（" + qty + " 股）之间");
+        }
         String now = LocalDateTime.now().format(DF);
         Position p = new Position();
         p.setId(incoming.getId());
@@ -370,6 +433,7 @@ public class AccountService {
         p.setName(nameOf(code, incoming.getName()));
         p.setCostPrice(cost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
         p.setQuantity(qty);
+        p.setAvailableQty(available);
         p.setOpenDate(checkOpenDate(incoming.getOpenDate()));
         if (prev != null) {
             p.setDayBuyDate(prev.getDayBuyDate());
@@ -393,7 +457,45 @@ public class AccountService {
         repository.deleteAllPositions(userId, aid);
     }
 
-    /* ==================== 操作记录（实时生效、不落盘） ==================== */
+    /* ==================== 可用数量日切（v1.5.6 第 ⑥ 条） ==================== */
+
+    /**
+     * 把所有用户、所有账户、所有标的的<b>可用数量对齐到持仓数量</b>。
+     *
+     * <p>语义就是隔夜结算：头一天买进来的份额到了新交易日全部变成可卖。
+     * 由 {@code AvailableQtyResetTask} 每天 00:00（北京时间）触发，
+     * 也做成 public 便于单独验证（不经过 HTTP，避免为一个内部动作多开一个写接口）。
+     *
+     * <p>已经是「可用 = 持仓」的持仓不动、不重写文件：每天全量重写一遍
+     * 会把落盘文件的 mtime 全刷一遍，出问题时反而看不出到底哪几行真的变过。
+     *
+     * @return 实际被改动的持仓条数
+     */
+    public int resetAvailableQty() {
+        int users = 0;
+        int scanned = 0;
+        int changed = 0;
+        for (Long userId : repository.listUserIds()) {
+            users++;
+            for (Account a : repository.listAccounts(userId)) {
+                for (Position p : repository.listPositions(userId, a.getId())) {
+                    scanned++;
+                    Integer avail = p.getAvailableQty();
+                    // null 视为「全部可用」（老数据兼容口径），一并落成显式的持仓数量
+                    if (avail != null && avail.intValue() == p.getQuantity()) {
+                        continue;
+                    }
+                    p.setAvailableQty(p.getQuantity());
+                    repository.savePosition(p);
+                    changed++;
+                }
+            }
+        }
+        log.info("[account] 可用数量日切完成：{} 个用户 / 扫描 {} 条持仓 / 对齐 {} 条", users, scanned, changed);
+        return changed;
+    }
+
+    /* ==================== 操作记录（实时生效，v1.5.6 起随账户落盘） ==================== */
 
     /**
      * 记一笔买 / 卖，并<b>立即</b>作用到该账户的持仓、可用金额、当日盈亏与盯盘名单上。
@@ -418,14 +520,29 @@ public class AccountService {
      * 标的进盯盘名单的前提就是用户买了它，所以买入允许新建持仓（{@code price} 必填）；
      * 卖出则要求持仓已存在且数量足够，清仓（卖出后剩 0）时如果别的账户也不再持有该标的，
      * 就把它移出盯盘。
+     *
+     * <h4>v1.5.6：卖出的两道闸 + 可用数量 + 成交日期</h4>
+     * <ol>
+     *   <li><b>卖出必须真的持有</b>：该账户里没有这只标的的持仓时直接报错。
+     *       v1.5.5 及以前只在「没填成交价」这条路径上判过，页面一带上价就走到
+     *       {@code hit.getQuantity()} 上空指针 —— 现在把判空提到最前面，
+     *       并且把「只能卖可用数量以内的量」也一起收在这里；</li>
+     *   <li><b>可用数量是卖出的硬上限</b>：{@code 数量 ≤ usableQty(持仓)}，
+     *       买入加、卖出减（见 {@link Position#getAvailableQty()}）；</li>
+     *   <li><b>成交日期</b>：{@code tradeDate} 缺省即今天。是今天才动「当天买入池」与账户的
+     *       「当日已实现盈亏」；填成过去的日期属于补录，只改持仓与可用金额，不碰当日口径。</li>
+     * </ol>
      */
     public TradeRecord addRecord(long userId, long accountId, String action, String code, String name,
-                                 Integer quantity, BigDecimal price, Boolean todayFlag) {
+                                 Integer quantity, BigDecimal price, Boolean todayFlag, String tradeDate) {
         long aid = resolveAccountId(userId, accountId);
         Account acct = getAccountRequired(userId, aid);
         String today = todayYmd();
+        String date = checkTradeDate(tradeDate, today);
+        // 不是今天的成交属于补录：不进「当天买入池」、不计当日已实现（那些口径只对今天有效）
+        boolean onToday = today.equals(date);
         // 不带标记的老调用按「当天」处理：用户此刻按下「记一笔」，绝大多数就是当天成交
-        boolean sameDay = todayFlag == null || todayFlag;
+        boolean sameDay = (todayFlag == null || todayFlag) && onToday;
 
         String act = TradeRecord.ACTION_BUY.equalsIgnoreCase(action) ? TradeRecord.ACTION_BUY
                 : TradeRecord.ACTION_SELL.equalsIgnoreCase(action) ? TradeRecord.ACTION_SELL : null;
@@ -453,6 +570,19 @@ public class AccountService {
         boolean buy = TradeRecord.ACTION_BUY.equals(act);
         // 名称：优先用页面选中的那个（用户看到的就是它），缺了才去名录精确查
         String displayName = nameOf(c, name);
+        // 卖出守门：必须先真的持有、且有可卖出的数量（v1.5.6 第 ① 条）
+        if (!buy) {
+            if (hit == null) {
+                throw new IllegalArgumentException("这本账户里还没有 " + displayName + " 的持仓，无法卖出");
+            }
+            int usable = usableQty(hit);
+            if (usable <= 0) {
+                throw new IllegalArgumentException(displayName + "(" + c + ") 当前没有可卖出的数量");
+            }
+            if (usable < qty) {
+                throw new IllegalArgumentException("卖出 " + qty + " 股超出可用数量 " + usable + " 股");
+            }
+        }
         BigDecimal given = nz(price);
         BigDecimal unit;
         if (given.signum() > 0) {
@@ -478,7 +608,7 @@ public class AccountService {
         BigDecimal realized = null;
         if (buy) {
             if (hit == null) {
-                // 新建持仓：成本价 = 本次成交价，数量 = 本次数量
+                // 新建持仓：成本价 = 本次成交价，数量 = 本次数量，可用数量同样从 0 起加
                 Position fresh = new Position();
                 fresh.setUserId(userId);
                 fresh.setAccountId(aid);
@@ -486,6 +616,7 @@ public class AccountService {
                 fresh.setName(displayName);
                 fresh.setCostPrice(unit);
                 fresh.setQuantity(qty);
+                fresh.setAvailableQty(qty);
                 if (sameDay) {
                     fresh.setOpenDate(today);
                     fresh.setDayBuyDate(today);
@@ -500,6 +631,7 @@ public class AccountService {
                 if (hit.getQuantity() < 1) {
                     throw new IllegalArgumentException("持仓数量异常，请重新配置持仓");
                 }
+                int usable = usableQty(hit);
                 // 加仓：成本价按「老成本市值 + 本次成交额」加权平均重算，
                 // 这样买入那一刻账户总市值不变，不会凭空多出一段盈亏
                 int newQty = hit.getQuantity() + qty;
@@ -508,6 +640,7 @@ public class AccountService {
                         .divide(BigDecimal.valueOf(newQty), MONEY_SCALE + 2, RoundingMode.HALF_UP);
                 hit.setCostPrice(newCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
                 hit.setQuantity(newQty);
+                hit.setAvailableQty(usable + qty);
                 if (sameDay) {
                     rolloverDayBuy(hit, today);
                     hit.setDayBuyQty(hit.getDayBuyQty() + qty);
@@ -523,21 +656,23 @@ public class AccountService {
             cash = cash.subtract(turnover);
             watchAdd(userId, pos);
         } else {
-            if (hit.getQuantity() < qty) {
-                throw new IllegalArgumentException("持仓只有 " + hit.getQuantity() + " 股，卖出 " + qty + " 股超出持仓");
-            }
-            // 当日已实现：卖出价 vs 基准价（当天买入份额用当日买入均价、隔夜份额用昨收）
+            int usable = usableQty(hit);
+            // 当日已实现：卖出价 vs 基准价（当天买入份额用当日买入均价、隔夜份额用昨收）。
+            // 补录（日期不是今天）不算当日已实现 —— 那个数只对今天有意义
             BigDecimal preClose = preCloseOf(c);
-            realized = realizedOfSell(hit, today, qty, unit, sameDay, preClose);
-            int fromDay = soldFromDay(hit, today, qty, sameDay);
-            if (fromDay > 0) {
-                reduceDayPool(hit, today, fromDay);
+            realized = onToday ? realizedOfSell(hit, today, qty, unit, sameDay, preClose) : BigDecimal.ZERO;
+            if (onToday) {
+                int fromDay = soldFromDay(hit, today, qty, sameDay);
+                if (fromDay > 0) {
+                    reduceDayPool(hit, today, fromDay);
+                }
             }
             int left = hit.getQuantity() - qty;
             if (left == 0) {
                 repository.deletePosition(userId, aid, hit.getId());
             } else {
                 hit.setQuantity(left);
+                hit.setAvailableQty(Math.min(Math.max(0, usable - qty), left));
                 hit.setUpdateTime(LocalDateTime.now().format(DF));
                 repository.savePosition(hit);
             }
@@ -548,8 +683,8 @@ public class AccountService {
                 watchPruneIfUnheld(userId, hit.getCode());
             }
         }
-        // 已实现盈亏落在账户上（日期不是今天的旧值先作废）
-        if (realized != null && realized.signum() != 0) {
+        // 已实现盈亏落在账户上（日期不是今天的旧值先作废）；补录不参与当日已实现
+        if (onToday && realized != null && realized.signum() != 0) {
             if (!today.equals(acct.getDayRealizedDate())) {
                 acct.setDayRealizedDate(today);
                 acct.setDayRealizedProfit(BigDecimal.ZERO);
@@ -560,7 +695,6 @@ public class AccountService {
         saveAccountCash(acct, cash);
 
         TradeRecord r = new TradeRecord();
-        r.setId(recordSeq.incrementAndGet());
         r.setUserId(userId);
         r.setAccountId(aid);
         r.setAction(act);
@@ -572,20 +706,27 @@ public class AccountService {
         r.setCashAfter(cash);
         r.setSameDay(sameDay);
         r.setRealizedProfit(realized == null ? BigDecimal.ZERO : realized);
+        r.setTradeDate(date);
         r.setTime(LocalDateTime.now().format(DF));
-        pushRecord(userId, aid, r);
+        repository.saveRecord(r);
+        repository.trimRecords(userId, aid, MAX_RECORDS);
 
-        log.info("[account] 用户 {} 账户 {} {} {} {} 股，价格 {}，成交额 {}，可用金额 {}{}",
+        log.info("[account] 用户 {} 账户 {} {} {} {} 股，价格 {}，成交额 {}，可用金额 {}{}{}",
                 userId, aid, buy ? "买入" : "卖出",
                 r.getName(), qty, r.getPrice(), turnover, cash,
+                onToday ? "" : "，成交日期 " + date,
                 realized == null ? "" : "，当日已实现 " + realized);
         return r;
     }
 
-    /** 某个账户的操作记录（新的在前，不落盘、进程重启即清空） */
+    /** 某个账户的操作记录（新的在前，与账户、持仓一起落盘，重启不丢） */
     public List<TradeRecord> listRecords(long userId, long accountId) {
-        List<TradeRecord> list = records.get(key(userId, resolveAccountId(userId, accountId)));
-        return list == null ? new ArrayList<>() : new ArrayList<>(list);
+        List<TradeRecord> list = repository.listRecords(userId, resolveAccountId(userId, accountId));
+        List<TradeRecord> out = new ArrayList<>(list.size());
+        for (int i = list.size() - 1; i >= 0; i--) {
+            out.add(list.get(i));
+        }
+        return out;
     }
 
     /**
@@ -622,7 +763,7 @@ public class AccountService {
 
     /** 清空某个账户的操作记录（不影响持仓与余额） */
     public void clearRecords(long userId, long accountId) {
-        records.remove(key(userId, resolveAccountId(userId, accountId)));
+        repository.clearRecords(userId, resolveAccountId(userId, accountId));
     }
 
     /* ==================== 汇总（收益计算） ==================== */
@@ -782,6 +923,8 @@ public class AccountService {
             v.setName(p.getName());
             v.setCostPrice(p.getCostPrice());
             v.setQuantity(p.getQuantity());
+            // 可用数量按折算后的值下发（老数据没设过 = 全部可用），页面不必再判空
+            v.setAvailableQty(usableQty(p));
             v.setOpenDate(p.getOpenDate());
 
             BigDecimal cost = nz(p.getCostPrice());
@@ -1004,8 +1147,57 @@ public class AccountService {
         return LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
     }
 
+    /**
+     * 一条持仓的<b>可用数量</b>（可卖出的股数，需求 v1.5.6 第 ① 条）。
+     *
+     * <p>三个口径一次收敛到这里，页面与后端判断卖出上限都用它：
+     * <ul>
+     *   <li>没单独设过（{@code null}，v1.5.6 之前的老数据）→ 持仓数量，全部可卖；</li>
+     *   <li>设过 → 取它，并夹到 {@code [0, 持仓数量]}（库里被手工改脏也不至于卖出不存在的量）；</li>
+     *   <li>持仓数量本身 ≤ 0 → 0（没有可卖的）。</li>
+     * </ul>
+     */
+    static int usableQty(Position p) {
+        if (p == null || p.getQuantity() <= 0) {
+            return 0;
+        }
+        Integer raw = p.getAvailableQty();
+        if (raw == null) {
+            return p.getQuantity();
+        }
+        return Math.max(0, Math.min(raw, p.getQuantity()));
+    }
+
+    /**
+     * 成交日期：空 → 今天；非法 → 报错（需求 v1.5.6 第 ② 条，默认当天）。
+     *
+     * <p>与建仓日同一套宽松解析（{@code yyyy-MM-dd} / {@code yyyyMMdd} / {@code yyyy/MM/dd} /
+     * {@code yyyy.MM.dd} 都认）；不接受未来日期 —— 成交不可能发生在明天，填错了直接拦。
+     */
+    private static String checkTradeDate(String raw, String today) {
+        String ymd = checkOpenDate(raw);
+        if (ymd == null) {
+            return today;
+        }
+        if (ymd.compareTo(today) > 0) {
+            throw new IllegalArgumentException("成交日期不能晚于今天");
+        }
+        return ymd;
+    }
+
     /** 建仓日宽松解析：空 → null；非法 → 直接报错让用户改 */
     private static String checkOpenDate(String raw) {
+        return checkYmd(raw, "建仓日");
+    }
+
+    /**
+     * yyyy-MM-dd 宽松解析（建仓日 / 成交日期 / 导入文件里的日期都用它）：
+     * 空 → null；非法 → 报错让用户改。
+     *
+     * <p>{@code yyyy-MM-dd} / {@code yyyyMMdd} / {@code yyyy/MM/dd} / {@code yyyy.MM.dd} 都认，
+     * 但年月日必须真实存在（2026-02-30 直接拒）。
+     */
+    static String checkYmd(String raw, String label) {
         if (raw == null) {
             return null;
         }
@@ -1015,12 +1207,12 @@ public class AccountService {
         }
         String digits = s.replace("-", "").replace("/", "").replace(".", "");
         if (digits.length() != 8 || !digits.chars().allMatch(Character::isDigit)) {
-            throw new IllegalArgumentException("建仓日格式不对，请按 2026-09-16 这样的日期填写");
+            throw new IllegalArgumentException(label + "格式不对，请按 2026-09-16 这样的日期填写");
         }
         try {
             return LocalDate.parse(digits, YMD_COMPACT).format(DateTimeFormatter.ISO_LOCAL_DATE);
         } catch (Exception e) {
-            throw new IllegalArgumentException("建仓日不是有效日期，请确认年月日");
+            throw new IllegalArgumentException(label + "不是有效日期，请确认年月日");
         }
     }
 
@@ -1137,26 +1329,6 @@ public class AccountService {
         }
     }
 
-    private void pushRecord(long userId, long accountId, TradeRecord r) {
-        String k = key(userId, accountId);
-        List<TradeRecord> fresh = new ArrayList<>();
-        fresh.add(r);
-        List<TradeRecord> old = records.get(k);
-        if (old != null) {
-            for (TradeRecord one : old) {
-                if (fresh.size() >= MAX_RECORDS) {
-                    break;
-                }
-                fresh.add(one);
-            }
-        }
-        records.put(k, fresh);
-    }
-
-    private static String key(long userId, long accountId) {
-        return userId + ":" + accountId;
-    }
-
     /** 账户名判空 / 判长 / 判重（skipId 是要改的那本账，判重时跳过自己） */
     private static String checkName(String name, List<Account> exist, long skipId) {
         String clean = name == null ? "" : name.trim();
@@ -1196,7 +1368,7 @@ public class AccountService {
     }
 
     /** 代码规范化：只认 6 位沪深A股，非法给 null */
-    private static String normalizeCode(String code) {
+    static String normalizeCode(String code) {
         if (code == null) {
             return null;
         }
