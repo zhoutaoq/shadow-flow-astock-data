@@ -31,11 +31,13 @@ public class DbAccountRepository implements AccountRepository {
     private static final String T_POSITION = "waizao_position";
 
     private static final String ACCOUNT_COLUMNS = "id, user_id, account_name AS name, init_value, cash, remark,"
+            + " day_realized_date, day_realized_profit,"
             + " DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') AS create_time,"
             + " DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') AS update_time";
 
     private static final String POSITION_COLUMNS = "id, user_id, account_id, stock_code AS code,"
-            + " stock_name AS name, cost_price, quantity,"
+            + " stock_name AS name, cost_price, quantity, open_date,"
+            + " day_buy_date, day_buy_qty, day_buy_amount,"
             + " DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') AS create_time,"
             + " DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') AS update_time";
 
@@ -75,6 +77,20 @@ public class DbAccountRepository implements AccountRepository {
         exec("ALTER TABLE " + T_POSITION + " DROP INDEX uk_waizao_position_user_code,"
                 + " ADD UNIQUE KEY uk_waizao_position_account_code (account_id, stock_code),"
                 + " ADD KEY idx_waizao_position_account (account_id)");
+
+        // v1.5.5：建仓日（非必填）+ 当天买入池 + 账户当日已实现盈亏
+        exec("ALTER TABLE " + T_POSITION + " ADD COLUMN open_date VARCHAR(10) NULL"
+                + " COMMENT '建仓日 yyyy-MM-dd（非必填）' AFTER quantity");
+        exec("ALTER TABLE " + T_POSITION + " ADD COLUMN day_buy_date VARCHAR(10) NULL"
+                + " COMMENT '当天买入池归属日期 yyyy-MM-dd，跨天作废' AFTER open_date");
+        exec("ALTER TABLE " + T_POSITION + " ADD COLUMN day_buy_qty INT NOT NULL DEFAULT 0"
+                + " COMMENT '当天买入且仍在持仓中的数量（股）' AFTER day_buy_date");
+        exec("ALTER TABLE " + T_POSITION + " ADD COLUMN day_buy_amount DECIMAL(20, 4) NOT NULL DEFAULT 0"
+                + " COMMENT '当天买入部分的成交金额（元）' AFTER day_buy_qty");
+        exec("ALTER TABLE " + T_ACCOUNT + " ADD COLUMN day_realized_date VARCHAR(10) NULL"
+                + " COMMENT '当日已实现盈亏归属日期 yyyy-MM-dd' AFTER cash");
+        exec("ALTER TABLE " + T_ACCOUNT + " ADD COLUMN day_realized_profit DECIMAL(20, 4) NOT NULL DEFAULT 0"
+                + " COMMENT '当日已实现盈亏（元）' AFTER day_realized_date");
 
         // v1.5.1 允许「只加持仓、没保存过账户设置」，这种用户没有账户行可挂 ——
         // 先给有持仓的用户补一本默认账，再统一认领，数据一条都不会丢
@@ -139,14 +155,17 @@ public class DbAccountRepository implements AccountRepository {
         }
         KeyHolder keys = new GeneratedKeyHolder();
         named.update("INSERT INTO " + T_ACCOUNT
-                        + " (user_id, account_name, init_value, cash, remark)"
-                        + " VALUES (:uid, :name, :init, :cash, :remark)",
+                        + " (user_id, account_name, init_value, cash, remark,"
+                        + " day_realized_date, day_realized_profit)"
+                        + " VALUES (:uid, :name, :init, :cash, :remark, :realizedDate, :realized)",
                 new MapSqlParameterSource()
                         .addValue("uid", account.getUserId())
                         .addValue("name", account.getName())
                         .addValue("init", nz(account.getInitValue()))
                         .addValue("cash", nz(account.getCash()))
-                        .addValue("remark", account.getRemark()),
+                        .addValue("remark", account.getRemark())
+                        .addValue("realizedDate", account.getDayRealizedDate())
+                        .addValue("realized", nz(account.getDayRealizedProfit())),
                 keys, new String[]{"id"});
         Number key = keys.getKey();
         if (key != null) {
@@ -166,11 +185,14 @@ public class DbAccountRepository implements AccountRepository {
                 .addValue("name", account.getName())
                 .addValue("init", nz(account.getInitValue()))
                 .addValue("cash", nz(account.getCash()))
-                .addValue("remark", account.getRemark());
+                .addValue("remark", account.getRemark())
+                .addValue("realizedDate", account.getDayRealizedDate())
+                .addValue("realized", nz(account.getDayRealizedProfit()));
         if (account.getId() > 0) {
             // id + user_id 一起进 where：改不动别人的账户
             int n = named.update("UPDATE " + T_ACCOUNT
-                            + " SET account_name = :name, init_value = :init, cash = :cash, remark = :remark"
+                            + " SET account_name = :name, init_value = :init, cash = :cash, remark = :remark,"
+                            + " day_realized_date = :realizedDate, day_realized_profit = :realized"
                             + " WHERE id = :id AND user_id = :uid",
                     params.addValue("id", account.getId()));
             if (n > 0) {
@@ -213,12 +235,18 @@ public class DbAccountRepository implements AccountRepository {
                 .addValue("code", position.getCode())
                 .addValue("name", position.getName())
                 .addValue("cost", nz(position.getCostPrice()))
-                .addValue("qty", position.getQuantity());
+                .addValue("qty", position.getQuantity())
+                .addValue("openDate", position.getOpenDate())
+                .addValue("dayBuyDate", position.getDayBuyDate())
+                .addValue("dayBuyQty", position.getDayBuyQty())
+                .addValue("dayBuyAmount", nz(position.getDayBuyAmount()));
         if (position.getId() == null) {
             KeyHolder keys = new GeneratedKeyHolder();
             named.update("INSERT INTO " + T_POSITION
-                            + " (user_id, account_id, stock_code, stock_name, cost_price, quantity)"
-                            + " VALUES (:uid, :aid, :code, :name, :cost, :qty)",
+                            + " (user_id, account_id, stock_code, stock_name, cost_price, quantity, open_date,"
+                            + " day_buy_date, day_buy_qty, day_buy_amount)"
+                            + " VALUES (:uid, :aid, :code, :name, :cost, :qty, :openDate,"
+                            + " :dayBuyDate, :dayBuyQty, :dayBuyAmount)",
                     params, keys, new String[]{"id"});
             Number key = keys.getKey();
             if (key != null) {
@@ -229,7 +257,9 @@ public class DbAccountRepository implements AccountRepository {
             params.addValue("id", position.getId());
             named.update("UPDATE " + T_POSITION
                             + " SET stock_code = :code, stock_name = :name,"
-                            + " cost_price = :cost, quantity = :qty"
+                            + " cost_price = :cost, quantity = :qty, open_date = :openDate,"
+                            + " day_buy_date = :dayBuyDate, day_buy_qty = :dayBuyQty,"
+                            + " day_buy_amount = :dayBuyAmount"
                             + " WHERE id = :id AND user_id = :uid AND account_id = :aid",
                     params);
         }

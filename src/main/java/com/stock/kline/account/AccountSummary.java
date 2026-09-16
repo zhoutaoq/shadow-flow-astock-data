@@ -12,7 +12,7 @@ import java.util.List;
  *   <li>持仓市值 = Σ(数量 × 现价)；</li>
  *   <li>当前总市值 = 持仓市值 + 可用金额；</li>
  *   <li>总收益 = 当前总市值 - 期初市值；</li>
- *   <li>当日收益 = Σ((现价 - 昨收) × 数量)。</li>
+ *   <li>当日收益 = 持仓浮动当日盈亏 + 当日已实现盈亏。</li>
  * </ul>
  */
 public class AccountSummary {
@@ -37,9 +37,18 @@ public class AccountSummary {
     private BigDecimal totalProfit = BigDecimal.ZERO;
     /** 总收益率（%）：期初市值为 0 时为 null */
     private BigDecimal totalProfitPercent;
-    /** 当日收益（元）= Σ((现价 - 昨收) × 数量) */
+    /**
+     * 当日收益（元）= 持仓浮动当日盈亏 + 当日已实现盈亏（需求 v1.5.5 第 ② 条）。
+     *
+     * <p>v1.5.4 之前这里一律是 Σ((现价 - 昨收) × 数量)，当天买入的份额被拿昨收当基准、
+     * 当天卖出的已实现完全没算，所以是错的。
+     */
     private BigDecimal dayProfit = BigDecimal.ZERO;
-    /** 当日收益率（%）：按昨收市值算，拿不到昨收时为 null */
+    /** 当日浮动盈亏（元）：仍持有的份额按各自基准价算出来的部分 */
+    private BigDecimal dayFloatProfit = BigDecimal.ZERO;
+    /** 当日已实现盈亏（元）：当天卖出部分落袋的部分（在途时可能为 0） */
+    private BigDecimal dayRealizedProfit = BigDecimal.ZERO;
+    /** 当日收益率（%）：按当日基准市值算，基准价缺失时为 null */
     private BigDecimal dayProfitPercent;
     private String remark;
     /** 持仓明细（含现价、当日/总收益） */
@@ -56,6 +65,16 @@ public class AccountSummary {
         private String name;
         private BigDecimal costPrice = BigDecimal.ZERO;
         private int quantity;
+        /** 建仓日 yyyy-MM-dd，非必填，没填为 null */
+        private String openDate;
+        /** 当天买入、且仍在持仓中的数量（股）：这部分当日盈亏从当日买入均价起算 */
+        private int dayBuyQty;
+        /** 当日买入均价（元）：dayBuyQty > 0 时才有值 */
+        private BigDecimal dayBuyAvgPrice;
+        /** 当日盈亏的比较基准价（元）：按基准口径取 昨收 / 当日买入均价 / 成本价 */
+        private BigDecimal dayBasisPrice;
+        /** 基准价口径说明，页面直接展示：昨收 / 当日买入均价 / 建仓成本价 / 混合 */
+        private String dayBasis;
         /** 现价（元）：行情取不到时回落到成本价，保证页面不是空的 */
         private BigDecimal price = BigDecimal.ZERO;
         /** 昨收（元）：取不到为 null */
@@ -131,6 +150,46 @@ public class AccountSummary {
 
         public void setQuantity(int quantity) {
             this.quantity = quantity;
+        }
+
+        public String getOpenDate() {
+            return openDate;
+        }
+
+        public void setOpenDate(String openDate) {
+            this.openDate = openDate;
+        }
+
+        public int getDayBuyQty() {
+            return dayBuyQty;
+        }
+
+        public void setDayBuyQty(int dayBuyQty) {
+            this.dayBuyQty = dayBuyQty;
+        }
+
+        public BigDecimal getDayBuyAvgPrice() {
+            return dayBuyAvgPrice;
+        }
+
+        public void setDayBuyAvgPrice(BigDecimal dayBuyAvgPrice) {
+            this.dayBuyAvgPrice = dayBuyAvgPrice;
+        }
+
+        public BigDecimal getDayBasisPrice() {
+            return dayBasisPrice;
+        }
+
+        public void setDayBasisPrice(BigDecimal dayBasisPrice) {
+            this.dayBasisPrice = dayBasisPrice;
+        }
+
+        public String getDayBasis() {
+            return dayBasis;
+        }
+
+        public void setDayBasis(String dayBasis) {
+            this.dayBasis = dayBasis;
         }
 
         public BigDecimal getPrice() {
@@ -300,6 +359,22 @@ public class AccountSummary {
 
     public void setDayProfit(BigDecimal dayProfit) {
         this.dayProfit = dayProfit;
+    }
+
+    public BigDecimal getDayFloatProfit() {
+        return dayFloatProfit;
+    }
+
+    public void setDayFloatProfit(BigDecimal dayFloatProfit) {
+        this.dayFloatProfit = dayFloatProfit;
+    }
+
+    public BigDecimal getDayRealizedProfit() {
+        return dayRealizedProfit;
+    }
+
+    public void setDayRealizedProfit(BigDecimal dayRealizedProfit) {
+        this.dayRealizedProfit = dayRealizedProfit;
     }
 
     public BigDecimal getDayProfitPercent() {

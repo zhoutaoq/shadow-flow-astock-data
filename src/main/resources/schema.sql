@@ -97,30 +97,39 @@ CREATE TABLE IF NOT EXISTS waizao_user (
 -- ============================================================
 
 -- 账户：名称 + 期初市值 + 可用金额
+-- v1.5.5 补：当日已实现盈亏（当天卖出部分落袋的收益，随账户当日收益一起展示；日期不是今天就作废）
 CREATE TABLE IF NOT EXISTS waizao_account (
-    id           BIGINT         NOT NULL AUTO_INCREMENT COMMENT '账户 id（主键）',
-    user_id      BIGINT         NOT NULL                COMMENT '归属用户 id',
-    account_name VARCHAR(64)    NOT NULL DEFAULT '默认账户' COMMENT '账户名称，同一用户下不重名',
-    init_value   DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '账户期初市值（元）',
-    cash         DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '可用金额（元）：买入扣减、卖出加回',
-    remark       VARCHAR(255)   NULL                    COMMENT '备注',
-    create_time  DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_time  DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    id                  BIGINT         NOT NULL AUTO_INCREMENT COMMENT '账户 id（主键）',
+    user_id             BIGINT         NOT NULL                COMMENT '归属用户 id',
+    account_name        VARCHAR(64)    NOT NULL DEFAULT '默认账户' COMMENT '账户名称，同一用户下不重名',
+    init_value          DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '账户期初市值（元）',
+    cash                DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '可用金额（元）：买入按成交价扣减、卖出按成交价加回',
+    day_realized_date   VARCHAR(10)    NULL                    COMMENT '当日已实现盈亏的归属日期 yyyy-MM-dd',
+    day_realized_profit DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '当日已实现盈亏（元）',
+    remark              VARCHAR(255)   NULL                    COMMENT '备注',
+    create_time         DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time         DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
     KEY idx_waizao_account_user (user_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-我的账户';
 
 -- 持仓：账户 + 标的 + 成本价 + 持仓数量
+-- v1.5.5 补：建仓日（非必填）+ 当天买入池（当天买入且仍在持仓中的数量与金额，
+-- 它是「当天买入」那部分当日盈亏的比较基准，池子日期不是今天就作废）
 CREATE TABLE IF NOT EXISTS waizao_position (
-    id          BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
-    user_id     BIGINT         NOT NULL                COMMENT '归属用户 id',
-    account_id  BIGINT         NOT NULL DEFAULT 0      COMMENT '归属账户 id',
-    stock_code  VARCHAR(16)    NOT NULL                COMMENT '标的代码',
-    stock_name  VARCHAR(128)   NOT NULL DEFAULT ''     COMMENT '标的名称',
-    cost_price  DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '成本价（元）',
-    quantity    INT            NOT NULL DEFAULT 0      COMMENT '持仓数量（股）',
-    create_time DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_time DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    id             BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+    user_id        BIGINT         NOT NULL                COMMENT '归属用户 id',
+    account_id     BIGINT         NOT NULL DEFAULT 0      COMMENT '归属账户 id',
+    stock_code     VARCHAR(16)    NOT NULL                COMMENT '标的代码',
+    stock_name     VARCHAR(128)   NOT NULL DEFAULT ''     COMMENT '标的名称',
+    cost_price     DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '成本价（元），加仓按加权平均重算',
+    quantity       INT            NOT NULL DEFAULT 0      COMMENT '持仓数量（股）',
+    open_date      VARCHAR(10)    NULL                    COMMENT '建仓日 yyyy-MM-dd（非必填）',
+    day_buy_date   VARCHAR(10)    NULL                    COMMENT '当天买入池归属日期 yyyy-MM-dd，跨天作废',
+    day_buy_qty    INT            NOT NULL DEFAULT 0      COMMENT '当天买入且仍在持仓中的数量（股）',
+    day_buy_amount DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '当天买入部分的成交金额（元）',
+    create_time    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
     UNIQUE KEY uk_waizao_position_account_code (account_id, stock_code),
     KEY idx_waizao_position_user (user_id),

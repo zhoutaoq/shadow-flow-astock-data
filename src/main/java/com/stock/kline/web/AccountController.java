@@ -174,11 +174,14 @@ public class AccountController {
     }
 
     /**
-     * 记一笔买 / 卖：实时生效（改持仓 + 改可用金额 + 买入选/卖出移盯盘），不落盘。
+     * 记一笔买 / 卖：实时生效（改持仓 + 改可用金额 + 记当日已实现 + 买入选/卖出移盯盘），不落盘。
      *
-     * <p>请求体形如 <code>{"action":"buy","code":"600000","quantity":100,"price":10.5}</code>。
-     * 已有持仓时 {@code price} 会被忽略（一律按持仓成本价记账）；买入一只尚无持仓的标的时
-     * {@code price} 是这次建仓的成本价（页面预填实时行情价，可手改）。
+     * <p>请求体形如
+     * <code>{"action":"buy","code":"600000","quantity":100,"price":10.5,"today":true}</code>。
+     * {@code price} 是实际成交价（页面预填实时行情价，可手改），买卖都按它动可用金额；
+     * 缺省时回落到持仓成本价。{@code today} 是「当天买入 / 卖的是当天买入的」标记，
+     * 缺省按 {@code true}：一旦勾上，这笔买入的当日盈亏从买入价起算、
+     * 这笔卖出按当天买入均价算已实现（详见 {@code AccountService#addRecord}）。
      */
     @PostMapping("/records")
     public ApiResponse<TradeRecord> addRecord(@RequestParam(value = "accountId", required = false) Long accountId,
@@ -206,7 +209,8 @@ public class AccountController {
                 code == null ? null : String.valueOf(code),
                 name == null ? null : String.valueOf(name),
                 quantity,
-                price);
+                price,
+                bool(body.get("today")));
         return ApiResponse.ok(r, (TradeRecord.ACTION_BUY.equals(r.getAction()) ? "买入" : "卖出")
                 + "已生效：可用金额 " + r.getCashAfter());
     }
@@ -278,5 +282,34 @@ public class AccountController {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /**
+     * 请求体里的布尔宽松解析：「当天买入」标记走它。
+     *
+     * <p>表单/JSON 都可能给 {@code true} / {@code "true"} / {@code 1} / {@code "1"}；
+     * 缺省（null）返回 {@code null}，由业务层决定默认值（当天）。
+     */
+    private static Boolean bool(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Boolean) {
+            return (Boolean) v;
+        }
+        if (v instanceof Number) {
+            return ((Number) v).intValue() != 0;
+        }
+        String s = String.valueOf(v).trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        if ("true".equalsIgnoreCase(s) || "1".equals(s) || "yes".equalsIgnoreCase(s)) {
+            return Boolean.TRUE;
+        }
+        if ("false".equalsIgnoreCase(s) || "0".equals(s) || "no".equalsIgnoreCase(s)) {
+            return Boolean.FALSE;
+        }
+        return null;
     }
 }

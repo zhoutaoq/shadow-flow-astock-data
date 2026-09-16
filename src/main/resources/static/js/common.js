@@ -1099,7 +1099,7 @@ async function submitChangePassword(hide) {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260915e（v1.5.4：新增实时资讯页 —— 热门股排行 + 板块涨跌幅，3 秒轮询）');
+    console.info('[金牛数据] 前端版本 20260916a（v1.5.5：账户资金与记一笔收进弹窗 + 建仓日 + 当日盈亏按当天买入口径重算；回测K线补当日涨跌幅）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();

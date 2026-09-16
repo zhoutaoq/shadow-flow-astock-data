@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -43,6 +44,32 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p>用户第一次进来时自动建一本「默认账户」—— 与 v1.5.1 的体验保持连续：
  * 老用户升级后看到的就是原来那份数据外面套了一层账户外壳。
+ *
+ * <h3>v1.5.5：当日盈亏口径与买卖记账口径（重要）</h3>
+ *
+ * <p><b>1. 当日盈亏不再一律拿昨收当基准。</b>按份额拆开算，基准价取哪一个看份额来源：
+ * <ol>
+ *   <li><b>当天买入的份额</b>（操作记录里勾了「当天买入」）→ 基准价 = <b>当日买入均价</b>。
+ *       拿昨收去比会把「买入价与昨收之间的那段」当成自己赚的，这正是 v1.5.4 的错处；</li>
+ *   <li><b>隔夜持仓的份额</b> → 基准价 = <b>昨收</b>（与各家券商口径一致）；</li>
+ *   <li><b>页面直接配置的持仓</b>且<b>建仓日就是今天</b> → 整条按<b>成本价</b>为基准
+ *       （这种持仓没有当日买入均价可用，成本价就是它今天的起点）。</li>
+ * </ol>
+ * 三类份额混在一只标的上时按份额加权出一个「当量基准价」，页面看得到折算后的均价与口径说明。
+ *
+ * <p><b>2. 当天卖出的部分单列「当日已实现盈亏」</b>，与持仓浮动一起构成账户当日收益：
+ * <pre>
+ * 账户当日收益 = Σ 持仓浮动当日盈亏 + 当日已实现盈亏
+ * 当日已实现   = (卖出成交价 - 该份额的基准价) × 卖出数量
+ * </pre>
+ * 落盘在 {@link Account#getDayRealizedProfit()}，日期不是今天就按 0 参与计算，
+ * 所以不需要定时任务归零。持仓被清空后这份已实现仍然留在账户上，不会丢。
+ *
+ * <p><b>3. 买卖记账改用真实成交价，成本价改为加权平均。</b>v1.5.4 之前买入/卖出
+ * 一律按持仓成本价动可用金额，好处是「买 N 股再卖 N 股」能精确回到原余额，
+ * 代价是卖出价恒等于成本价、已实现盈亏恒为 0，当日盈亏根本算不出卖出那部分。
+ * 现在：买入按成交价扣减可用金额并按<b>加权平均</b>重算成本价，卖出按成交价加回，
+ * 于是「买入瞬间账户总市值不变」「卖出瞬间的差额正好是已实现盈亏」两条都成立。
  */
 @Service
 public class AccountService {
@@ -70,6 +97,15 @@ public class AccountService {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private static final BigDecimal MAX_INIT_VALUE = BigDecimal.valueOf(1_000_000_000_000L);
+
+    /** 当日盈亏基准口径（页面直接展示，别在别处再拼字符串） */
+    private static final String BASIS_PRE_CLOSE = "昨收";
+    private static final String BASIS_DAY_BUY = "当日买入均价";
+    private static final String BASIS_OPEN_TODAY = "建仓成本价";
+    private static final String BASIS_MIXED = "昨收 + 当日买入均价（按份额折算）";
+
+    /** 建仓日的输入只认 yyyy-MM-dd / yyyyMMdd / yyyy/MM/dd / yyyy.MM.dd */
+    private static final DateTimeFormatter YMD_COMPACT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final AccountRepository repository;
     private final ObjectProvider<SinaQuoteClient> quoteClientProvider;
@@ -111,6 +147,7 @@ public class AccountService {
      */
     public AccountOverview overview(long userId) {
         List<Account> accounts = listAccounts(userId);
+        String today = todayYmd();
 
         Map<Long, List<Position>> byAccount = new LinkedHashMap<>();
         Map<String, String> wanted = new LinkedHashMap<>();
@@ -129,11 +166,13 @@ public class AccountService {
         AccountOverview out = new AccountOverview();
         List<AccountView> views = new ArrayList<>(accounts.size());
         boolean dayKnown = true;
-        BigDecimal preCloseValue = BigDecimal.ZERO;
+        BigDecimal basisValue = BigDecimal.ZERO;
 
         for (Account a : accounts) {
             List<Position> positions = byAccount.getOrDefault(a.getId(), new ArrayList<>());
-            Calc c = calc(positions, quotes);
+            Calc c = calc(positions, quotes, today);
+            BigDecimal realized = dayRealizedOf(a, today);
+            BigDecimal dayProfit = c.dayProfit.add(realized);
 
             AccountView v = new AccountView();
             v.setId(a.getId());
@@ -142,8 +181,8 @@ public class AccountService {
             v.setCash(money(a.getCash()));
             v.setPositionValue(money(c.positionValue));
             v.setTotalValue(money(c.positionValue.add(nz(a.getCash()))));
-            v.setDayProfit(money(c.dayProfit));
-            v.setDayProfitPercent(percent(c.dayProfit, c.preCloseValue));
+            v.setDayProfit(money(dayProfit));
+            v.setDayProfitPercent(percent(dayProfit, c.dayBasisValue));
             v.setTotalProfit(money(c.positionValue.add(nz(a.getCash())).subtract(nz(a.getInitValue()))));
             v.setTotalProfitPercent(percent(c.positionValue.add(nz(a.getCash())).subtract(nz(a.getInitValue())),
                     nz(a.getInitValue())));
@@ -156,12 +195,12 @@ public class AccountService {
             out.setCash(out.getCash().add(nz(a.getCash())));
             out.setPositionValue(out.getPositionValue().add(c.positionValue));
             out.setTotalValue(out.getTotalValue().add(c.positionValue).add(nz(a.getCash())));
-            out.setDayProfit(out.getDayProfit().add(c.dayProfit));
+            out.setDayProfit(out.getDayProfit().add(dayProfit));
             out.setPositionCount(out.getPositionCount() + positions.size());
             if (!c.dayKnown) {
                 dayKnown = false;
             }
-            preCloseValue = preCloseValue.add(c.preCloseValue);
+            basisValue = basisValue.add(c.dayBasisValue);
         }
 
         out.setAccounts(views);
@@ -171,7 +210,7 @@ public class AccountService {
         out.setPositionValue(money(out.getPositionValue()));
         out.setTotalValue(money(out.getTotalValue()));
         out.setDayProfit(money(out.getDayProfit()));
-        out.setDayProfitPercent(dayKnown ? percent(out.getDayProfit(), preCloseValue) : null);
+        out.setDayProfitPercent(dayKnown ? percent(out.getDayProfit(), basisValue) : null);
         out.setTotalProfit(money(out.getTotalValue().subtract(out.getInitValue())));
         out.setTotalProfitPercent(percent(out.getTotalProfit(), out.getInitValue()));
         return out;
@@ -286,6 +325,10 @@ public class AccountService {
      *
      * <p>「同一本账里同一只标的只能有一条持仓」是硬约束：重复录入会让成本价与数量对不上账。
      * 所以这里先按代码去重 —— 提交的代码已存在且不是同一条时，直接报错让用户改数量。
+     *
+     * <p><b>建仓日（v1.5.5 第 ③ 条）</b>：非必填，页面手填；留空即 null。
+     * 另外这个方法是用提交内容<b>重建</b>一行，所以「当天买入池」必须从库里那一行原样带过来 ——
+     * 否则用户在页面上改一下数量就会把当天买入的痕迹抹掉、当日盈亏跟着跳。
      */
     public Position savePosition(long userId, long accountId, Position incoming) {
         if (incoming == null) {
@@ -306,9 +349,12 @@ public class AccountService {
             throw new IllegalArgumentException("持仓数量必须大于 0");
         }
         List<Position> exist = repository.listPositions(userId, aid);
+        Position prev = null;
         for (Position one : exist) {
             boolean sameRow = incoming.getId() != null && incoming.getId().equals(one.getId());
-            if (!sameRow && code.equals(one.getCode())) {
+            if (sameRow) {
+                prev = one;
+            } else if (code.equals(one.getCode())) {
                 throw new IllegalArgumentException(one.getName() + "(" + code + ") 已有持仓，请直接修改数量");
             }
         }
@@ -324,6 +370,12 @@ public class AccountService {
         p.setName(nameOf(code, incoming.getName()));
         p.setCostPrice(cost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
         p.setQuantity(qty);
+        p.setOpenDate(checkOpenDate(incoming.getOpenDate()));
+        if (prev != null) {
+            p.setDayBuyDate(prev.getDayBuyDate());
+            p.setDayBuyQty(prev.getDayBuyQty());
+            p.setDayBuyAmount(nz(prev.getDayBuyAmount()));
+        }
         p.setCreateTime(now);
         p.setUpdateTime(now);
         return repository.savePosition(p);
@@ -344,13 +396,23 @@ public class AccountService {
     /* ==================== 操作记录（实时生效、不落盘） ==================== */
 
     /**
-     * 记一笔买 / 卖，并<b>立即</b>作用到该账户的持仓、可用金额与盯盘名单上。
+     * 记一笔买 / 卖，并<b>立即</b>作用到该账户的持仓、可用金额、当日盈亏与盯盘名单上。
      *
-     * <p><b>价格口径</b>：
-     * 已有持仓时一律取该标的的<b>持仓成本价</b>（卖出也按成本价回款），
-     * 这样「买 100 股 → 卖 100 股」能精确回到原余额，不会因为盘中价格跳动而对不上账。
-     * 买入一只<b>尚无持仓</b>的标的时，价格由 {@code price} 指定 —— 页面会预填该标的的
-     * 实时行情价（取不到则留空由用户手填），用户也可以改成自己的实际成交价。
+     * <p><b>价格口径（v1.5.5 起用真实成交价）</b>：{@code price} 是这笔的实际成交价 ——
+     * 页面会预填该标的的实时行情价（取不到则留空由用户手填），用户也可以改成自己的成交价。
+     * 买入按成交价扣减可用金额、并按<b>加权平均</b>重算成本价；卖出按成交价加回可用金额。
+     * 没填价格时回落到持仓成本价（老前端不带价格时行为不变）。
+     *
+     * <p><b>当天标记 {@code todayFlag}</b>（页面上「当天买入 / 卖的是当天买入的」勾选框，默认勾选）：
+     * <ul>
+     *   <li>买入 + 勾选 → 这笔量进该持仓的「当天买入池」，
+     *       它今后的当日盈亏以<b>当日买入均价</b>为基准，而不是昨收；</li>
+     *   <li>买新标的 + 勾选 → 顺手把建仓日也落成今天；</li>
+     *   <li>卖出 + 勾选 → 优先卖<b>当天买入</b>那部分，已实现盈亏按当日买入均价算；</li>
+     *   <li>卖出 + 不勾 → 优先卖隔夜持仓，已实现盈亏按<b>昨收</b>算；
+     *       卖得比隔夜持仓还多时，多出来的部分仍然算在当天买入份额上（A股 T+1 下这本不该发生，
+     *       手工记账时却可能出现，这里给出唯一自洽的解释而不是拒绝）。</li>
+     * </ul>
      *
      * <p><b>买入 = 建仓 + 加盯盘</b>：这正是需求里「买入则加入盯盘」的落点 ——
      * 标的进盯盘名单的前提就是用户买了它，所以买入允许新建持仓（{@code price} 必填）；
@@ -358,9 +420,12 @@ public class AccountService {
      * 就把它移出盯盘。
      */
     public TradeRecord addRecord(long userId, long accountId, String action, String code, String name,
-                                 Integer quantity, BigDecimal price) {
+                                 Integer quantity, BigDecimal price, Boolean todayFlag) {
         long aid = resolveAccountId(userId, accountId);
         Account acct = getAccountRequired(userId, aid);
+        String today = todayYmd();
+        // 不带标记的老调用按「当天」处理：用户此刻按下「记一笔」，绝大多数就是当天成交
+        boolean sameDay = todayFlag == null || todayFlag;
 
         String act = TradeRecord.ACTION_BUY.equalsIgnoreCase(action) ? TradeRecord.ACTION_BUY
                 : TradeRecord.ACTION_SELL.equalsIgnoreCase(action) ? TradeRecord.ACTION_SELL : null;
@@ -388,22 +453,21 @@ public class AccountService {
         boolean buy = TradeRecord.ACTION_BUY.equals(act);
         // 名称：优先用页面选中的那个（用户看到的就是它），缺了才去名录精确查
         String displayName = nameOf(c, name);
+        BigDecimal given = nz(price);
         BigDecimal unit;
-        if (hit != null) {
-            // 已有持仓：一律按成本价记账，保证买卖可精确回退
+        if (given.signum() > 0) {
+            // 页面填了成交价：买卖一律以它为准
+            unit = given;
+        } else if (hit != null) {
+            // 没填又有持仓：回落持仓成本价（老前端行为不变）
             unit = nz(hit.getCostPrice());
         } else if (buy) {
-            // 买入新标的 = 建仓：用传入价（页面预填实时行情价）作为成本价
-            BigDecimal given = nz(price);
-            if (given.signum() <= 0) {
-                throw new IllegalArgumentException("买入 " + displayName + " 前请填写成交价");
-            }
-            if (positions.size() >= MAX_POSITIONS) {
-                throw new IllegalArgumentException("单本账户最多 " + MAX_POSITIONS + " 条持仓");
-            }
-            unit = given;
+            throw new IllegalArgumentException("买入 " + displayName + " 前请填写成交价");
         } else {
             throw new IllegalArgumentException("这本账户里还没有 " + c + " 的持仓，无法卖出");
+        }
+        if (buy && hit == null && positions.size() >= MAX_POSITIONS) {
+            throw new IllegalArgumentException("单本账户最多 " + MAX_POSITIONS + " 条持仓");
         }
         unit = unit.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
 
@@ -411,6 +475,7 @@ public class AccountService {
         BigDecimal cash = nz(acct.getCash());
 
         Position pos;
+        BigDecimal realized = null;
         if (buy) {
             if (hit == null) {
                 // 新建持仓：成本价 = 本次成交价，数量 = 本次数量
@@ -421,6 +486,12 @@ public class AccountService {
                 fresh.setName(displayName);
                 fresh.setCostPrice(unit);
                 fresh.setQuantity(qty);
+                if (sameDay) {
+                    fresh.setOpenDate(today);
+                    fresh.setDayBuyDate(today);
+                    fresh.setDayBuyQty(qty);
+                    fresh.setDayBuyAmount(turnover);
+                }
                 String now = LocalDateTime.now().format(DF);
                 fresh.setCreateTime(now);
                 fresh.setUpdateTime(now);
@@ -429,16 +500,38 @@ public class AccountService {
                 if (hit.getQuantity() < 1) {
                     throw new IllegalArgumentException("持仓数量异常，请重新配置持仓");
                 }
-                hit.setQuantity(hit.getQuantity() + qty);
+                // 加仓：成本价按「老成本市值 + 本次成交额」加权平均重算，
+                // 这样买入那一刻账户总市值不变，不会凭空多出一段盈亏
+                int newQty = hit.getQuantity() + qty;
+                BigDecimal oldValue = nz(hit.getCostPrice()).multiply(BigDecimal.valueOf(hit.getQuantity()));
+                BigDecimal newCost = oldValue.add(turnover)
+                        .divide(BigDecimal.valueOf(newQty), MONEY_SCALE + 2, RoundingMode.HALF_UP);
+                hit.setCostPrice(newCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+                hit.setQuantity(newQty);
+                if (sameDay) {
+                    rolloverDayBuy(hit, today);
+                    hit.setDayBuyQty(hit.getDayBuyQty() + qty);
+                    hit.setDayBuyAmount(nz(hit.getDayBuyAmount()).add(turnover));
+                    if (isBlank(hit.getOpenDate())) {
+                        hit.setOpenDate(today);
+                    }
+                }
                 hit.setUpdateTime(LocalDateTime.now().format(DF));
                 pos = repository.savePosition(hit);
             }
-            // 买入：按成本价与数量扣减可用金额
+            // 买入：按成交价扣减可用金额
             cash = cash.subtract(turnover);
             watchAdd(userId, pos);
         } else {
             if (hit.getQuantity() < qty) {
                 throw new IllegalArgumentException("持仓只有 " + hit.getQuantity() + " 股，卖出 " + qty + " 股超出持仓");
+            }
+            // 当日已实现：卖出价 vs 基准价（当天买入份额用当日买入均价、隔夜份额用昨收）
+            BigDecimal preClose = preCloseOf(c);
+            realized = realizedOfSell(hit, today, qty, unit, sameDay, preClose);
+            int fromDay = soldFromDay(hit, today, qty, sameDay);
+            if (fromDay > 0) {
+                reduceDayPool(hit, today, fromDay);
             }
             int left = hit.getQuantity() - qty;
             if (left == 0) {
@@ -449,11 +542,20 @@ public class AccountService {
                 repository.savePosition(hit);
             }
             pos = hit;
-            // 卖出：按成本价与数量加回可用金额
+            // 卖出：按成交价加回可用金额
             cash = cash.add(turnover);
             if (left == 0) {
                 watchPruneIfUnheld(userId, hit.getCode());
             }
+        }
+        // 已实现盈亏落在账户上（日期不是今天的旧值先作废）
+        if (realized != null && realized.signum() != 0) {
+            if (!today.equals(acct.getDayRealizedDate())) {
+                acct.setDayRealizedDate(today);
+                acct.setDayRealizedProfit(BigDecimal.ZERO);
+            }
+            acct.setDayRealizedProfit(nz(acct.getDayRealizedProfit()).add(realized)
+                    .setScale(MONEY_SCALE, RoundingMode.HALF_UP));
         }
         saveAccountCash(acct, cash);
 
@@ -468,12 +570,15 @@ public class AccountService {
         r.setQuantity(qty);
         r.setTurnover(turnover);
         r.setCashAfter(cash);
+        r.setSameDay(sameDay);
+        r.setRealizedProfit(realized == null ? BigDecimal.ZERO : realized);
         r.setTime(LocalDateTime.now().format(DF));
         pushRecord(userId, aid, r);
 
-        log.info("[account] 用户 {} 账户 {} {} {} {} 股，价格 {}，成交额 {}，可用金额 {}",
+        log.info("[account] 用户 {} 账户 {} {} {} {} 股，价格 {}，成交额 {}，可用金额 {}{}",
                 userId, aid, buy ? "买入" : "卖出",
-                r.getName(), qty, r.getPrice(), turnover, cash);
+                r.getName(), qty, r.getPrice(), turnover, cash,
+                realized == null ? "" : "，当日已实现 " + realized);
         return r;
     }
 
@@ -484,14 +589,27 @@ public class AccountService {
     }
 
     /**
-     * 给「记一笔操作」表单预填价格：已有持仓返回其成本价，否则取该标的实时行情价。
+     * 给「记一笔」弹窗预填价格：<b>先取该标的的实时行情价</b>（页面上要的是实际成交价的参照），
+     * 取不到再回落到该账户的持仓成本价；都拿不到返回 null，页面留空让用户自己填实际成交价。
      *
-     * <p>取不到行情时价格返回 null，页面留空让用户自己填实际成交价。
+     * <p>v1.5.4 之前是反过来的（有持仓就直接给成本价）—— 那样填出来的「成交价」恒等于成本价，
+     * 当日已实现盈亏也就恒为 0，等于把这次要修的问题又盖了回去。
      */
     public BigDecimal suggestPrice(long userId, long accountId, String code) {
         String c = normalizeCode(code);
         if (c == null) {
             return null;
+        }
+        SinaQuoteClient client = quoteClientProvider.getIfAvailable();
+        if (client != null) {
+            try {
+                Quote q = client.fetch(new WatchTarget(c, c));
+                if (q != null && q.getPrice() != null && q.getPrice().signum() > 0) {
+                    return q.getPrice();
+                }
+            } catch (Exception e) {
+                log.warn("[account] 预填价格取行情失败 {}: {}", c, e.getMessage());
+            }
         }
         long aid = resolveAccountId(userId, accountId);
         for (Position p : repository.listPositions(userId, aid)) {
@@ -499,17 +617,7 @@ public class AccountService {
                 return nz(p.getCostPrice());
             }
         }
-        SinaQuoteClient client = quoteClientProvider.getIfAvailable();
-        if (client == null) {
-            return null;
-        }
-        try {
-            Quote q = client.fetch(new WatchTarget(c, c));
-            return q == null ? null : q.getPrice();
-        } catch (Exception e) {
-            log.warn("[account] 预填价格取行情失败 {}: {}", c, e.getMessage());
-            return null;
-        }
+        return null;
     }
 
     /** 清空某个账户的操作记录（不影响持仓与余额） */
@@ -522,8 +630,11 @@ public class AccountService {
     /** 某个账户的汇总：账户设置 + 持仓明细（含现价、当日/总收益）+ 账户级收益 */
     public AccountSummary summary(long userId, long accountId) {
         Account acct = getAccountRequired(userId, resolveAccountId(userId, accountId));
+        String today = todayYmd();
         List<Position> positions = repository.listPositions(userId, acct.getId());
-        Calc c = calc(positions, fetchQuotes(wantedOf(positions)));
+        Calc c = calc(positions, fetchQuotes(wantedOf(positions)), today);
+        BigDecimal realized = dayRealizedOf(acct, today);
+        BigDecimal dayProfit = c.dayProfit.add(realized);
 
         AccountSummary s = new AccountSummary();
         s.setAccountId(acct.getId());
@@ -538,8 +649,10 @@ public class AccountService {
         s.setTotalValue(money(c.positionValue.add(nz(acct.getCash()))));
         s.setTotalProfit(money(c.positionValue.add(nz(acct.getCash())).subtract(nz(acct.getInitValue()))));
         s.setTotalProfitPercent(percent(s.getTotalProfit(), nz(acct.getInitValue())));
-        s.setDayProfit(money(c.dayProfit));
-        s.setDayProfitPercent(c.dayKnown ? percent(c.dayProfit, c.preCloseValue) : null);
+        s.setDayProfit(money(dayProfit));
+        s.setDayFloatProfit(money(c.dayProfit));
+        s.setDayRealizedProfit(money(realized));
+        s.setDayProfitPercent(c.dayKnown ? percent(dayProfit, c.dayBasisValue) : null);
         return s;
     }
 
@@ -551,6 +664,7 @@ public class AccountService {
      */
     public AccountSummary summary(long userId) {
         List<Account> accounts = listAccounts(userId);
+        String today = todayYmd();
         Map<Long, List<Position>> byAccount = new LinkedHashMap<>();
         Map<String, String> wanted = new LinkedHashMap<>();
         for (Account a : accounts) {
@@ -570,17 +684,18 @@ public class AccountService {
         s.setAccountName(accounts.size() == 1 ? accounts.get(0).getName() : "全部账户");
         boolean dayKnown = true;
         List<AccountSummary.PositionView> views = new ArrayList<>();
-        BigDecimal preCloseValue = BigDecimal.ZERO;
+        BigDecimal dayBasisValue = BigDecimal.ZERO;
         BigDecimal positionValue = BigDecimal.ZERO;
         BigDecimal positionCost = BigDecimal.ZERO;
         BigDecimal positionProfit = BigDecimal.ZERO;
-        BigDecimal dayProfit = BigDecimal.ZERO;
+        BigDecimal dayFloatProfit = BigDecimal.ZERO;
+        BigDecimal dayRealizedProfit = BigDecimal.ZERO;
         BigDecimal initValue = BigDecimal.ZERO;
         BigDecimal cash = BigDecimal.ZERO;
 
         for (Account a : accounts) {
             List<Position> positions = byAccount.getOrDefault(a.getId(), new ArrayList<>());
-            Calc c = calc(positions, quotes);
+            Calc c = calc(positions, quotes, today);
             for (AccountSummary.PositionView v : c.views) {
                 v.setAccountId(a.getId());
                 v.setAccountName(a.getName());
@@ -589,14 +704,16 @@ public class AccountService {
             positionValue = positionValue.add(c.positionValue);
             positionCost = positionCost.add(c.positionCost);
             positionProfit = positionProfit.add(c.positionProfit);
-            dayProfit = dayProfit.add(c.dayProfit);
-            preCloseValue = preCloseValue.add(c.preCloseValue);
+            dayFloatProfit = dayFloatProfit.add(c.dayProfit);
+            dayRealizedProfit = dayRealizedProfit.add(dayRealizedOf(a, today));
+            dayBasisValue = dayBasisValue.add(c.dayBasisValue);
             initValue = initValue.add(nz(a.getInitValue()));
             cash = cash.add(nz(a.getCash()));
             if (!c.dayKnown) {
                 dayKnown = false;
             }
         }
+        BigDecimal dayProfit = dayFloatProfit.add(dayRealizedProfit);
 
         s.setInitValue(money(initValue));
         s.setCash(money(cash));
@@ -608,7 +725,9 @@ public class AccountService {
         s.setTotalProfit(money(positionValue.add(cash).subtract(initValue)));
         s.setTotalProfitPercent(percent(s.getTotalProfit(), initValue));
         s.setDayProfit(money(dayProfit));
-        s.setDayProfitPercent(dayKnown ? percent(dayProfit, preCloseValue) : null);
+        s.setDayFloatProfit(money(dayFloatProfit));
+        s.setDayRealizedProfit(money(dayRealizedProfit));
+        s.setDayProfitPercent(dayKnown ? percent(dayProfit, dayBasisValue) : null);
         return s;
     }
 
@@ -619,10 +738,29 @@ public class AccountService {
         BigDecimal positionValue = BigDecimal.ZERO;
         BigDecimal positionCost = BigDecimal.ZERO;
         BigDecimal positionProfit = BigDecimal.ZERO;
+        /** 持仓浮动当日盈亏（不含当天卖出的已实现） */
         BigDecimal dayProfit = BigDecimal.ZERO;
-        BigDecimal preCloseValue = BigDecimal.ZERO;
+        /** 当日基准市值 = Σ(当量基准价 × 数量)，当日收益率的分母 */
+        BigDecimal dayBasisValue = BigDecimal.ZERO;
         boolean dayKnown = true;
         List<AccountSummary.PositionView> views = new ArrayList<>();
+    }
+
+    /**
+     * 一条持仓的当日盈亏基准：份额可能来自不同来源，这里折算成一个当量基准价。
+     *
+     * <p>比例与口径分开存：{@code price} 用来算钱（份额加权后的当量价），
+     * {@code label} 用来在页面上说清楚这个价是怎么来的。
+     */
+    private static final class DayBasis {
+        /** 当量基准价（元）：Σ(各来源基准价 × 份额) ÷ 总份额 */
+        BigDecimal price;
+        /** 口径说明，页面直接展示 */
+        String label;
+        /** 其中属于「当天买入」的份额 */
+        int dayQty;
+        /** 当日买入均价（元），拿不到为 null */
+        BigDecimal dayBuyAvg;
     }
 
     /**
@@ -630,8 +768,11 @@ public class AccountService {
      *
      * <p>行情取不到的持仓按成本价兜底并标记 {@code quoted=false}，
      * 这样页面既能看到数字（不空），也知道哪个是兜底值。
+     *
+     * <p>当日盈亏按 {@link #dayBasisOf} 给出的当量基准价算 —— 这是 v1.5.5 修正的核心：
+     * 当天买入的份额从买入均价起算、隔夜份额从昨收起算，而不是一律拿昨收。
      */
-    private Calc calc(List<Position> positions, Map<String, Quote> quotes) {
+    private Calc calc(List<Position> positions, Map<String, Quote> quotes, String today) {
         Calc c = new Calc();
         for (Position p : positions) {
             Quote q = quotes.get(p.getCode());
@@ -641,6 +782,7 @@ public class AccountService {
             v.setName(p.getName());
             v.setCostPrice(p.getCostPrice());
             v.setQuantity(p.getQuantity());
+            v.setOpenDate(p.getOpenDate());
 
             BigDecimal cost = nz(p.getCostPrice());
             BigDecimal qty = BigDecimal.valueOf(p.getQuantity());
@@ -658,18 +800,23 @@ public class AccountService {
                 v.setQuoted(true);
                 v.setPreClose(q.getPreClose());
                 v.setQuoteTime(q.getTimeText());
-                BigDecimal preClose = q.getPreClose();
-                if (preClose != null && preClose.signum() > 0) {
-                    BigDecimal dayProfitOne = price.subtract(preClose).multiply(qty)
-                            .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-                    v.setDayProfit(dayProfitOne);
-                    v.setDayProfitPercent(percent(price.subtract(preClose), preClose));
-                    c.dayProfit = c.dayProfit.add(dayProfitOne);
-                    c.preCloseValue = c.preCloseValue.add(preClose.multiply(qty));
-                } else {
-                    c.dayKnown = false;
-                }
+            }
+
+            DayBasis basis = dayBasisOf(p, today, q);
+            v.setDayBuyQty(basis.dayQty);
+            v.setDayBuyAvgPrice(basis.dayBuyAvg);
+            v.setDayBasisPrice(basis.price);
+            v.setDayBasis(basis.label);
+            if (basis.price != null && basis.price.signum() > 0) {
+                BigDecimal dayProfitOne = price.subtract(basis.price).multiply(qty)
+                        .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+                v.setDayProfit(dayProfitOne);
+                v.setDayProfitPercent(percent(price.subtract(basis.price), basis.price));
+                c.dayProfit = c.dayProfit.add(dayProfitOne);
+                c.dayBasisValue = c.dayBasisValue.add(basis.price.multiply(qty));
             } else {
+                // 基准价凑不出来（行情与当天买入池都没有）——这一条不参与当日汇总，
+                // 并让账户级收益率退化成"不显示"，而不是拿一个假的分母去算
                 c.dayKnown = false;
             }
 
@@ -679,6 +826,206 @@ public class AccountService {
             c.views.add(v);
         }
         return c;
+    }
+
+    /**
+     * 一条持仓的当日盈亏基准价。
+     *
+     * <p>三类份额各有基准，混在一起时按份额加权：
+     * <ol>
+     *   <li>当天买入的（{@code dayBuyQty}，且池子日期就是今天）→ 当日买入均价；</li>
+     *   <li>隔夜持仓的 → 昨收；</li>
+     *   <li>整条都是今天建的（建仓日 = 今天，且没有当天买入池，例如页面直接配的持仓）→ 成本价。</li>
+     * </ol>
+     * 需要的价一个都拿不到时返回 {@code price = null}（调用侧按"当日盈亏不可知"处理）。
+     */
+    private static DayBasis dayBasisOf(Position p, String today, Quote q) {
+        DayBasis b = new DayBasis();
+        int held = p.getQuantity();
+        int dayQty = dayQtyInHold(p, today);
+        BigDecimal dayAvg = dayBuyAvgOf(p, today);
+        if (dayQty > 0 && dayAvg == null) {
+            dayQty = 0;
+        }
+        b.dayQty = dayQty;
+        b.dayBuyAvg = dayAvg;
+
+        BigDecimal preClose = q == null ? null : q.getPreClose();
+        boolean hasPre = preClose != null && preClose.signum() > 0;
+
+        if (dayQty >= held && dayQty > 0) {
+            // 整条都是今天买的：不需要昨收，页面上也不会出现"昨收"字样
+            b.price = dayAvg;
+            b.label = BASIS_DAY_BUY;
+            return b;
+        }
+        if (dayQty <= 0) {
+            if (today.equals(p.getOpenDate())) {
+                b.price = nz(p.getCostPrice());
+                b.label = BASIS_OPEN_TODAY;
+                return b;
+            }
+            b.price = hasPre ? preClose : null;
+            b.label = BASIS_PRE_CLOSE;
+            return b;
+        }
+        // 混着：当天买入的那部分按买入均价，其余按昨收
+        if (!hasPre) {
+            b.price = null;
+            b.label = BASIS_MIXED;
+            return b;
+        }
+        int overnight = held - dayQty;
+        BigDecimal sum = dayAvg.multiply(BigDecimal.valueOf(dayQty))
+                .add(preClose.multiply(BigDecimal.valueOf(overnight)));
+        b.price = sum.divide(BigDecimal.valueOf(held), MONEY_SCALE + 2, RoundingMode.HALF_UP);
+        b.label = BASIS_MIXED;
+        return b;
+    }
+
+    /** 持仓里属于「当天买入池」的数量：池子日期不是今天就为 0（跨天自动作废） */
+    private static int dayQtyInHold(Position p, String today) {
+        if (!today.equals(p.getDayBuyDate())) {
+            return 0;
+        }
+        return Math.max(0, Math.min(p.getDayBuyQty(), p.getQuantity()));
+    }
+
+    /** 当日买入均价 = 当天买入金额 ÷ 当天买入数量；池子异常时返回 null */
+    private static BigDecimal dayBuyAvgOf(Position p, String today) {
+        int n = dayQtyInHold(p, today);
+        if (n <= 0) {
+            return null;
+        }
+        BigDecimal amount = nz(p.getDayBuyAmount());
+        if (amount.signum() <= 0) {
+            return null;
+        }
+        return amount.divide(BigDecimal.valueOf(n), MONEY_SCALE + 2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 卖出份额里属于「当天买入」的数量。
+     *
+     * <p>勾了「卖的是当天买入的」就优先冲当天买入池；没勾就优先冲隔夜持仓，
+     * 卖得比隔夜持仓还多时多出来的部分仍归到当天买入池（A股 T+1 下不该发生，
+     * 但手工记账里可能出现，这里给出唯一自洽的解释）。
+     */
+    private static int soldFromDay(Position p, String today, int sellQty, boolean sameDay) {
+        int dayInHold = dayQtyInHold(p, today);
+        int overnight = p.getQuantity() - dayInHold;
+        if (sameDay) {
+            return Math.min(dayInHold, sellQty);
+        }
+        return Math.max(0, sellQty - overnight);
+    }
+
+    /**
+     * 卖出这一笔的当日已实现盈亏 = (成交价 - 该份额基准价) × 数量。
+     *
+     * <p>隔夜份额的基准价取<b>今天的昨收</b>（与持仓浮动那部分同一口径）；
+     * 昨收取不到时退化为「不产生已实现」，而不是拿成交价硬凑一个 0 值盈亏。
+     */
+    private static BigDecimal realizedOfSell(Position p, String today, int sellQty, BigDecimal unit,
+                                             boolean sameDay, BigDecimal preClose) {
+        int fromDay = soldFromDay(p, today, sellQty, sameDay);
+        int fromOvernight = sellQty - fromDay;
+        BigDecimal out = BigDecimal.ZERO;
+        if (fromOvernight > 0 && preClose != null && preClose.signum() > 0) {
+            out = out.add(unit.subtract(preClose).multiply(BigDecimal.valueOf(fromOvernight)));
+        }
+        if (fromDay > 0) {
+            BigDecimal avg = dayBuyAvgOf(p, today);
+            if (avg != null) {
+                out = out.add(unit.subtract(avg).multiply(BigDecimal.valueOf(fromDay)));
+            }
+        }
+        return out.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 卖掉的「当天买入份额」要从池子里扣掉，数量与金额按买入均价同比例减。
+     * 池子扣空时连日期一起清掉，避免留下一个 0 数量的空池。
+     */
+    private static void reduceDayPool(Position p, String today, int fromDay) {
+        int n = dayQtyInHold(p, today);
+        if (n <= 0 || fromDay <= 0) {
+            return;
+        }
+        int take = Math.min(fromDay, n);
+        BigDecimal avg = dayBuyAvgOf(p, today);
+        int left = n - take;
+        p.setDayBuyQty(left);
+        if (left <= 0) {
+            p.setDayBuyAmount(BigDecimal.ZERO);
+            p.setDayBuyDate(null);
+            return;
+        }
+        if (avg != null) {
+            BigDecimal rest = nz(p.getDayBuyAmount()).subtract(avg.multiply(BigDecimal.valueOf(take)));
+            p.setDayBuyAmount(rest.signum() > 0 ? rest : BigDecimal.ZERO);
+        }
+    }
+
+    /** 跨天时把「当天买入池」清掉并改挂到今天（同一天内多次买入不清） */
+    private static void rolloverDayBuy(Position p, String today) {
+        if (!today.equals(p.getDayBuyDate())) {
+            p.setDayBuyDate(today);
+            p.setDayBuyQty(0);
+            p.setDayBuyAmount(BigDecimal.ZERO);
+        }
+    }
+
+    /** 该标的今天的昨收：取不到返回 null（页面与已实现计算都按"不可知"处理） */
+    private BigDecimal preCloseOf(String code) {
+        SinaQuoteClient client = quoteClientProvider.getIfAvailable();
+        if (client == null) {
+            return null;
+        }
+        try {
+            Quote q = client.fetch(new WatchTarget(code, code));
+            return q == null ? null : q.getPreClose();
+        } catch (Exception e) {
+            log.warn("[account] 取昨收失败 {}: {}", code, e.getMessage());
+            return null;
+        }
+    }
+
+    /** 账户的当日已实现盈亏：落盘日期不是今天就作废（不需要定时任务归零） */
+    private static BigDecimal dayRealizedOf(Account a, String today) {
+        if (a == null || !today.equals(a.getDayRealizedDate())) {
+            return BigDecimal.ZERO;
+        }
+        return nz(a.getDayRealizedProfit());
+    }
+
+    /** 今天的 yyyy-MM-dd */
+    private static String todayYmd() {
+        return LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+    }
+
+    /** 建仓日宽松解析：空 → null；非法 → 直接报错让用户改 */
+    private static String checkOpenDate(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String s = raw.trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        String digits = s.replace("-", "").replace("/", "").replace(".", "");
+        if (digits.length() != 8 || !digits.chars().allMatch(Character::isDigit)) {
+            throw new IllegalArgumentException("建仓日格式不对，请按 2026-09-16 这样的日期填写");
+        }
+        try {
+            return LocalDate.parse(digits, YMD_COMPACT).format(DateTimeFormatter.ISO_LOCAL_DATE);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("建仓日不是有效日期，请确认年月日");
+        }
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
     }
 
     /** 持仓集合去重后的「代码 → 名称」表（行情请求用） */

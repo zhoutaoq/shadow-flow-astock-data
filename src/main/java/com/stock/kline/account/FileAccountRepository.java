@@ -34,13 +34,16 @@ import java.util.concurrent.atomic.AtomicLong;
  * 运行期读写内存 + 写穿到文件，与其它 File 仓储保持同一套行为：
  * 保存后立即生效、重启后从文件恢复。
  *
- * <p>文件结构（v1.5.2）：
+ * <p>文件结构（v1.5.2 建立，v1.5.5 补建仓日与当天买入池）：
  * <pre>
  * {
- *   "accounts":  [ { "id":1, "name":"默认账户", "initValue":100000, ... } ],
- *   "positions": { "1": [ { "id":1, "accountId":1, "code":"600000", ... } ] }
+ *   "accounts":  [ { "id":1, "name":"默认账户", "initValue":100000,
+ *                    "dayRealizedDate":"2026-09-16", "dayRealizedProfit":320.5 } ],
+ *   "positions": { "1": [ { "id":1, "accountId":1, "code":"600000", "openDate":"2026-09-16",
+ *                           "dayBuyDate":"2026-09-16", "dayBuyQty":200, "dayBuyAmount":2100 } ] }
  * }
  * </pre>
+ * 老文件里没有的新字段反序列化时保持字段默认值（0 / null），等价于「没记过当天买入」。
  *
  * <p><b>兼容 v1.5.1 老文件</b>（{@code {"account":{...},"positions":{"1":{...}}}}）：
  * 读到时自动收敛成「一本名为『默认账户』的账」，老持仓全部挂到这本账下 ——
@@ -424,6 +427,8 @@ public class FileAccountRepository implements AccountRepository {
         out.setName(src.getName());
         out.setInitValue(src.getInitValue());
         out.setCash(src.getCash());
+        out.setDayRealizedDate(src.getDayRealizedDate());
+        out.setDayRealizedProfit(src.getDayRealizedProfit());
         out.setRemark(src.getRemark());
         out.setCreateTime(src.getCreateTime());
         out.setUpdateTime(src.getUpdateTime());
@@ -439,6 +444,10 @@ public class FileAccountRepository implements AccountRepository {
         out.setName(src.getName());
         out.setCostPrice(src.getCostPrice());
         out.setQuantity(src.getQuantity());
+        out.setOpenDate(src.getOpenDate());
+        out.setDayBuyDate(src.getDayBuyDate());
+        out.setDayBuyQty(src.getDayBuyQty());
+        out.setDayBuyAmount(src.getDayBuyAmount());
         out.setCreateTime(src.getCreateTime());
         out.setUpdateTime(src.getUpdateTime());
         return out;

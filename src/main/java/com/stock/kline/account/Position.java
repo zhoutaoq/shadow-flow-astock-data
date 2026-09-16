@@ -9,14 +9,18 @@ import java.math.BigDecimal;
  * {@code accountId} 用于定位到具体账户 —— 「同一只标的一本账只能有一条持仓」这个约束
  * 是在账户维度上成立的，不同账户可以各自持有同一只标的。
  *
- * <p>收益口径（需求 v1.5.1 第 ③ 条）：
+ * <p>收益口径（需求 v1.5.1 第 ③ 条、v1.5.5 第 ② ③ 条）：
  * <ul>
- *   <li><b>当日收益</b> = (现价 - 昨收) × 数量；</li>
+ *   <li><b>当日收益</b> = (现价 - <b>当日基准价</b>) × 数量。基准价按份额拆开：
+ *       当天买入的那部分用<b>当日买入均价</b>、隔夜持仓那部分用<b>昨收</b>、
+ *       页面直接配置且建仓日就是今天的整条用<b>成本价</b>；</li>
  *   <li><b>总收益</b> = (现价 - 成本价) × 数量。</li>
  * </ul>
  *
- * <p>现价与昨收在查询时用新浪实时行情现取（见 {@code AccountService}），不落盘，
- * 所以落盘字段只有归属、标的、成本价、数量。
+ * <p>现价与昨收在查询时用新浪实时行情现取（见 {@code AccountService}），不落盘。
+ * 落盘字段因此分三类：归属与标的、成本价与数量、
+ * 以及 v1.5.5 新增的<b>建仓日</b>与<b>当天买入池</b>（当天买入的数量与金额，
+ * 它是「当天买入」的当日盈亏基准，跨天自动作废）。
  */
 public class Position {
 
@@ -29,10 +33,23 @@ public class Position {
     private String code;
     /** 标的名称：页面录入时可留空，由名录补 */
     private String name;
-    /** 成本价（元） */
+    /** 成本价（元）：加仓时按「老成本市值 + 本次成交额」加权平均重算 */
     private BigDecimal costPrice = BigDecimal.ZERO;
     /** 持仓数量（股） */
     private int quantity;
+    /**
+     * 建仓日 yyyy-MM-dd（需求 v1.5.5 第 ③ 条），<b>非必填</b>。
+     *
+     * <p>用途有两个：页面上直接展示；以及「建仓日就是今天」时整条持仓的当日盈亏
+     * 直接以成本价为基准（这种持仓是页面配出来的，没有当日买入均价可用）。
+     */
+    private String openDate;
+    /** 「当天买入池」归属日期 yyyy-MM-dd；与今天不一致即视为隔夜持仓 */
+    private String dayBuyDate;
+    /** 当天买入、且当前仍在持仓中的数量（股） */
+    private int dayBuyQty;
+    /** 当天买入部分的成交金额（元）：金额 ÷ 数量 = 当日买入均价 */
+    private BigDecimal dayBuyAmount = BigDecimal.ZERO;
     private String createTime;
     private String updateTime;
 
@@ -90,6 +107,38 @@ public class Position {
 
     public void setQuantity(int quantity) {
         this.quantity = quantity;
+    }
+
+    public String getOpenDate() {
+        return openDate;
+    }
+
+    public void setOpenDate(String openDate) {
+        this.openDate = openDate;
+    }
+
+    public String getDayBuyDate() {
+        return dayBuyDate;
+    }
+
+    public void setDayBuyDate(String dayBuyDate) {
+        this.dayBuyDate = dayBuyDate;
+    }
+
+    public int getDayBuyQty() {
+        return dayBuyQty;
+    }
+
+    public void setDayBuyQty(int dayBuyQty) {
+        this.dayBuyQty = dayBuyQty;
+    }
+
+    public BigDecimal getDayBuyAmount() {
+        return dayBuyAmount;
+    }
+
+    public void setDayBuyAmount(BigDecimal dayBuyAmount) {
+        this.dayBuyAmount = dayBuyAmount;
     }
 
     public String getCreateTime() {

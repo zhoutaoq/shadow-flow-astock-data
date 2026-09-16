@@ -32,6 +32,16 @@ public class Account {
     private BigDecimal initValue = BigDecimal.ZERO;
     /** 可用金额（元） */
     private BigDecimal cash = BigDecimal.ZERO;
+    /**
+     * 当日已实现盈亏的归属日期 yyyy-MM-dd（需求 v1.5.5 第 ② 条）。
+     *
+     * <p>当天卖出（含当天买入当天卖出）那部分已经落袋的收益：账户当日收益 =
+     * 持仓浮动当日盈亏 + 这里这份已实现。与今天的日期不一致即视为过期、按 0 参与计算，
+     * 所以不必专门跑定时任务归零。
+     */
+    private String dayRealizedDate;
+    /** 当日已实现盈亏（元） */
+    private BigDecimal dayRealizedProfit = BigDecimal.ZERO;
     /** 备注 */
     private String remark;
     private String createTime;
@@ -75,6 +85,22 @@ public class Account {
 
     public void setCash(BigDecimal cash) {
         this.cash = cash;
+    }
+
+    public String getDayRealizedDate() {
+        return dayRealizedDate;
+    }
+
+    public void setDayRealizedDate(String dayRealizedDate) {
+        this.dayRealizedDate = dayRealizedDate;
+    }
+
+    public BigDecimal getDayRealizedProfit() {
+        return dayRealizedProfit;
+    }
+
+    public void setDayRealizedProfit(BigDecimal dayRealizedProfit) {
+        this.dayRealizedProfit = dayRealizedProfit;
     }
 
     public String getRemark() {

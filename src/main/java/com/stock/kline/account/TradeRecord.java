@@ -11,12 +11,16 @@ import java.math.BigDecimal;
  * <p>之所以不落盘：操作记录是「记账流水」的雏形，真正的落盘账本应当是成交明细；
  * 当前需求只要实时效果，硬落盘反而会让「填错一条记录」变得难以撤销。
  *
- * <p>作用规则（价格一律取该标的的持仓成本价）：
+ * <p>作用规则（价格取<b>实际成交价</b>，v1.5.5 起）：
  * <ul>
- *   <li>买入：持仓数量 +N；可用金额 -（成本价 × N）；标的自动加入盯盘；</li>
- *   <li>卖出：持仓数量 -N（减到 0 则移除该持仓）；可用金额 +（成本价 × N）；
- *       标的在所有账户里都不再持有时才移出盯盘。</li>
+ *   <li>买入：持仓数量 +N，成本价按加权平均重算；可用金额 -（成交价 × N）；
+ *       标的自动加入盯盘；勾了「当天」则这笔量进「当天买入池」；</li>
+ *   <li>卖出：持仓数量 -N（减到 0 则移除该持仓）；可用金额 +（成交价 × N）；
+ *       这一笔的当日已实现盈亏计入账户；标的在所有账户里都不再持有时才移出盯盘。</li>
  * </ul>
+ *
+ * <p>v1.5.4 及以前买卖一律按持仓成本价动可用金额，卖出价恒等于成本价、
+ * 已实现盈亏恒为 0，当日盈亏算不出卖出那部分 —— v1.5.5 一并改掉。
  */
 public class TradeRecord {
 
@@ -41,6 +45,15 @@ public class TradeRecord {
     private BigDecimal turnover = BigDecimal.ZERO;
     /** 操作后可用金额（元）：让流水自带余额快照，便于核对 */
     private BigDecimal cashAfter = BigDecimal.ZERO;
+    /**
+     * 是否「当天」成交（v1.5.5 第 ② 条）。
+     *
+     * <p>买入勾选 = 这笔量进「当天买入池」，当日盈亏从买入价起算而不是昨收；
+     * 卖出勾选 = 卖的是当天买入的那部分，已实现盈亏按当日买入均价算。
+     */
+    private boolean sameDay = true;
+    /** 卖出这一笔的当日已实现盈亏（元）：买入恒为 0 */
+    private BigDecimal realizedProfit = BigDecimal.ZERO;
     /** 操作时间 yyyy-MM-dd HH:mm:ss */
     private String time;
 
@@ -122,6 +135,22 @@ public class TradeRecord {
 
     public void setCashAfter(BigDecimal cashAfter) {
         this.cashAfter = cashAfter;
+    }
+
+    public boolean isSameDay() {
+        return sameDay;
+    }
+
+    public void setSameDay(boolean sameDay) {
+        this.sameDay = sameDay;
+    }
+
+    public BigDecimal getRealizedProfit() {
+        return realizedProfit;
+    }
+
+    public void setRealizedProfit(BigDecimal realizedProfit) {
+        this.realizedProfit = realizedProfit;
     }
 
     public String getTime() {

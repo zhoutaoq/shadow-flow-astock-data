@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>策略回测 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260915e">
-    <link rel="stylesheet" href="/css/backtest.css?v=20260915e">
+    <link rel="stylesheet" href="/css/common.css?v=20260916a">
+    <link rel="stylesheet" href="/css/backtest.css?v=20260916a">
 </head>
 <body>
 <header class="topbar">
@@ -243,9 +243,9 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260915e"></script>
-<script src="/js/date-picker.js?v=20260915e"></script>
-<script src="/js/stock-picker.js?v=20260915e"></script>
+<script src="/js/common.js?v=20260916a"></script>
+<script src="/js/date-picker.js?v=20260916a"></script>
+<script src="/js/stock-picker.js?v=20260916a"></script>
 <script>
     const UP = '#e5484d';    // 涨/买入：红
     const DOWN = '#2ea043';  // 跌/卖出：绿
@@ -1030,6 +1030,22 @@
         return fmtNum(a / (v * LOT), 2);
     }
 
+    /**
+     * 相对前收盘的当日涨跌幅（需求 v1.5.5 第 ② 条）。
+     *
+     * <p>口径与「K线分析」页完全一致：用行上的 {@code preClose} 比，红涨绿跌。
+     * 前收盘缺失（供应商没给 pc）时给 {@code -}，不拿开盘价顶替 ——
+     * 那会把跳空缺口算成当日涨跌，看着就是错的。
+     */
+    function pctHtml(k) {
+        const pc = k && k.preClose != null ? Number(k.preClose) : 0;
+        const close = k && k.closePrice != null ? Number(k.closePrice) : NaN;
+        if (!pc || isNaN(close)) return '-';
+        const pct = (close - pc) / pc * 100;
+        return '<span style="color:' + (pct >= 0 ? UP : DOWN) + '">'
+            + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%</span>';
+    }
+
     /** K线 + 成交量 + 买卖点：买点标在最低价下方（红），卖点标在最高价上方（绿） */
     function renderKline(klines, trades) {
         klineChart = klineChart || echarts.init(document.getElementById('klineChart'), 'dark');
@@ -1064,7 +1080,7 @@
             tooltip: {
                 trigger: 'axis',
                 axisPointer: {type: 'cross'},
-                // 中文口径：开 / 高 / 低 / 收 + 成交量 / 成交额 / 均价
+                // 中文口径：开 / 高 / 低 / 收 + 涨跌幅 + 成交量 / 成交额 / 均价
                 formatter: function (ps) {
                     const k = ps.find(p => p.seriesName === 'K线');
                     if (!k) return '';
@@ -1073,7 +1089,8 @@
                     let html = `<b>${k.axisValue}</b>`
                         + `<br>开 ${v[1]}<br>高 ${v[4]}<br>低 ${v[3]}<br>收 ${v[2]}`;
                     if (r) {
-                        html += `<br>成交量 ${fmtVol(r.volume)} 手`
+                        html += `<br>涨跌幅 ${pctHtml(r)}`
+                            + `<br>成交量 ${fmtVol(r.volume)} 手`
                             + `<br>成交额 ${fmtVol(r.amount)} 元`
                             + `<br>均价 ${avgPrice(r)} 元`;
                     }
