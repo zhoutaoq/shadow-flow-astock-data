@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>实时资讯</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260915e">
+    <link rel="stylesheet" href="/css/news.css?v=20260915e">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">金牛数据</a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <!-- 工具条：现在还在不在刷、上次什么时候刷到、暂停 / 手动刷新 -->
+    <section class="panel">
+        <div class="news-bar">
+            <h1 class="nb-title">实时资讯</h1>
+            <span class="news-live" id="liveBox">
+                <span class="news-dot"></span>
+                <span id="liveTxt">每 3 秒自动刷新</span>
+            </span>
+            <div class="nb-right">
+                <span class="news-upd" id="updTxt">正在取数…</span>
+                <button class="btn-ghost btn-sm" id="autoBtn" type="button" onclick="toggleAuto()">暂停刷新</button>
+                <button class="btn-ghost btn-sm" id="refBtn" type="button" onclick="manualRefresh()">立即刷新</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="news-sec">
+        <div class="news-sec-hd">
+            <h2>热门股排行</h2>
+            <span class="news-sec-note" id="hotNote">正在确认各平台可用性…</span>
+        </div>
+        <div class="news-grid" id="hotGrid"></div>
+    </section>
+
+    <section class="news-sec">
+        <div class="news-sec-hd">
+            <h2>板块涨跌幅</h2>
+            <span class="news-sec-note" id="secNote">正在确认各平台可用性…</span>
+        </div>
+        <div class="news-grid" id="secGrid"></div>
+    </section>
+</main>
+
+<script src="/js/common.js?v=20260915e"></script>
+<script>
+/* =========================================================================
+ * 实时资讯页
+ *
+ * 数据来自 /api/board/hot 与 /api/board/sectors：后端已经把三家平台并起来取完，
+ * 这里只负责「按平台出卡片 + 每 3 秒换一遍数」。
+ *
+ * 三个刻意的做法：
+ *   1. 行原地更新，不整块重建 tbody —— 3 秒一次的重绘若把 DOM 掀了重来，
+ *      鼠标悬停会被打断、滚动位置会被顶回顶部；这里按 code 认行，只改内容变了的格子。
+ *   2. 用「跑完再排下一次」的 setTimeout 链，不用 setInterval ——
+ *      上游偶尔卡过 3 秒时，setInterval 会把请求叠起来发，越堵越多。
+ *   3. 页面不可见就停轮询 —— 切到别的标签页时没人看，不必继续压上游接口。
+ * ========================================================================= */
+(function () {
+    'use strict';
+
+    var POLL_MS = 3000;   // 需求：3 秒刷新
+    var LIMIT = 20;       // 每张卡片展示的条数
+
+    var auto = true;      // 自动刷新开关
+    var busy = false;     // 一次只允许一个刷新在飞，手动连点也不会并发
+    var timer = null;     // 下一次自动刷新的定时器
+    var everOk = false;   // 是否成功取到过数据，决定失败时能不能沿用旧画面
+
+    var liveBox = document.getElementById('liveBox');
+    var liveTxt = document.getElementById('liveTxt');
+    var updEl = document.getElementById('updTxt');
+    var autoBtn = document.getElementById('autoBtn');
+    var refBtn = document.getElementById('refBtn');
+    var hotGrid = document.getElementById('hotGrid');
+    var secGrid = document.getElementById('secGrid');
+
+    /* ---------------------------------------------------------- 格式化 */
+
+    function num(v) {
+        if (v === null || v === undefined || v === '') return null;
+        var n = Number(v);
+        return isNaN(n) ? null : n;
+    }
+
+    /** 涨跌幅：统一两位小数、带符号；后端给的是百分数（1.23 即 +1.23%） */
+    function fmtPct(v) {
+        var n = num(v);
+        if (n === null) return '-';
+        return (n > 0 ? '+' : n < 0 ? '-' : '') + Math.abs(n).toFixed(2) + '%';
+    }
+
+    /** 涨红跌绿（A 股口径）；0 与缺失都按中性色走 */
+    function clsPct(v) {
+        var n = num(v);
+        if (n === null || n === 0) return 'dim';
+        return n > 0 ? 'up' : 'down';
+    }
+
+    /** 价格：需求要求全站两位小数 */
+    function fmtPrice(v) {
+        var n = num(v);
+        return n === null ? '-' : n.toFixed(2);
+    }
+
+    /** 成交额（元）按 万 / 亿 简写 */
+    function fmtAmount(v) {
+        var n = num(v);
+        if (n === null) return '-';
+        var a = Math.abs(n);
+        if (a >= 1e8) return (n / 1e8).toFixed(2) + '亿';
+        if (a >= 1e4) return (n / 1e4).toFixed(2) + '万';
+        return n.toFixed(0);
+    }
+
+    /** 热度值：同花顺的排序依据，只在本平台内部可比，不做单位换算 */
+    function fmtHot(v) {
+        var n = num(v);
+        return n === null ? '-' : n.toFixed(2);
+    }
+
+    /** 只取时分秒：日期在这一页没有意义，全是当天数据 */
+    function clockText(d) {
+        function p(x) { return String(x).length < 2 ? '0' + x : String(x); }
+        return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    }
+
+    /* ---------------------------------------------------------- 列定义 */
+
+    var HOT_HEAD = {
+        rank: '名次', name: '名称', code: '代码', price: '最新价',
+        pct: '涨跌幅', amount: '成交额', hot: '热度', tag: '题材'
+    };
+    /* 各家能给的字段不一样，就按各家自己的列出，不为了对齐而留空列 */
+    var HOT_COLS = {
+        eastmoney: ['rank', 'name', 'code', 'price', 'pct', 'hot'],
+        sina: ['rank', 'name', 'code', 'price', 'pct', 'amount'],
+        tonghuashun: ['rank', 'name', 'code', 'pct', 'hot', 'tag']
+    };
+    var HOT_DEFAULT_COLS = ['rank', 'name', 'code', 'price', 'pct'];
+    var HOT_KIND = {eastmoney: '换手率榜', sina: '成交额榜', tonghuashun: '热榜'};
+    /* 「热度」这一列各家口径不同，表头也跟着换：东财是换手率、同花顺是热榜热度值 */
+    var HOT_HOT_HEAD = {eastmoney: '换手率', tonghuashun: '热度'};
+
+    var SEC_HEAD = {rank: '名次', name: '板块', pct: '涨跌幅', leader: '领涨股', leaderPct: '领涨股涨跌幅'};
+    var SEC_COLS = ['rank', 'name', 'pct', 'leader', 'leaderPct'];
+
+    /** 右对齐的数值列 */
+    var NUM_COL = {price: 1, pct: 1, amount: 1, hot: 1, leaderPct: 1};
+
+    /** 热度列表头按平台取；该平台没专门写法的就退回通用的「热度」 */
+    function hotHead(pid) {
+        var h = {};
+        for (var k in HOT_HEAD) {
+            h[k] = HOT_HEAD[k];
+        }
+        h.hot = HOT_HOT_HEAD[pid] || HOT_HEAD.hot;
+        return h;
+    }
+
+    /**
+     * 一个格子的内容与样式。
+     *
+     * <p>返回 html 而不是文本：题材列要套一个 .badge 标签，其余列都是转义后的纯文本，
+     * 统一走 innerHTML 才能既安全又少一次分支。
+     */
+    function cellOf(col, r) {
+        var n;
+        switch (col) {
+            case 'rank':
+                n = num(r.rank);
+                return {html: n === null ? '' : String(n), cls: n !== null && n <= 3 ? 'rk top' : 'rk'};
+            case 'name':
+                return {html: esc(r.name || '-'), cls: 'nname'};
+            case 'code':
+                return {html: esc(r.code || '-'), cls: 'ncode num'};
+            case 'price':
+                return {html: fmtPrice(r.price), cls: 'num ' + clsPct(r.changePercent)};
+            case 'pct':
+                return {html: fmtPct(r.changePercent), cls: 'num ' + clsPct(r.changePercent)};
+            case 'amount':
+                return {html: fmtAmount(r.amount), cls: 'num dim'};
+            case 'hot':
+                return {html: fmtHot(r.hot), cls: 'num dim'};
+            case 'tag':
+                return {html: r.tag ? '<span class="badge">' + esc(r.tag) + '</span>' : '', cls: ''};
+            case 'leader':
+                return {html: r.leaderName ? esc(r.leaderName) : '-', cls: 'nname'};
+            case 'leaderPct':
+                return {html: fmtPct(r.leaderChangePercent), cls: 'num ' + clsPct(r.leaderChangePercent)};
+            default:
+                return {html: '', cls: ''};
+        }
+    }
+
+    /* ---------------------------------------------------------- 行更新 */
+
+    /** 数值跳了就给一次一闪；先摘掉 class 并强制重排，动画才肯重播 */
+    function flash(td) {
+        td.classList.remove('flash');
+        void td.offsetWidth;
+        td.classList.add('flash');
+    }
+
+    /**
+     * 按 code 认行，只改内容真的变了的格子。
+     *
+     * <p>名次、价格这类排序位有时会换家，所以每轮还要按新顺序把行重排一遍：
+     * 把行依次 append 进 fragment 再整体挂回 tbody，既完成了重排，
+     * 又不会像 innerHTML 那样把已有节点连同动画状态一起丢掉。
+     */
+    function syncRows(tbody, rows, cols) {
+        var map = tbody._map || (tbody._map = {});
+        var seen = {};
+        var frag = document.createDocumentFragment();
+        var i, k, tr, key, td, cell;
+
+        for (i = 0; i < rows.length; i++) {
+            var r = rows[i] || {};
+            key = String(r.code || r.name || ('#' + i));
+            seen[key] = 1;
+
+            tr = map[key];
+            if (!tr) {
+                tr = document.createElement('tr');
+                tr._key = key;
+                tr._cells = [];
+                for (k = 0; k < cols.length; k++) {
+                    tr.appendChild(document.createElement('td'));
+                    tr._cells.push(tr.lastChild);
+                }
+                map[key] = tr;
+            }
+            for (k = 0; k < cols.length; k++) {
+                cell = cellOf(cols[k], r);
+                td = tr._cells[k];
+                if (td.className !== cell.cls) {
+                    td.className = cell.cls;
+                }
+                if (td._html !== cell.html) {
+                    var had = td._html !== undefined;
+                    td.innerHTML = cell.html;
+                    td._html = cell.html;
+                    if (had) {
+                        flash(td);
+                    }
+                }
+            }
+            frag.appendChild(tr);
+        }
+
+        /* 本轮没出现的行（榜单掉出去的）清掉，不然会一直挂在表尾 */
+        for (var gone in map) {
+            if (!seen[gone]) {
+                if (map[gone].parentNode) {
+                    map[gone].parentNode.removeChild(map[gone]);
+                }
+                delete map[gone];
+            }
+        }
+        tbody.appendChild(frag);
+    }
+
+    /** 表的列在平台之间是固定的，列变了才重建表头；否则只换 body */
+    function ensureTable(bd, cols, head) {
+        var sig = cols.join(',');
+        if (bd._sig === sig && bd._tbody) {
+            return;
+        }
+        var th = '';
+        for (var i = 0; i < cols.length; i++) {
+            var c = cols[i];
+            var cls = c === 'rank' ? 'rk' : (NUM_COL[c] ? 'num' : '');
+            th += '<th' + (cls ? ' class="' + cls + '"' : '') + '>' + head[c] + '</th>';
+        }
+        bd._sig = sig;
+        bd._map = null;
+        bd.innerHTML = '<table class="grid"><thead><tr>' + th + '</tr></thead><tbody></tbody></table>';
+        bd._tbody = bd.querySelector('tbody');
+    }
+
+    /** 整张卡片换成一句说明（失败 / 平台不提供），顺手把表结构标记清空 */
+    function setMsg(bd, text, isErr) {
+        bd._sig = null;
+        bd._tbody = null;
+        bd._map = null;
+        bd.innerHTML = '<div class="ncard-msg' + (isErr ? ' err' : '') + '">' + esc(text) + '</div>';
+    }
+
+    /* ---------------------------------------------------------- 卡片渲染 */
+
+    /**
+     * 渲染一组平台卡片。
+     *
+     * <p>卡片本身也复用：同一个平台每 3 秒重建一次 DOM 也会闪，这里按 platform 认卡片，
+     * 只换表体。
+     *
+     * @param gridEl 承载卡片的栅格容器（hotGrid / secGrid）
+     * @param groups 后端返回的 BoardGroup 数组
+     * @param kind   'hot' | 'sectors'
+     */
+    function renderCards(gridEl, groups, kind) {
+        var cards = gridEl._cards || (gridEl._cards = {});
+        var seen = {};
+        var i;
+
+        for (i = 0; i < groups.length; i++) {
+            var g = groups[i] || {};
+            var pid = g.platform || 'unknown';
+            seen[pid] = 1;
+
+            var cols = kind === 'hot' ? (HOT_COLS[pid] || HOT_DEFAULT_COLS) : SEC_COLS;
+            var head = kind === 'hot' ? hotHead(pid) : SEC_HEAD;
+
+            var card = cards[pid];
+            if (!card) {
+                card = document.createElement('article');
+                card.className = 'ncard';
+                card.innerHTML = '<header class="ncard-hd"><h3></h3>'
+                    + '<span class="ncard-tag"></span><span class="ncard-cnt"></span></header>'
+                    + '<div class="ncard-bd"></div>';
+                card._name = card.querySelector('.ncard-hd h3');
+                card._tag = card.querySelector('.ncard-tag');
+                card._cnt = card.querySelector('.ncard-cnt');
+                card._bd = card.querySelector('.ncard-bd');
+                cards[pid] = card;
+            }
+            card._name.textContent = g.label || pid;
+            card._tag.textContent = kind === 'hot' ? (HOT_KIND[pid] || '热门榜') : '行业板块';
+
+            var rows = g.rows || [];
+            if (g.error) {
+                /* 取数失败：这是「这次没拿到」，不是「平台不提供」，两者要分开说 */
+                card._cnt.textContent = '';
+                setMsg(card._bd, '取数失败：' + g.error, true);
+            } else if (!rows.length) {
+                /* 成功但没数据 = 平台本身不提供这块（后端只会返回有该能力的平台，这里是兜底） */
+                card._cnt.textContent = '';
+                setMsg(card._bd, '该平台暂不提供此数据', false);
+            } else {
+                card._cnt.textContent = '共 ' + rows.length + ' 条';
+                ensureTable(card._bd, cols, head);
+                syncRows(card._bd._tbody, rows, cols);
+            }
+        }
+
+        /* 平台被后端移出清单时（比如某家彻底挂了），对应卡片一并撤掉 */
+        for (var pidGone in cards) {
+            if (!seen[pidGone]) {
+                if (cards[pidGone].parentNode) {
+                    cards[pidGone].parentNode.removeChild(cards[pidGone]);
+                }
+                delete cards[pidGone];
+            }
+        }
+
+        /* 卡片顺序跟随后端（后端按 东财 → 新浪 → 同花顺 固定），重启后也不会跳 */
+        for (i = 0; i < groups.length; i++) {
+            var c = cards[(groups[i] || {}).platform];
+            if (c) {
+                gridEl.appendChild(c);
+            }
+        }
+    }
+
+    /* ---------------------------------------------------------- 取数 */
+
+    /**
+     * 直接走原生 fetch，不用 common.js 的 get()。
+     *
+     * <p>那个封装在失败时会弹顶部提示条 —— 页面 3 秒一刷，上游真挂了就会每 3 秒弹一次，
+     * 反倒把页面淹没。这里把失败状态收进工具条那一行，安静地表达「这次没取到」。
+     */
+    function reqJSON(url) {
+        return fetch(url, {headers: {'Accept': 'application/json'}}).then(function (res) {
+            if (!res.ok) {
+                throw new Error('HTTP ' + res.status);
+            }
+            return res.json();
+        }).then(function (json) {
+            if (!json || !json.success) {
+                throw new Error((json && json.message) || '接口返回失败');
+            }
+            return json.data || [];
+        });
+    }
+
+    function setLive(state, text) {
+        liveBox.className = 'news-live' + (state === 'ok' ? '' : ' is-' + state);
+        liveTxt.textContent = text;
+    }
+
+    /** 拉一轮两块数据；两块各自独立，一块失败不影响另一块照常渲染 */
+    function load() {
+        if (busy) {
+            return Promise.resolve();
+        }
+        busy = true;
+        refBtn.disabled = true;
+
+        var q = '?limit=' + LIMIT;
+        return Promise.all([
+            reqJSON('/api/board/hot' + q).then(function (d) {
+                return {ok: true, data: d};
+            }).catch(function (e) {
+                return {ok: false, err: e.message};
+            }),
+            reqJSON('/api/board/sectors' + q).then(function (d) {
+                return {ok: true, data: d};
+            }).catch(function (e) {
+                return {ok: false, err: e.message};
+            })
+        ]).then(function (rs) {
+            var hot = rs[0], sec = rs[1];
+            if (hot.ok) {
+                renderCards(hotGrid, hot.data, 'hot');
+            }
+            if (sec.ok) {
+                renderCards(secGrid, sec.data, 'sectors');
+            }
+
+            var now = new Date();
+            if (hot.ok && sec.ok) {
+                everOk = true;
+                updEl.className = 'news-upd';
+                updEl.textContent = '更新于 ' + clockText(now);
+                if (auto) {
+                    setLive('ok', '每 3 秒自动刷新');
+                }
+            } else {
+                /* 有一块没拿到：把画面留在上一轮，只把状态说清楚 */
+                var why = hot.ok ? sec.err : hot.err;
+                updEl.className = 'news-upd is-err';
+                updEl.textContent = '本次刷新失败（' + why + '）'
+                    + (everOk ? '，画面为上次数据' : '');
+                setLive('err', '刷新异常，稍后自动重试');
+                if (!everOk) {
+                    /* 从来没成功过：别留一页空白，给一句明确的话 */
+                    if (!hot.ok) {
+                        setMsg(hotGrid, '取数失败：' + hot.err, true);
+                    }
+                    if (!sec.ok) {
+                        setMsg(secGrid, '取数失败：' + sec.err, true);
+                    }
+                }
+            }
+        }).then(function () {
+            busy = false;
+            refBtn.disabled = false;
+        });
+    }
+
+    /* ---------------------------------------------------------- 定时 */
+
+    /**
+     * 排下一次刷新。
+     *
+     * <p>必须是「这一轮跑完再排下一次」，不能用 setInterval：
+     * 上游偶尔卡 5 秒时，setInterval 会照 3 秒的节奏继续发，
+     * 请求越叠越多，最后整页都在等一个早就没意义的响应。
+     */
+    function schedule() {
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
+        }
+        if (!auto) {
+            return;
+        }
+        timer = setTimeout(function () {
+            timer = null;
+            if (!document.hidden) {
+                load().then(schedule);
+            } else {
+                schedule();
+            }
+        }, POLL_MS);
+    }
+
+    /** 手动刷新：立刻拉一次，并把自动节奏重新对齐到这一刻 */
+    function manualRefresh() {
+        load().then(schedule);
+    }
+
+    function toggleAuto() {
+        auto = !auto;
+        autoBtn.textContent = auto ? '暂停刷新' : '继续刷新';
+        if (auto) {
+            setLive('ok', '每 3 秒自动刷新');
+            manualRefresh();
+        } else {
+            clearTimeout(timer);
+            timer = null;
+            setLive('off', '已暂停自动刷新');
+            updEl.className = 'news-upd';
+            updEl.textContent = '手动刷新时更新';
+        }
+    }
+
+    // 工具条上的两个按钮在 body 里用了 onclick，这里把它们挂到 window 上
+    window.manualRefresh = manualRefresh;
+    window.toggleAuto = toggleAuto;
+
+    /* 切走标签页就没人在看，停掉轮询；切回来立刻补一次，免得看到的是切走前的旧数 */
+    document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+        } else if (auto) {
+            manualRefresh();
+        }
+    });
+
+    /* 需求：页面加载时就刷一次 */
+    load().then(schedule);
+
+    /* 平台清单：说明这一页实际接进来的是哪几家、谁不提供哪块。
+       问后端而不是写死，避免以后加了一家平台这里忘了改。 */
+    reqJSON('/api/board/platforms').then(function (list) {
+        var hotNames = [], secNames = [];
+        for (var i = 0; i < list.length; i++) {
+            var p = list[i] || {};
+            if (p.hotStocks) hotNames.push(p.label);
+            if (p.sectors) secNames.push(p.label);
+        }
+        document.getElementById('hotNote').textContent = hotNames.length
+            ? hotNames.join(' · ') + '　（通达信无可用公开接口，未接入）'
+            : '暂无可用数据源';
+        document.getElementById('secNote').textContent = secNames.length
+            ? secNames.join(' · ') + '（行业口径）　同花顺无板块接口、通达信未接入'
+            : '暂无可用数据源';
+    }).catch(function () {
+        document.getElementById('hotNote').textContent = '';
+        document.getElementById('secNote').textContent = '';
+    });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+/* =========================================================================
+ * 金牛数据 · 实时资讯页
+ *
+ * 两块内容：热门股排行（每平台一张卡片）+ 板块涨跌幅（每平台一张卡片）。
+ * 页面每 3 秒轮询一次，所以这里的样式要照顾两件事：
+ *   1. 行内容原地更新，不做整块重建 —— 否则每 3 秒表格闪一下、鼠标悬停被打断；
+ *   2. 数值变化时给一次轻量高亮，让「刚刚跳了」这件事看得见。
+ *
+ * 颜色一律走 common.css 的语义令牌，切主题自动跟随。
+ * ========================================================================= */
+
+/* ============ 顶部工具条 ============ */
+.news-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    flex-wrap: wrap;
+}
+
+.nb-title {
+    margin: 0;
+    font-size: var(--fs-16);
+    font-weight: 600;
+    letter-spacing: .2px;
+    color: var(--text-strong);
+}
+
+/* 轮询状态：小圆点 + 一句话。暂停 / 失败时换色，一眼能看出页面还在不在跳 */
+.news-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+}
+
+.news-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    animation: news-pulse 2s ease-out infinite;
+}
+
+.news-live.is-off .news-dot {
+    background: var(--text-dim);
+    animation: none;
+}
+
+.news-live.is-err .news-dot {
+    background: var(--danger);
+    animation: none;
+}
+
+@keyframes news-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(46, 160, 67, .45); }
+    70% { box-shadow: 0 0 0 7px rgba(46, 160, 67, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(46, 160, 67, 0); }
+}
+
+.nb-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex-shrink: 0;
+}
+
+.news-upd {
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.news-upd.is-err { color: var(--msg-err-fg); }
+
+/* ============ 分节 ============ */
+.news-sec { margin-bottom: 26px; }
+
+.news-sec-hd {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+    margin: 0 0 var(--sp-3);
+}
+
+.news-sec-hd h2 {
+    margin: 0;
+    font-size: var(--fs-16);
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.news-sec-note {
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+}
+
+/* 卡片栅格：列数由容器宽度自己算，3 张牌自然三列、2 张牌自然两列、窄屏退成一列 */
+.news-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+    align-items: start;
+}
+
+/* ============ 平台卡片 ============ */
+.ncard {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+}
+
+.ncard-hd {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 11px 14px;
+    background: var(--bg-head);
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.ncard-hd h3 {
+    margin: 0;
+    font-size: var(--fs-13);
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.ncard-tag {
+    font-size: var(--fs-11);
+    line-height: 16px;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.ncard-cnt {
+    margin-left: auto;
+    font-size: var(--fs-11);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* 卡片内滚动：20 行一次给完，页面就不会被三家榜拉成一条长蛇。
+   表头是 table.grid th 自带的 sticky，滚起来仍然看得见列名。 */
+.ncard-bd {
+    max-height: 566px;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+.ncard-bd table.grid th { z-index: 1; }
+
+.ncard-msg {
+    padding: 34px var(--sp-4);
+    text-align: center;
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+}
+
+.ncard-msg.err { color: var(--msg-err-fg); }
+
+/* ============ 单元格 ============ */
+.ncard td.rk {
+    width: 38px;
+    text-align: center;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 前三名给一点强调，一眼能找到榜首 */
+.ncard td.rk.top {
+    color: var(--primary);
+    font-weight: 700;
+}
+
+.ncard td.nname {
+    max-width: 132px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ncard .ncode {
+    font-size: var(--fs-12);
+    color: var(--text-dim);
+}
+
+/* 数值变化时闪一下，让「刚刚跳了」可见 */
+.ncard td.flash {
+    animation: news-flash .85s ease-out;
+}
+
+@keyframes news-flash {
+    0% { background: var(--bg-active); }
+    100% { background: transparent; }
+}
+
+/* 动效偏好：只关动画，圆点与高亮仍保留颜色差异 */
+@media (prefers-reduced-motion: reduce) {
+    .news-dot { animation: none; }
+    .ncard td.flash { animation: none; background: var(--bg-active); }
+}

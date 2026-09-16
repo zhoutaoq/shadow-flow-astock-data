@@ -822,6 +822,7 @@ const NAV_ITEMS = [
     {text: '概览', href: '/'},
     {text: '股票列表', href: '/pages/stock-list.html'},
     {text: 'K线查看', href: '/pages/chart.html'},
+    {text: '实时资讯', href: '/pages/news.html'},
     {text: '策略回测', href: '/pages/backtest.html', login: true},
     {text: '盯盘', href: '/pages/watch.html', login: true},
     {text: '我的账户', href: '/pages/account.html', login: true},
@@ -1098,7 +1099,7 @@ async function submitChangePassword(hide) {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260915d（v1.5.2：盯盘推送按用户 / 提示条移到页面上方 / 代理登录 / 账户分本 / 首页外盘指数与背景行情）');
+    console.info('[金牛数据] 前端版本 20260915e（v1.5.4：新增实时资讯页 —— 热门股排行 + 板块涨跌幅，3 秒轮询）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();
