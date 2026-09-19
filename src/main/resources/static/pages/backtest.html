@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>策略回测 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
-    <link rel="stylesheet" href="/css/backtest.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
+    <link rel="stylesheet" href="/css/backtest.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -34,7 +34,6 @@
                 <div class="field">
                     <label>股票 *</label>
                     <div id="codePick"></div>
-                    <div class="sp-hint">输入代码或名称，从匹配结果里<b>点选一只</b></div>
                 </div>
                 <div class="cfg-sub">账户</div>
                 <div class="field">
@@ -44,7 +43,7 @@
                 <div class="field">
                     <label>手续费滑点 *</label>
                     <input type="number" id="fFee" value="0.01" min="0" step="0.001">
-                    <div class="sp-hint">单位 %，0.01% = 万分之一</div>
+                    <div class="sp-hint">单位 %</div>
                 </div>
             </div>
 
@@ -69,9 +68,6 @@
                     <button class="btn-ghost btn-sm" data-days="3650" onclick="setRange(3650)">近10年</button>
                 </div>
                 <div class="sp-hint" id="spanHint"></div>
-                <div class="sp-hint">
-                    区间之前的数据只用于计算均线/涨幅，不产生交易；起止两天缺数据时会先从供应商补一次。
-                </div>
             </div>
 
             <!-- 3 买入策略 -->
@@ -123,14 +119,13 @@
             <!-- 5 买入涨跌停成交 -->
             <div class="cfg-card c5">
                 <div class="cfg-head"><span class="cfg-idx">3</span>买点买入失败（涨停板）次日策略</div>
-                <div class="limit-desc">信号日收盘封涨停时买不进，决定怎么处理</div>
                 <div class="limit-radio" id="buyLimitRadio">
                     <button type="button" data-strategy="1" class="on">无视<small>按收盘价买入</small></button>
                     <button type="button" data-strategy="2">次日开盘<small>非涨停即买</small></button>
                     <button type="button" data-strategy="3">次日开盘<small>达条件才买</small></button>
                 </div>
                 <div class="limit-conds" id="buyLimitConds">
-                    <div class="limit-conds-note">次日开盘相对信号日收盘涨跌幅，满足任一即买入
+                    <div class="limit-conds-note">次日开盘涨跌幅
                         <span class="sep">或</span></div>
                     <div id="buyLimitRows"></div>
                     <button type="button" class="btn-ghost btn-sm limit-add" id="buyLimitAdd"
@@ -141,14 +136,13 @@
             <!-- 6 卖出涨跌停成交 -->
             <div class="cfg-card c6">
                 <div class="cfg-head"><span class="cfg-idx">6</span>卖点卖出失败（跌停板）次日策略</div>
-                <div class="limit-desc">信号日收盘封跌停时卖不出，决定怎么处理</div>
                 <div class="limit-radio" id="sellLimitRadio">
                     <button type="button" data-strategy="1" class="on">无视<small>按收盘价卖出</small></button>
                     <button type="button" data-strategy="2">次日开盘<small>非跌停即卖</small></button>
                     <button type="button" data-strategy="3">次日开盘<small>达条件才卖</small></button>
                 </div>
                 <div class="limit-conds" id="sellLimitConds">
-                    <div class="limit-conds-note">次日开盘相对信号日收盘涨跌幅，满足任一即卖出
+                    <div class="limit-conds-note">次日开盘涨跌幅
                         <span class="sep">或</span></div>
                     <div id="sellLimitRows"></div>
                     <button type="button" class="btn-ghost btn-sm limit-add" id="sellLimitAdd"
@@ -168,11 +162,6 @@
                 <span class="dim" id="progressText" style="min-width:44px">0%</span>
             </div>
             <div class="sp-hint" id="progressMsg"></div>
-        </div>
-        <div class="sp-hint">
-            每次交易都是<b>全仓</b>：买入用全部可用现金买入，卖出一次性清仓；
-            <b>最小交易单位 100 股</b>，买入股数按 100 股的整数倍向下取整。
-            信号在当日收盘确认，按当日收盘价成交。
         </div>
     </section>
 
@@ -212,7 +201,7 @@
             </label>
             <label class="chk">
                 <input type="checkbox" id="sPrincipal" onchange="renderProfit()">
-                <span class="dot" style="background:#a371f7"></span>本金走势（账户总金额）
+                <span class="dot" style="background:#a371f7"></span>本金走势
             </label>
         </div>
         <div id="profitChart" class="chart-box small"></div>
@@ -243,9 +232,9 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/date-picker.js?v=20260916b"></script>
-<script src="/js/stock-picker.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/date-picker.js?v=20260919a"></script>
+<script src="/js/stock-picker.js?v=20260919a"></script>
 <script>
     const UP = '#e5484d';    // 涨/买入：红
     const DOWN = '#2ea043';  // 跌/卖出：绿
@@ -963,11 +952,10 @@
                 ${esc(bt.startDate)} ~ ${esc(bt.endDate)}
             </span></div>
             <div class="strat-line"><span class="k">账户</span><span class="v">
-                起始 ${fmtNum(bt.initAmount)}，手续费滑点 ${feePct}（买卖各计一次）
+                起始 ${fmtNum(bt.initAmount)}，手续费滑点 ${feePct}
             </span></div>
             <div class="strat-line"><span class="k">成交口径</span><span class="v">
-                每次交易全仓：买入用全部可用现金买满 100 股整数倍，卖出一次清仓；
-                最小交易单位 100 股；信号当日收盘确认、按收盘价成交
+                全仓 · 100 股整数倍 · 当日收盘价成交
             </span></div>
             <div class="strat-rule"><span class="k">买入（${logicText(buy)}）</span>
                 ${ruleList(buy, '空仓且买入策略命中时买入')}</div>

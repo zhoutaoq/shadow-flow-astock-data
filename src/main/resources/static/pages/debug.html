@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>接口调试 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -16,16 +16,15 @@
     <div id="msgBox" class="msg"></div>
 
     <section class="panel">
-        <h2>供应商日K线接口调试 <span class="dim" style="font-weight:400;font-size:12px">· 每次请求都计费，调用记为「调试」；是否落盘由下方开关控制</span></h2>
+        <h2>供应商日K线接口调试</h2>
         <div class="form-row">
             <div class="field grow">
                 <label>股票 *</label>
                 <div id="codePick"></div>
-                <div class="sp-hint">输入代码或名称，从匹配结果里<b>点选一只</b>（只显示前 10 条）</div>
             </div>
             <div class="field">
                 <label>symbol</label>
-                <input type="text" value="stock" readonly title="系统只关注沪深A股，symbol 固定为 stock">
+                <input type="text" value="stock" readonly>
             </div>
             <div class="field">
                 <label>period</label>
@@ -44,8 +43,7 @@
                 <input type="date" id="fEnd">
             </div>
             <button onclick="call1()" id="btnCall">发送请求</button>
-            <button class="btn-ghost" id="btnPersist" onclick="togglePersist()"
-                    title="开：把解析结果写入日K线数据表（同一股票+交易日覆盖）；关：只渲染不落盘">落盘：关</button>
+            <button class="btn-ghost" id="btnPersist" onclick="togglePersist()">写入：关</button>
             <button class="btn-ghost" onclick="curlText()">生成 curl</button>
         </div>
         <div id="urlBox" class="dim" style="word-break:break-all;font-size:12px"></div>
@@ -63,7 +61,6 @@
 
     <section class="panel">
         <h2>解析后的结构化结果 <span id="statBox" class="dim" style="font-weight:400;font-size:12px"></span></h2>
-        <div class="dim" style="font-size:12px;margin-bottom:6px">括号内为接口返回的原始字段名</div>
         <div style="overflow:auto">
             <table class="grid">
                 <thead>
@@ -81,14 +78,14 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/date-picker.js?v=20260916b"></script>
-<script src="/js/stock-picker.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/date-picker.js?v=20260919a"></script>
+<script src="/js/stock-picker.js?v=20260919a"></script>
 <script>
     document.getElementById('fStart').value = daysAgo(30);
     document.getElementById('fEnd').value = today();
 
-    // 落盘开关：默认关闭（只请求、只渲染，接口按次计费，避免误写库）
+    // 写入开关：默认关闭（只请求、只渲染，接口按次计费，避免误写库）
     let persist = false;
 
     const codePicker = createStockPicker(document.getElementById('codePick'), {});
@@ -96,11 +93,9 @@
     function togglePersist() {
         persist = !persist;
         const btn = document.getElementById('btnPersist');
-        btn.textContent = '落盘：' + (persist ? '开' : '关');
+        btn.textContent = '写入：' + (persist ? '开' : '关');
         btn.className = persist ? 'btn-danger' : 'btn-ghost';
-        toast(persist
-            ? '已开启落盘：本次结果将写入日K线数据表（同一股票 + 交易日覆盖）'
-            : '已关闭落盘：只渲染，不写库', persist ? 'err' : 'info');
+        toast(persist ? '已开启写入' : '已关闭写入', persist ? 'err' : 'info');
     }
 
     function params() {
@@ -130,8 +125,8 @@
 
         const rows = r.data.parsed || [];
         document.getElementById('statBox').textContent = r.data.persist
-            ? `解析 ${rows.length} 行，已落盘 ${r.data.persisted} 条`
-            : `解析 ${rows.length} 行，未落盘（落盘开关关闭）`;
+            ? `解析 ${rows.length} 行，已写入 ${r.data.persisted} 条`
+            : `解析 ${rows.length} 行，未写入`;
         document.getElementById('tbody').innerHTML = rows.length ? rows.map(x => `
             <tr>
                 <td>${esc(x.tradeDate)}</td>
@@ -144,7 +139,7 @@
                 <td class="num">${fmtVol(x.amount)}</td>
                 <td class="num">${fmtNum(x.preClose)}</td>
             </tr>`).join('')
-            : '<tr><td colspan="9" class="empty">接口返回空数组（区间内无交易数据）</td></tr>';
+            : '<tr><td colspan="9" class="empty">暂无数据（区间内无交易数据）</td></tr>';
     }
 
     (async function initFromQuery() {

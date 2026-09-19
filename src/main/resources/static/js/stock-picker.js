@@ -83,8 +83,7 @@ const STOCK_PICKER_DROP_MAX_W = 420;
     const clearEl = host.querySelector('.sp-clear');
     const dropEl = host.querySelector('.sp-drop');
 
-    inputEl.placeholder = opts.placeholder
-        || (multiple ? '输入代码或名称，点选加入' : '输入代码或名称，从结果中点选');
+    inputEl.placeholder = opts.placeholder || '代码或名称';
 
     let items = [];      // 多选已选
     let single = null;   // 单选已选
@@ -146,9 +145,7 @@ const STOCK_PICKER_DROP_MAX_W = 420;
             return custom;
         }
         return '没有匹配的股票' + (kw ? '：' + kw : '')
-            + (allowManual()
-                ? '。可直接输入完整代码后回车（或到「实时通知配置」检查令牌）'
-                : '。可换个关键字，或先到「股票列表管理」导入股票列表');
+            + (allowManual() ? '，可直接输入完整代码后回车' : '');
     }
 
     function renderDropBody(kw) {
@@ -166,7 +163,7 @@ const STOCK_PICKER_DROP_MAX_W = 420;
                 + '</div>';
         }).join('')
             + '<div class="sp-tip">共 ' + options.length + ' 条'
-            + (options.length >= limit ? '，仅显示前 ' + limit + ' 条，请输入更精确的关键字' : '')
+            + (options.length >= limit ? '，仅显示前 ' + limit + ' 条' : '')
             + '</div>';
         Array.prototype.forEach.call(dropEl.querySelectorAll('.sp-opt'), el => {
             el.addEventListener('mousedown', ev => ev.preventDefault());
@@ -314,27 +311,33 @@ const STOCK_PICKER_DROP_MAX_W = 420;
         lastKw = kw || '';
         const my = ++seq;
         if (source) {
-            const all = (await source()) || [];
+            const all = await source();
             if (my !== seq) return;
-            const k = lastKw.trim().toLowerCase();
-            options = (k
-                ? all.filter(x => String(x.code || '').toLowerCase().indexOf(k) >= 0
-                    || String(x.name || '').toLowerCase().indexOf(k) >= 0)
-                : all).slice(0, limit);
-            activeIdx = options.length ? 0 : -1;
-            renderDropBody(lastKw);
-            if (isShown()) {
-                positionDrop();
-            } else if (!silent) {
-                open();
+            // 返回清单（哪怕是空数组）= 只在本地过滤；返回 null = 这次不走固定集合，
+            // 回落到默认名录查询 —— 账户页「卖出」给持仓清单、「买入」给 null，共用一个选择器
+            if (all) {
+                const k = lastKw.trim().toLowerCase();
+                options = (k
+                    ? all.filter(x => String(x.code || '').toLowerCase().indexOf(k) >= 0
+                        || String(x.name || '').toLowerCase().indexOf(k) >= 0)
+                    : all).slice(0, limit);
+                activeIdx = options.length ? 0 : -1;
+                renderDropBody(lastKw);
+                if (isShown()) {
+                    positionDrop();
+                } else if (!silent) {
+                    open();
+                }
+                return;
             }
-            return;
+            // 回落前先丢掉上一轮的候选，免得把持仓清单带进「买入」方向
+            options = [];
         }
         const q = ['limit=' + limit];
         if (lastKw) q.push('keyword=' + encodeURIComponent(lastKw));
         // 空查询不打招呼，节省请求；按规范输入第一个字再走接口
         if (lastKw === '' && !options.length) {
-            dropEl.innerHTML = '<div class="sp-tip">输入代码或名称开始匹配</div>';
+            dropEl.innerHTML = '<div class="sp-tip">代码或名称</div>';
             if (!silent) open();
             return;
         }
@@ -532,9 +535,8 @@ function requireStock(picker, what) {
     if (typeof picker.tryManual === 'function' && picker.tryManual()) return true;
     const typed = picker.getInputText();
     toast(typed
-        ? '「' + typed + '」还没有选定：请输入代码或名称后，从下拉列表里点选'
-        + (what || '一只股票')
-        : '请先选择' + (what || '一只股票') + '：输入代码或名称，从下拉列表里点选',
+        ? '「' + typed + '」还没有选定，请从下拉列表里点选' + (what || '一只股票')
+        : '请先选择' + (what || '一只股票'),
         'err');
     picker.focus();
     return false;

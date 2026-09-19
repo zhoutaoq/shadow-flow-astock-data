@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>系统配置 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -44,7 +44,6 @@
             <div class="card">
                 <div class="card-title">区间涨跌幅</div>
                 <div class="card-value" id="cPct">—</div>
-                <div class="card-desc">按区间首尾收盘价计算</div>
             </div>
         </section>
 
@@ -64,7 +63,6 @@
                     <input type="date" id="fEnd">
                 </div>
             </div>
-            <div class="sp-hint">首页顶部的背景就是这段行情的一段走势动画，区间最长一年。</div>
             <div class="modal-actions" style="margin-top:14px;justify-content:flex-start">
                 <button class="btn-ghost" onclick="resetDefault()">恢复默认</button>
                 <button class="btn-ghost" onclick="location.href='/'">去看首页</button>
@@ -75,9 +73,9 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/date-picker.js?v=20260916b"></script>
-<script src="/js/stock-picker.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/date-picker.js?v=20260919a"></script>
+<script src="/js/stock-picker.js?v=20260919a"></script>
 <script>
     /** 与后端口径一致：背景区间最长一年 */
     const MAX_SPAN_DAYS = 365;
@@ -121,8 +119,8 @@
         }
 
         document.getElementById('stateLine').textContent = !c.configured
-            ? '首页现在用的是系统自带的这段背景，保存后就会换成上面这份。'
-            : (bars.length ? '最近更新 ' + (c.updateTime || '—') : '这段行情暂时取不到，首页仍显示系统自带的背景。');
+            ? ''
+            : (bars.length ? '最近更新 ' + (c.updateTime || '—') : '暂时取不到这段行情');
 
         if (!picker) {
             picker = createStockPicker(document.getElementById('codePick'), {});

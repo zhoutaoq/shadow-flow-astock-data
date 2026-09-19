@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>条件更新 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -16,11 +16,11 @@
     <div id="msgBox" class="msg"></div>
 
     <section class="panel">
-        <h2>1. 筛选条件（命中的股票全部纳入本次更新）</h2>
+        <h2>1. 筛选条件</h2>
         <div class="form-row">
             <div class="field grow">
-                <label>关键字（代码 / 名称，模糊匹配）</label>
-                <input type="text" id="fKeyword" placeholder="留空=全部；如 600 或 银行">
+                <label>关键字</label>
+                <input type="text" id="fKeyword">
             </div>
             <div class="field">
                 <label>启用状态</label>
@@ -59,14 +59,12 @@
                 <label>最多更新只数（0=不限）</label>
                 <input type="number" id="fLimit" value="0" min="0" style="width:110px">
             </div>
-            <button class="btn-warn" onclick="submitJob(true)" id="btnDry">预览：只请求不入库</button>
-            <button onclick="submitJob(false)" id="btnRun">提交批处理作业（入库）</button>
+            <button class="btn-warn" onclick="submitJob(true)" id="btnDry">预览</button>
+            <button onclick="submitJob(false)" id="btnRun">提交作业</button>
             <button class="btn-ghost" onclick="cancelJob()" id="btnCancel" disabled>取消</button>
         </div>
         <div class="dim" style="font-size:12px">
-            每只股票在整个日期区间内<b>只发一次请求</b>；作业在后台多线程执行，页面轮询进度。<br>
-            ⚠️ 接口<b>按次计费</b>：预计调用次数 = 更新只数，作业提交后立即开始请求，超过
-            <b>20 只</b>会先弹二次确认（预览模式同样计费）。
+            ⚠️ 接口<b>按次计费</b>，超过 <b>20 只</b>会先弹二次确认。
         </div>
     </section>
 
@@ -78,7 +76,7 @@
     </section>
 
     <section class="panel" id="errPanel" style="display:none">
-        <h2>失败明细（最多显示 200 条）</h2>
+        <h2>失败明细</h2>
         <div style="overflow:auto;max-height:300px">
             <table class="grid">
                 <thead><tr><th>股票代码</th><th>失败原因</th></tr></thead>
@@ -88,8 +86,8 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/date-picker.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/date-picker.js?v=20260919a"></script>
 <script>
     let jobId = null;
     let timer = null;
@@ -209,7 +207,7 @@
     function render(j) {
         const statusCls = j.status === 'DONE' ? 'badge-ok'
             : (j.status === 'RUNNING' ? '' : 'badge-err');
-        const modeText = j.dryRun ? '<span class="badge">预览模式（未入库）</span>'
+        const modeText = j.dryRun ? '<span class="badge">预览模式</span>'
             : '<span class="badge badge-ok">已入库</span>';
         document.getElementById('jobBox').innerHTML = `
             <table class="kv">
@@ -219,7 +217,7 @@
                     &nbsp;${modeText}</td></tr>
                 <tr><th>筛选条件</th><td>关键字=${esc(j.keyword || '全部')}，
                     状态=${j.enabled === null ? '全部' : (j.enabled === 1 ? '仅启用' : '仅停用')}</td></tr>
-                <tr><th>日期区间</th><td>${esc(j.startDate)} ~ ${esc(j.endDate)}（每只股票一次请求）</td></tr>
+                <tr><th>日期区间</th><td>${esc(j.startDate)} ~ ${esc(j.endDate)}</td></tr>
                 <tr><th>并发线程</th><td>${j.concurrency}</td></tr>
                 <tr><th>进度</th><td>
                     <div style="height:8px;background:#1b2233;border-radius:4px;overflow:hidden;margin:4px 0">

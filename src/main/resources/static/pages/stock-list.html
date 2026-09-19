@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>股票列表 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -16,11 +16,11 @@
     <div id="msgBox" class="msg"></div>
 
     <section class="panel">
-        <h2>查询条件 <span class="dim" style="font-weight:400;font-size:12px" id="modeTip"></span></h2>
+        <h2>查询条件</h2>
         <div class="form-row">
             <div class="field grow">
-                <label>关键字（代码 / 名称）</label>
-                <input type="text" id="fKeyword" placeholder="如 000001 或 平安，回车即查">
+                <label>关键字</label>
+                <input type="text" id="fKeyword">
             </div>
             <div class="field">
                 <label>每页条数</label>
@@ -42,7 +42,7 @@
     </section>
 
     <section class="panel">
-        <h2>股票列表 <span class="dim" style="font-weight:400;font-size:12px">沪深A股 · 分析与回测的标的池</span></h2>
+        <h2>股票列表</h2>
         <div style="overflow:auto;max-height:620px">
             <table class="grid">
                 <thead>
@@ -61,11 +61,11 @@
         <h3 id="editTitle">新增股票</h3>
         <div class="field">
             <label>股票代码 *</label>
-            <input type="text" id="eCode" placeholder="000001">
+            <input type="text" id="eCode">
         </div>
         <div class="field">
             <label>股票名称</label>
-            <input type="text" id="eName" placeholder="平安银行">
+            <input type="text" id="eName">
         </div>
         <div class="field">
             <label>状态</label>
@@ -81,7 +81,7 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
 <script>
     /**
      * 两种模式共用一页，差别只在数据来源与写操作：
@@ -215,7 +215,7 @@
     }
 
     async function importJson() {
-        if (!confirm('将从 resources/stock-list.json 导入沪深A股（同代码覆盖名称），确认继续？')) return;
+        if (!confirm('将导入沪深A股列表（同代码覆盖名称），确认继续？')) return;
         toast('导入中，请稍候...', 'info');
         const r = await post('/api/stocks/import', {});
         if (r && r.success) {
@@ -226,9 +226,7 @@
 
     (async function init() {
         await loadMode();
-        if (MODE.noDb) {
-            document.getElementById('modeTip').textContent = '无数据库模式 · 只读';
-        } else {
+        if (!MODE.noDb) {
             document.getElementById('writeOps').style.display = '';
         }
         renderHead();

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>接口调用日志</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -19,25 +19,24 @@
         <h2>查询条件</h2>
         <div class="form-row">
             <div class="field grow">
-                <label>股票（留空 = 全部）</label>
+                <label>股票</label>
                 <div id="codePick"></div>
-                <div class="sp-hint">输入代码或名称，从匹配结果里点选一只</div>
             </div>
             <div class="field">
                 <label>调用场景</label>
                 <select id="fScene">
                     <option value="">全部</option>
-                    <option value="dev">调试（接口调试页）</option>
-                    <option value="batch">批处理（更新落库）</option>
+                    <option value="dev">调试</option>
+                    <option value="batch">批处理</option>
                 </select>
             </div>
             <div class="field">
                 <label>日期参数-起</label>
-                <input type="date" id="fReqStart" title="按请求时传入的 startDate 参数筛选">
+                <input type="date" id="fReqStart">
             </div>
             <div class="field">
                 <label>日期参数-止</label>
-                <input type="date" id="fReqEnd" title="按请求时传入的 endDate 参数筛选">
+                <input type="date" id="fReqEnd">
             </div>
         </div>
         <div class="form-row">
@@ -68,13 +67,10 @@
             <button onclick="state.page=1;load()">查询</button>
             <button class="btn-ghost" onclick="resetForm()">重置</button>
         </div>
-        <div class="dim" style="font-size:12px;margin-top:6px">
-            日期参数按「请求时传入的区间与填写区间有交集」筛选；请求时间按调用发生的时刻筛选（只填日期则取整日）。
-        </div>
     </section>
 
     <section class="panel">
-        <h2>调用日志 <span class="dim" style="font-weight:400;font-size:12px">只记录状态码、耗时与返回行数，不记录返回内容</span></h2>
+        <h2>调用日志</h2>
         <div id="stat" class="dim" style="font-size:13px;margin-bottom:8px"></div>
         <div style="overflow:auto;max-height:620px">
             <table class="grid">
@@ -100,9 +96,9 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/date-picker.js?v=20260916b"></script>
-<script src="/js/stock-picker.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/date-picker.js?v=20260919a"></script>
+<script src="/js/stock-picker.js?v=20260919a"></script>
 <script>
     const state = {page: 1, size: 50};
 

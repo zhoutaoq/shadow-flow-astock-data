@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>批量更新 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -21,7 +21,6 @@
             <div class="field grow">
                 <label>搜索并添加股票</label>
                 <div id="quickPick"></div>
-                <div class="sp-hint">输入代码或名称，从匹配结果里<b>点选</b>加入（只显示前 10 条）；已选会同步到下方列表</div>
             </div>
         </div>
         <div style="overflow:auto;max-height:360px;border:1px solid var(--border);border-radius:6px">
@@ -40,8 +39,8 @@
         <div class="pager" id="stockPager"></div>
         <div class="form-row" style="margin-top:10px">
             <div class="field grow">
-                <label>在列表中搜索（代码/名称）</label>
-                <input type="text" id="fKeyword" placeholder="输入后回车搜索" onkeydown="if(event.key==='Enter')searchStocks()">
+                <label>在列表中搜索</label>
+                <input type="text" id="fKeyword" onkeydown="if(event.key==='Enter')searchStocks()">
             </div>
             <button onclick="searchStocks()">搜索</button>
             <button class="btn-ghost" onclick="selectPage(true)">全选当前页</button>
@@ -66,9 +65,9 @@
             <button class="btn-ghost" onclick="setRange(365)">近1年</button>
         </div>
         <div class="form-row">
-            <button class="btn-warn" onclick="run(true)" id="btnDry">预览：只请求并渲染，不入库</button>
-            <button onclick="run(false)" id="btnRun">批量更新并入库</button>
-            <span class="dim">⚠️ 接口按次计费：预计调用次数 = 已选只数，超过 <b>20 只</b>会先弹二次确认</span>
+            <button class="btn-warn" onclick="run(true)" id="btnDry">预览</button>
+            <button onclick="run(false)" id="btnRun">批量更新</button>
+            <span class="dim">⚠️ 接口按次计费，超过 <b>20 只</b>会先弹二次确认</span>
         </div>
         <div id="progress" style="display:none;margin-top:10px">
             <div style="height:6px;background:#1b2233;border-radius:3px;overflow:hidden">
@@ -124,9 +123,9 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/date-picker.js?v=20260916b"></script>
-<script src="/js/stock-picker.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/date-picker.js?v=20260919a"></script>
+<script src="/js/stock-picker.js?v=20260919a"></script>
 <script>
     const state = {page: 1, size: 20, total: 0, rows: [], selected: new Set(), coverage: {}, nameOf: {}};
 
@@ -271,8 +270,8 @@
 
     function render(result) {
         const modeText = result.dryRun
-            ? '<span class="badge">预览模式（未入库）</span>'
-            : '<span class="badge badge-ok">已入库（同一股票 + 交易日覆盖更新）</span>';
+            ? '<span class="badge">预览模式</span>'
+            : '<span class="badge badge-ok">已入库</span>';
         document.getElementById('summary').innerHTML = `
             <table class="kv">
                 <tr><th>执行模式</th><td>${modeText}</td></tr>

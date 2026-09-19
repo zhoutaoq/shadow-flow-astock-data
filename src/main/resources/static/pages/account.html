@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
-    <link rel="stylesheet" href="/css/account.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
+    <link rel="stylesheet" href="/css/account.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -71,7 +71,6 @@
                 </header>
                 <div class="acard-bd">
                     <div class="apairs" id="fundRows"></div>
-                    <div class="akpi-d">期初市值与可用金额不随页面直接编辑，改动集中在弹窗里完成</div>
                 </div>
             </section>
 
@@ -168,9 +167,9 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/date-picker.js?v=20260916b"></script>
-<script src="/js/stock-picker.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/date-picker.js?v=20260919a"></script>
+<script src="/js/stock-picker.js?v=20260919a"></script>
 <script>
     let overview = null;     // /api/account/accounts 一级列表
     let cfg = null;          // /api/account 当前账户设置
@@ -352,8 +351,8 @@
     function renderFund() {
         const c = cfg || {};
         const rows = [
-            ['账户期初市值', money(c.initValue), '总收益的比较基准'],
-            ['可用金额', money(c.cash), '买卖操作会实时增减它'],
+            ['账户期初市值', money(c.initValue), ''],
+            ['可用金额', money(c.cash), ''],
             ['备注', (c.remark ? esc(c.remark) : '—'), '']
         ];
         document.getElementById('fundRows').innerHTML = rows.map(r =>
@@ -373,7 +372,7 @@
         // 当日收益 = 持仓浮动 + 当天卖出的已实现，副标题把两个来源摊开，便于核对
         const parts = ['浮动 ' + moneySigned(s.dayFloatProfit), '已实现 ' + moneySigned(s.dayRealizedProfit)];
         if (s.dayProfitPercent != null) {
-            parts.push(pctSigned(s.dayProfitPercent) + '（按当量基准）');
+            parts.push(pctSigned(s.dayProfitPercent));
         }
         document.getElementById('kDayPct').textContent = parts.join(' · ');
 
@@ -404,19 +403,17 @@
             + '<span class="achip">' + n + ' / ' + maxP + ' 只持仓</span>';
     }
 
-    /** 行情提示：有持仓但一条行情都没取到时，明确告诉用户现价是成本价兜底 */
+    /** 行情状态：一条行情都没取到时说明现价是哪来的，其余情况不占位 */
     function renderQuoteTip(s) {
         const ps = s.positions || [];
         const quoted = ps.filter(p => p.quoted).length;
         const el = document.getElementById('quoteTip');
-        if (!ps.length) {
+        if (!ps.length || quoted === ps.length) {
             el.textContent = '';
         } else if (quoted === 0) {
-            el.textContent = '未取到实时行情，现价暂按成本价显示';
-        } else if (quoted < ps.length) {
-            el.textContent = quoted + '/' + ps.length + ' 只已取到实时行情';
+            el.textContent = '未取到行情，现价按成本价显示';
         } else {
-            el.textContent = '现价取自实时行情';
+            el.textContent = quoted + '/' + ps.length + ' 只已取到行情';
         }
         document.getElementById('posCount').textContent = ps.length + ' 条';
     }
@@ -424,8 +421,7 @@
     function renderPositions(rows) {
         const body = document.getElementById('posBody');
         if (!rows.length) {
-            body.innerHTML = '<tr><td class="empty" colspan="12">这本账户还没有持仓，点上方「＋ 添加持仓」，'
-                + '或「＋ 添加操作记录」买入一只</td></tr>';
+            body.innerHTML = '<tr><td class="empty" colspan="12">这本账户还没有持仓</td></tr>';
             return;
         }
         body.innerHTML = rows.map(p => {
@@ -667,9 +663,6 @@
                 + '<input type="number" id="posAvail" min="0" step="100" inputmode="numeric"></div>'
                 + '<div class="field"><label for="posOpenDate">建仓日（选填）</label>'
                 + '<input type="date" id="posOpenDate"></div>'
-                + '<div class="modal-note">建仓日默认今天：填成今天时，这条持仓的当日盈亏会以成本价为基准'
-                + '（页面直接配的持仓没有成交记录，只能用成本价当今天的起点）；'
-                + '清空则不记，当日盈亏按昨收算。可用数量是可卖出的部分，卖出时以它为上限。</div>'
                 + '<div class="modal-actions">'
                 + '<button class="btn-ghost" id="posCancel">取消</button>'
                 + '<button id="posSave">保存</button>'
@@ -767,9 +760,7 @@
                 + '<div class="field"><label for="fundCash">可用金额（元）</label>'
                 + '<input type="number" id="fundCash" step="1000" inputmode="decimal"></div>'
                 + '<div class="field"><label for="fundRemark">备注</label>'
-                + '<input type="text" id="fundRemark" maxlength="255" autocomplete="off" spellcheck="false" placeholder="选填"></div>'
-                + '<div class="modal-note">期初市值是总收益的比较基准；可用金额是现金余额，买卖操作会实时增减它。'
-                + '这里的修改会直接覆盖当前值，保存后立即生效。</div>'
+                + '<input type="text" id="fundRemark" maxlength="255" autocomplete="off" spellcheck="false"></div>'
                 + '<div class="modal-actions">'
                 + '<button class="btn-ghost" id="fundCancel">取消</button>'
                 + '<button id="fundSave">保存</button>'
@@ -890,13 +881,12 @@
                 + '<div class="field"><label for="recQty">数量（股）</label>'
                 + '<input type="number" id="recQty" min="1" step="100" inputmode="numeric"></div>'
                 + '<div class="field"><label for="recPrice">成交价（元）</label>'
-                + '<input type="number" id="recPrice" min="0" step="0.01" inputmode="decimal"'
-                + ' placeholder="选好标的自动带出实时价，可手改"></div>'
+                + '<input type="number" id="recPrice" min="0" step="0.01" inputmode="decimal"></div>'
                 + '<div class="field"><label for="recDate">日期</label>'
                 + '<input type="date" id="recDate"></div>'
                 + '<div class="field"><label class="chk"><input type="checkbox" id="recToday" checked>'
                 + '<span id="recTodayText">当天买入</span></label></div>'
-                + '<div class="modal-note" id="recNote"></div>'
+                + '<div class="modal-note" id="recNote" style="display:none"></div>'
                 + '<div class="modal-actions">'
                 + '<button class="btn-ghost" id="recCancel">取消</button>'
                 + '<button id="recSave">保存</button>'
@@ -912,8 +902,7 @@
                 // 卖出只认持仓：候选就是持仓里还有可用数量的那些，名录与手输一律不认
                 source: sellCandidates,
                 allowManual: () => recAction === 'buy' && typeof MODE !== 'undefined' && !!MODE.noDb,
-                emptyTip: () => recAction === 'sell'
-                    ? '这本账户里没有可卖出的持仓，先添加持仓或买入一只' : '',
+                emptyTip: () => recAction === 'sell' ? '这本账户里没有可卖出的持仓' : '',
                 // 选完标的自动带出成交价，并把「可用数量」摆到明面上
                 onChange: () => { paintRecordNote(); fillPrice(true); }
             });
@@ -931,7 +920,7 @@
         mask.classList.add('show');
     }
 
-    /** 方向切换：按钮高亮 + 候选清单 + 勾选框文案 + 说明文字一起跟着走 */
+    /** 方向切换：按钮高亮 + 候选清单 + 勾选框文案一起跟着走 */
     function syncRecordModal() {
         const buy = recAction === 'buy';
         const box = document.getElementById('recAction');
@@ -940,14 +929,10 @@
         }
         const label = document.getElementById('recTodayText');
         if (label) {
-            label.textContent = buy
-                ? '当天买入（这笔量的当日盈亏从买入价起算）'
-                : '卖的是当天买入的那部分（已实现按当日买入均价算）';
+            label.textContent = buy ? '当天买入' : '卖出当天买入的持仓';
         }
         if (recPicker) {
-            recPicker.setPlaceholder(buy
-                ? '输入代码或名称，从结果中点选'
-                : '从持仓里选一只要卖出的标的');
+            recPicker.setPlaceholder(buy ? '代码或名称' : '从持仓中选择');
             // 换了方向，之前选中的标的可能已经不在候选里（买入选的未必是持仓）
             recPicker.setItems([]);
             recPicker.refresh('');
@@ -956,9 +941,8 @@
     }
 
     /**
-     * 说明文字：卖出时把「可用数量」写出来，用户不用去表里找。
-     *
-     * <p>数量输入框的 max 也跟着走，把上限提前挡住，别等提交才报错。
+     * 卖出时把「可用数量」摆到明面上，数量输入框的 max 同时跟着走（上限提前挡住，
+     * 别等提交才报错）。没有要写的就把这一行收掉，不留空框。
      */
     function paintRecordNote() {
         const note = document.getElementById('recNote');
@@ -974,17 +958,9 @@
                 qty.removeAttribute('max');
             }
         }
-        if (recAction === 'buy') {
-            note.textContent = '买入按成交价扣减可用金额；已有持仓时成本价按加权平均重算。'
-                + '不勾选则视为隔夜持仓，当日盈亏按昨收算。';
-        } else if (pos) {
-            note.textContent = '卖出按成交价加回可用金额；' + (pos.name || pos.code)
-                + ' 当前可用 ' + fmtNum(usable, 0) + ' 股，卖出数量不能超过它。'
-                + '不勾选则视为卖出隔夜持仓，那部分的当日已实现按昨收算。';
-        } else {
-            note.textContent = '卖出按成交价加回可用金额，只能卖持仓里还有可用数量的标的。'
-                + '不勾选则视为卖出隔夜持仓，那部分的当日已实现按昨收算。';
-        }
+        const text = pos ? '可用 ' + fmtNum(usable, 0) + ' 股（卖出上限）' : '';
+        note.textContent = text;
+        note.style.display = text ? '' : 'none';
     }
 
     function bindActionSegment() {

@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>实时资讯</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
-    <link rel="stylesheet" href="/css/news.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
+    <link rel="stylesheet" href="/css/news.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -23,10 +23,10 @@
             <h1 class="nb-title">实时资讯</h1>
             <span class="news-live" id="liveBox">
                 <span class="news-dot"></span>
-                <span id="liveTxt">每 3 秒自动刷新</span>
+                <span id="liveTxt">自动刷新中</span>
             </span>
             <div class="nb-right">
-                <span class="news-upd" id="updTxt">正在取数…</span>
+                <span class="news-upd" id="updTxt">加载中…</span>
                 <button class="btn-ghost btn-sm" id="autoBtn" type="button" onclick="toggleAuto()">暂停刷新</button>
                 <button class="btn-ghost btn-sm" id="refBtn" type="button" onclick="manualRefresh()">立即刷新</button>
             </div>
@@ -36,7 +36,7 @@
     <section class="news-sec">
         <div class="news-sec-hd">
             <h2>热门股排行</h2>
-            <span class="news-sec-note" id="hotNote">正在确认各平台可用性…</span>
+            <span class="news-sec-note" id="hotNote">加载中…</span>
         </div>
         <div class="news-grid" id="hotGrid"></div>
     </section>
@@ -44,13 +44,13 @@
     <section class="news-sec">
         <div class="news-sec-hd">
             <h2>板块涨跌幅</h2>
-            <span class="news-sec-note" id="secNote">正在确认各平台可用性…</span>
+            <span class="news-sec-note" id="secNote">加载中…</span>
         </div>
         <div class="news-grid" id="secGrid"></div>
     </section>
 </main>
 
-<script src="/js/common.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
 <script>
 /* =========================================================================
  * 实时资讯页
@@ -434,7 +434,7 @@
                 updEl.className = 'news-upd';
                 updEl.textContent = '更新于 ' + clockText(now);
                 if (auto) {
-                    setLive('ok', '每 3 秒自动刷新');
+                    setLive('ok', '自动刷新中');
                 }
             } else {
                 /* 有一块没拿到：把画面留在上一轮，只把状态说清楚 */
@@ -495,7 +495,7 @@
         auto = !auto;
         autoBtn.textContent = auto ? '暂停刷新' : '继续刷新';
         if (auto) {
-            setLive('ok', '每 3 秒自动刷新');
+            setLive('ok', '自动刷新中');
             manualRefresh();
         } else {
             clearTimeout(timer);
@@ -535,10 +535,10 @@
             if (p.sectors) secNames.push(p.label);
         }
         document.getElementById('hotNote').textContent = hotNames.length
-            ? hotNames.join(' · ') + '　（通达信无可用公开接口，未接入）'
+            ? hotNames.join(' · ')
             : '暂无可用数据源';
         document.getElementById('secNote').textContent = secNames.length
-            ? secNames.join(' · ') + '（行业口径）　同花顺无板块接口、通达信未接入'
+            ? secNames.join(' · ')
             : '暂无可用数据源';
     }).catch(function () {
         document.getElementById('hotNote').textContent = '';

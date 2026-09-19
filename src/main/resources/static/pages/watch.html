@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>盯盘</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
-    <link rel="stylesheet" href="/css/watch.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
+    <link rel="stylesheet" href="/css/watch.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -53,7 +53,7 @@
                         <span class="sw-txt">定时盯盘</span>
                     </label>
                     <div class="field">
-                        <label for="fInterval">轮询间隔</label>
+                        <label for="fInterval">检查间隔</label>
                         <div class="unit-input">
                             <input type="number" id="fInterval" min="3" max="3600" step="1" inputmode="numeric">
                             <span class="unit">秒</span>
@@ -106,7 +106,6 @@
                 <header class="wcard-hd">
                     <span class="wcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3.5-4 3 2.5L20 6"/></svg></span>
                     <h2>涨跌幅告警</h2>
-                    <span class="wcard-note">任一命中即推送</span>
                 </header>
                 <div class="wcard-bd">
                     <div class="rule-list" id="ruleBox"></div>
@@ -140,8 +139,8 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/stock-picker.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/stock-picker.js?v=20260919a"></script>
 <script>
     let picker = null;
     let cfg = null;
@@ -320,7 +319,7 @@
         const interval = parseInt(document.getElementById('fInterval').value, 10);
         const limits = (cfg && cfg.limits) || {};
         if (!interval || interval < (limits.minInterval || 3) || interval > (limits.maxInterval || 3600)) {
-            return toast('轮询间隔需要在 ' + (limits.minInterval || 3) + ' ~ ' + (limits.maxInterval || 3600) + ' 秒之间', 'err');
+            return toast('检查间隔需要在 ' + (limits.minInterval || 3) + ' ~ ' + (limits.maxInterval || 3600) + ' 秒之间', 'err');
         }
         const rules = collectRules();
         if (!rules.length) {
@@ -370,7 +369,7 @@
         cfg = r.data;
         setDirty(false);
         updateSummary();
-        toast('已保存并生效：' + stocks.length + ' 只标的，' + rules.length + ' 条规则，每 ' + cfg.intervalSeconds
+        toast('已保存：' + stocks.length + ' 只标的，' + rules.length + ' 条规则，每 ' + cfg.intervalSeconds
             + ' 秒一轮，放量阈值 ' + surge.amountWan + ' 万元 / ' + surge.times + ' 倍', 'ok');
     }
 

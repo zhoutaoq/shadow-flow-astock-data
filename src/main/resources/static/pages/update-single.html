@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>单只更新 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -21,7 +21,6 @@
             <div class="field grow">
                 <label>股票 *</label>
                 <div id="codePick"></div>
-                <div class="sp-hint">输入代码或名称，从匹配结果里<b>点选一只</b>（只显示前 10 条，请输入更精确的关键字）</div>
             </div>
             <div class="field">
                 <label>开始日期 *</label>
@@ -35,8 +34,8 @@
             <button class="btn-ghost" onclick="setRange(365)">近1年</button>
         </div>
         <div class="form-row">
-            <button class="btn-warn" onclick="run(true)" id="btnDry">预览：只请求并渲染，不入库</button>
-            <button onclick="run(false)" id="btnRun">更新并入库</button>
+            <button class="btn-warn" onclick="run(true)" id="btnDry">预览</button>
+            <button onclick="run(false)" id="btnRun">更新</button>
             <span class="dim" id="hint"></span>
         </div>
     </section>
@@ -75,9 +74,9 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/date-picker.js?v=20260916b"></script>
-<script src="/js/stock-picker.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/date-picker.js?v=20260919a"></script>
+<script src="/js/stock-picker.js?v=20260919a"></script>
 <script>
     document.getElementById('fStart').value = daysAgo(30);
     document.getElementById('fEnd').value = today();
@@ -114,14 +113,14 @@
     function render(result) {
         const d0 = result.details[0] || {};
         const modeText = result.dryRun
-            ? '<span class="badge">预览模式（未入库）</span>'
+            ? '<span class="badge">预览模式</span>'
             : '<span class="badge badge-ok">已入库</span>';
         document.getElementById('summary').innerHTML = `
             <table class="kv">
                 <tr><th>执行模式</th><td>${modeText}</td></tr>
                 <tr><th>股票</th><td>${esc(d0.code)}</td></tr>
                 <tr><th>接口返回条数</th><td><b>${result.fetchedTotal}</b></td></tr>
-                <tr><th>入库条数</th><td><b>${result.persistedTotal}</b>${result.dryRun ? '（预览模式为 0）' : ''}</td></tr>
+                <tr><th>入库条数</th><td><b>${result.persistedTotal}</b></td></tr>
                 <tr><th>耗时</th><td>${result.costMs} ms</td></tr>
                 <tr><th>执行状态</th><td>${d0.success
                     ? '<span class="badge badge-ok">成功</span>'
@@ -132,7 +131,7 @@
         const rows = d0.rows || [];
         const tbody = document.getElementById('tbody');
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="10" class="empty">接口未返回数据（可能是非交易日区间）</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="empty">暂无数据（可能是非交易日）</td></tr>';
         } else {
             tbody.innerHTML = rows.map(x => {
                 const pc = x.preClose != null ? Number(x.preClose) : null;

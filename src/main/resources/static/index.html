@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
-    <link rel="stylesheet" href="/css/home.css?v=20260916b">
-    <link rel="stylesheet" href="/css/account.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
+    <link rel="stylesheet" href="/css/home.css?v=20260919a">
+    <link rel="stylesheet" href="/css/account.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -51,7 +51,6 @@
                 <div class="sc-copy">
                     <span class="sc-eyebrow">行情数据</span>
                     <h2 class="sc-title">日K线分析</h2>
-                    <p class="sc-desc">蜡烛图配成交量，均线、缩放、区间回看一体。选中标的后直接看它自己的走势，不用再翻行情软件。</p>
                     <ul class="sc-points">
                         <li>开盘 / 收盘 / 最高 / 最低 / 成交量 / 成交额 / 前收盘</li>
                         <li>拖拽缩放，任意区间回放历史走势</li>
@@ -112,7 +111,6 @@
                 <div class="sc-copy">
                     <span class="sc-eyebrow">策略验证</span>
                     <h2 class="sc-title">买卖策略回测</h2>
-                    <p class="sc-desc">把买卖规则丢进历史跑一遍：净值曲线、基准对比、每一笔成交都摆出来，赚在哪亏在哪一眼看清。</p>
                     <ul class="sc-points">
                         <li>净值曲线与基准同屏对比</li>
                         <li>逐笔成交明细：买点、卖点、持仓天数</li>
@@ -152,10 +150,9 @@
                 <div class="sc-copy">
                     <span class="sc-eyebrow">盘中监控</span>
                     <h2 class="sc-title">实时盯盘告警</h2>
-                    <p class="sc-desc">盯盘标的、轮询间隔、触发阈值自己定。条件一满足立刻推到面前，不用一遍遍刷页面等信号。</p>
                     <ul class="sc-points">
                         <li>涨幅 / 跌幅 / 量比 / 均线突破等多类阈值</li>
-                        <li>轮询间隔可调，按自己的节奏走</li>
+                        <li>检查间隔可调</li>
                         <li>每次告警都有记录，事后可复盘</li>
                     </ul>
                     <a class="sc-cta" href="/pages/watch.html">配置盯盘<span class="sc-arrow-r">&rsaquo;</span></a>
@@ -209,7 +206,7 @@
             <div class="acct-kpi">
                 <div class="acct-kpi-t">当日收益</div>
                 <div class="acct-kpi-v" id="acctDay">-</div>
-                <div class="acct-kpi-d" id="acctDayDesc">按昨收 → 现价计算</div>
+                <div class="acct-kpi-d" id="acctDayDesc"></div>
             </div>
             <div class="acct-kpi">
                 <div class="acct-kpi-t">总收益</div>
@@ -246,9 +243,9 @@
 
 </main>
 
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/date-picker.js?v=20260916b"></script>
-<script src="/js/home.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/date-picker.js?v=20260919a"></script>
+<script src="/js/home.js?v=20260919a"></script>
 <script>
     /* 全站功能入口：与顶部导航同一套，两种运行模式共用（第 4 项是内联图标，不转义） */
     var QUICK = [
@@ -258,13 +255,13 @@
             '<path d="M7 4v3M7 17v3M17 3v3M17 15v5"/><rect x="4" y="7" width="6" height="10"/><rect x="14" y="6" width="6" height="9"/>'],
         ['策略回测', '/pages/backtest.html', '按买卖策略跑历史，看盈亏曲线与明细',
             '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>'],
-        ['盯盘', '/pages/watch.html', '维护盯盘股票、轮询间隔与告警阈值',
+        ['盯盘', '/pages/watch.html', '维护盯盘股票、检查间隔与告警阈值',
             '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 8-3 8h18s-3-2-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'],
         ['我的账户', '/pages/account.html', '账号期初市值、持仓与买卖操作记录',
             '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/>'],
-        ['实时通知配置', '/pages/config.html', '维护自己的数据接口令牌，登录后可用',
+        ['实时通知配置', '/pages/config.html', '数据接口令牌',
             '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 3h3v3"/>'],
-        ['用户反馈', '/pages/feedback.html', '写下问题或建议，提交即实时推送钉钉',
+        ['用户反馈', '/pages/feedback.html', '写下问题或建议',
             '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.3 9.3 0 0 1-2.6-.4L4 21l1.4-4.2A8.4 8.4 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/>']
     ];
 
@@ -407,7 +404,7 @@
 
         setV('acctDay', 'acctDayDesc', signed(s.dayProfit), dir(s.dayProfit));
         document.getElementById('acctDayDesc').textContent =
-            s.dayProfitPercent == null ? '按昨收 → 现价计算' : pct(s.dayProfitPercent) + '（按昨收市值）';
+            s.dayProfitPercent == null ? '' : pct(s.dayProfitPercent);
 
         setV('acctTotal', 'acctTotalDesc', signed(s.totalProfit), dir(s.totalProfit));
         document.getElementById('acctTotalDesc').textContent =

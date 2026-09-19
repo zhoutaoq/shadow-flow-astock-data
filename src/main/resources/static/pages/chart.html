@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>K线分析 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -21,7 +21,6 @@
             <div class="field grow">
                 <label>股票 *</label>
                 <div id="codePick"></div>
-                <div class="sp-hint" id="pickHint">点选一只股票后立即渲染近三个月；在图内按住左右拖动，拖到最左侧每次自动往前补一年</div>
             </div>
         </div>
         <div class="form-row">
@@ -30,7 +29,6 @@
             <label class="dim"><input type="checkbox" class="ma" value="10" checked> MA10</label>
             <label class="dim"><input type="checkbox" class="ma" value="20"> MA20</label>
             <label class="dim"><input type="checkbox" class="ma" value="60"> MA60</label>
-            <span class="dim" style="margin-left:12px">滚轮缩放 · 按住拖动平移</span>
         </div>
         <div id="stat" class="dim"></div>
     </section>
@@ -39,16 +37,15 @@
         <h2 id="chartTitle">K线图</h2>
         <div class="form-row">
             <button class="btn-ghost" onclick="openDetail()" id="btnDetail">当前视窗明细</button>
-            <span class="sp-hint">仅统计图上可见区间，分页展示</span>
         </div>
         <div id="chart" style="width:100%;height:560px"></div>
     </section>
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260916b"></script>
-<script src="/js/date-picker.js?v=20260916b"></script>
-<script src="/js/stock-picker.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/date-picker.js?v=20260919a"></script>
+<script src="/js/stock-picker.js?v=20260919a"></script>
 <script>
     const VIEW_DAYS = 92;              // 默认渲染近三个月
     const CHUNK_DAYS = 180;            // 数据库模式懒加载步长
@@ -387,9 +384,7 @@
             + ` · 成交量 ${fmtVol(sumVol)} 手`
             + ` · 均价 ${avg} 元`
             + ` · 已加载 ${span.start} ~ ${span.end}`
-            + (MODE.noDb
-                ? (state.exhausted ? ' · 已到最早可查行情' : ' · 继续向左滑动可加载更早一年')
-                : (state.minDate && span.start > state.minDate ? ' · 继续向左滑动可加载更早行情' : ''));
+            + (MODE.noDb && state.exhausted ? ' · 已到最早可查行情' : '');
     }
 
     /** 视窗明细不再平铺在页面上：只记住当前可见区间，点按钮才弹窗分页展示 */
@@ -565,21 +560,13 @@
         if (state.rows.length) paint(false);
     });
 
-    /** 无数据库模式：不给日期输入框，选中即渲染近三个月，往回补历史一年一次 */
-    function onModeReady(m) {
-        if (!m.noDb) return;
-        document.getElementById('pickHint').textContent =
-            '点选一只股票后立即渲染近三个月；在图内按住左右拖动，拖到最左侧每次自动往前补一年';
-    }
-
     (async function initFromQuery() {
         await loadMode();
-        onModeReady(MODE);
         const p = new URLSearchParams(location.search);
         if (p.get('code')) {
             // pickByCode 内部会触发 onChange → loadStock()，这里不用再调一次
             const ok = await codePicker.pickByCode(p.get('code'));
-            if (!ok) toast(`代码 ${p.get('code')} 不在股票列表中，请从下拉里重新点选`, 'err');
+            if (!ok) toast(`代码 ${p.get('code')} 不在股票列表中`, 'err');
         }
     })();
 </script>

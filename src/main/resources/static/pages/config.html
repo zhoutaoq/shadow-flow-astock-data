@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>实时通知配置 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260916b">
+    <link rel="stylesheet" href="/css/common.css?v=20260919a">
 </head>
 <body>
 <header class="topbar">
@@ -18,34 +18,24 @@
 
     <section class="panel" id="tokenPanel" style="display:none">
         <h2 style="margin:0 0 4px">我的数据接口令牌</h2>
-        <div class="sp-hint">
-            令牌记在你的账号下：抓数时用你自己保存的这一份，没填过就用公共的那份。
-        </div>
         <div class="form-row" style="margin-top:12px">
             <div class="field grow">
                 <label>当前生效</label>
                 <input type="text" id="fCur" readonly>
             </div>
-            <button class="btn-ghost" onclick="clearToken()">清除（回落到系统级）</button>
+            <button class="btn-ghost" onclick="clearToken()">清除</button>
         </div>
         <div class="form-row">
             <div class="field grow">
                 <label>新令牌</label>
-                <input type="password" id="fToken" autocomplete="off" spellcheck="false"
-                       placeholder="粘贴新的令牌">
+                <input type="password" id="fToken" autocomplete="off" spellcheck="false">
             </div>
             <button onclick="saveToken()" id="btnSave">保存</button>
         </div>
-        <div class="sp-hint" id="tokenState"></div>
     </section>
 
-    <!-- 系统级那一份：未登录请求与未配过令牌的用户的兜底，只有超管能看能改 -->
     <section class="panel" id="sysPanel" style="display:none">
-        <h2 style="margin:0 0 4px">系统级默认令牌（仅超管）</h2>
-        <div class="sp-hint">
-            未登录的首页 / K线查看，以及还没配过自己令牌的用户，都走这一份。
-            供应商令牌轮换时记得改这里，否则匿名访问会跟着失效。
-        </div>
+        <h2 style="margin:0 0 4px">系统级默认令牌</h2>
         <div class="form-row" style="margin-top:12px">
             <div class="field grow">
                 <label>当前生效</label>
@@ -55,17 +45,14 @@
         <div class="form-row">
             <div class="field grow">
                 <label>新令牌</label>
-                <input type="password" id="fSysToken" autocomplete="off" spellcheck="false"
-                       placeholder="粘贴新的系统级令牌">
+                <input type="password" id="fSysToken" autocomplete="off" spellcheck="false">
             </div>
             <button onclick="saveSysToken()">保存</button>
         </div>
-        <div class="sp-hint" id="sysTokenState"></div>
     </section>
 
     <section class="panel" id="tablePanel" style="display:none">
         <h2 style="margin:0 0 4px">我的配置项</h2>
-        <div class="sp-hint">只列你名下的行（超管多一份系统级的）。场景 + 配置键是定位条件，改了等于新增另一条。</div>
         <div class="form-row" style="margin-top:12px">
             <button onclick="openEdit(null, myId())">新增配置</button>
             <button class="btn-ghost" id="btnAddSys" style="display:none"
@@ -99,16 +86,15 @@
         <h3 id="editTitle">新增配置</h3>
         <div class="field">
             <label>场景 *</label>
-            <input type="text" id="eScene" placeholder="waizao">
+            <input type="text" id="eScene">
         </div>
         <div class="field">
             <label>配置键 *</label>
-            <input type="text" id="eKey" placeholder="token">
+            <input type="text" id="eKey">
         </div>
         <div class="field">
             <label>配置值</label>
             <input type="text" id="eValue" autocomplete="off">
-            <div class="sp-hint" id="eValueHint"></div>
         </div>
         <div class="field">
             <label>备注</label>
@@ -116,12 +102,12 @@
         </div>
         <div class="modal-actions">
             <button class="btn-ghost" onclick="closeEdit()">取消</button>
-            <button onclick="submitEdit()">保存并生效</button>
+            <button onclick="submitEdit()">保存</button>
         </div>
     </div>
 </div>
 
-<script src="/js/common.js?v=20260916b"></script>
+<script src="/js/common.js?v=20260919a"></script>
 <script>
     /** 需要遮蔽显示的键：值里是令牌/口令 */
     function isSecretKey(key) {
@@ -177,18 +163,11 @@
     }
 
     function renderTokenState() {
-        document.getElementById('fCur').value = myToken
-            ? maskValue(myToken)
-            : '（未配置，使用系统级默认令牌）';
-        document.getElementById('tokenState').innerHTML = myToken
-            ? '当前：<b>我的令牌</b>，仅本账号发起的请求生效。'
-            : '当前：<b>系统级默认令牌</b>。想只给自己用，在上面粘贴令牌保存即可。';
+        document.getElementById('fCur').value = myToken ? maskValue(myToken) : '（未配置）';
     }
 
     function renderSysTokenState() {
         document.getElementById('fSysCur').value = sysToken ? maskValue(sysToken) : '（未配置）';
-        document.getElementById('sysTokenState').innerHTML =
-            '这一份所有账号共用，保存后马上生效。';
     }
 
     function render() {
@@ -246,9 +225,6 @@
         // 编辑时场景与键是定位条件，改了等于新增另一条
         document.getElementById('eScene').disabled = !!item;
         document.getElementById('eKey').disabled = !!item;
-        document.getElementById('eValueHint').textContent = item
-            ? '留空表示清空该配置值'
-            : '';
         document.getElementById('editMask').classList.add('show');
     }
 
@@ -310,7 +286,7 @@
         });
         if (!r.success) return;
         document.getElementById('fToken').value = '';
-        toast('令牌已更新，立即生效', 'ok');
+        toast('令牌已更新', 'ok');
         await load();
     }
 
@@ -329,7 +305,7 @@
         });
         if (!r.success) return;
         document.getElementById('fSysToken').value = '';
-        toast('系统级令牌已更新，立即生效', 'ok');
+        toast('系统级令牌已更新', 'ok');
         await load();
     }
 
@@ -337,9 +313,9 @@
     async function clearToken() {
         const row = tokenRow(myId());
         if (!row) {
-            return toast('你还没有自己的令牌，当前用的就是系统级默认令牌', 'info');
+            return toast('还没有配置自己的令牌', 'info');
         }
-        if (!confirm('清除后你的请求将使用系统级默认令牌，确认？')) return;
+        if (!confirm('确认清除当前令牌？')) return;
         const r = await del('/api/sys-config/' + row.id);
         if (!r.success) return;
         toast(r.message, 'ok');
