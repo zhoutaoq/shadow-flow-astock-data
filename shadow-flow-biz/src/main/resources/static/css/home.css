@@ -84,6 +84,23 @@
     color: var(--text-strong);
 }
 
+/* 品牌带大标题（v1.6.2）：logo 与文字同排，logo 跟着系统配置里换的那张走。
+   h1 本身是 flex —— 文字节点不会像行内元素那样出现基线偏移 */
+.hero-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+}
+.hero-logo {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    object-fit: contain;
+    border-radius: var(--r-md);
+    border: 1px solid var(--border-soft);
+    background: var(--bg-input);
+}
+
 .hero-sub {
     margin-top: var(--sp-2);
     font-size: var(--fs-13);

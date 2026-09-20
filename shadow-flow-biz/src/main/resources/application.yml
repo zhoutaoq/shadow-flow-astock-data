@@ -45,6 +45,13 @@ spring:
     default-property-inclusion: non_null
   mvc:
     static-path-pattern: /**
+  # 文件上传上限：默认单文件 1MB 会把「系统 logo」这类几 MB 的图挡在容器层，
+  # 报出来的还是框架的英文异常。这里放宽到 4MB，真正的校验（2MB + 图片类型）
+  # 落在 LogoService 里，口吻与其它提示一致。
+  servlet:
+    multipart:
+      max-file-size: 4MB
+      max-request-size: 8MB
   # 静态资源缓存策略：HTML 仍 no-store（改了立刻生效）；
   # css/js/vendor 由 StaticCacheConfig 单独放行缓存 7 天（URL 带版本戳，发版即失效），
   # 否则 1MB 的 echarts 在 ~1Mbps 带宽下每次开页都要重下 8 秒。

@@ -48,6 +48,8 @@ async function scenario(noDb) {
     head: { appendChild: () => {} },
     getElementById: (id) => el(id),
     querySelector: (sel) => (sel === '.quick' ? el('quick') : el(sel)),
+    // applyBrand() 取 .topbar .brand 写 logo；桩里给空集合即可（本次不验品牌渲染）
+    querySelectorAll: () => [],
     addEventListener: (name, fn) => { (domListeners[name] = domListeners[name] || []).push(fn); },
     dispatchEvent: () => {},
     body: { appendChild: () => {} }
@@ -88,7 +90,9 @@ function ok(cond, name, extra) {
 
 (async () => {
   // 匿名身份下应看到的菜单（admin 专属的「系统配置」「用户管理」不在内）
-  const FLAT = ['概览', '股票列表', 'K线查看', '实时资讯', '策略回测', '盯盘', '我的账户', '用户反馈'];
+  // v1.6.2：菜单名称与顺序改为可配置后，这里的期望值必须与内置 NAV_ITEMS 对齐
+  // （「用户反馈」已改名「问题反馈」），否则桩跑出来的结果会被误判成竞态失败
+  const FLAT = ['概览', '股票列表', 'K线查看', '实时资讯', '策略回测', '盯盘', '我的账户', '问题反馈'];
 
   console.log('== 场景A：无数据库模式（真实事件时序，含竞态窗口）==');
   const a = await scenario(true);

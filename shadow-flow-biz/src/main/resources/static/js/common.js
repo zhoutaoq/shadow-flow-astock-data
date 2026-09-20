@@ -4,7 +4,7 @@
 /**
  * 由 /api/mode 填充。两种模式共用一套页面，导航按「是否依赖库表」裁剪：
  * 无数据库模式下不生成「数据更新」整组与「调用日志」「接口调试」，
- * 只剩 概览 / 分析回测（股票列表 · K线分析 · 策略回测）/ 系统（实时通知配置 · 用户反馈）。
+ * 只剩 概览 / 分析回测（股票列表 · K线分析 · 策略回测）/ 系统（实时通知配置 · 问题反馈）。
  * 取不到接口时按「数据库模式」渲染，避免一次请求失败导致整页没导航。
  */
 const MODE = {
@@ -231,7 +231,7 @@ function openAuthModal(opt) {
         mask.id = 'authMask';
         mask.innerHTML = '<div class="modal modal-auth" role="dialog" aria-modal="true" aria-label="登录或注册">'
             + '<div class="auth-head">'
-            + '<span class="auth-brand"><span class="mark">' + ICON.spade + '</span>影流数据</span>'
+            + '<span class="auth-brand">' + brandInner() + '</span>'
             + '</div>'
             + '<div class="auth-tabs">'
             + '<button class="auth-tab" id="amTabLogin" type="button">登录</button>'
@@ -1054,6 +1054,73 @@ function renderThemeToggle() {
     bar.appendChild(btn);
 }
 
+/* ============ 系统 logo 与品牌 ============ */
+
+/** 品牌名：logo 旁边那行字。改这里即可，全站同步（页面上没有第二份副本） */
+const BRAND_NAME = '影流数据';
+
+/**
+ * 服务端当前的 logo 地址（{@code /img/logo.jpg} 或 {@code /api/logo/view?v=...}）。
+ *
+ * <p>初始值就是出厂 logo：接口没回来之前页面也能立刻把 logo 摆上，
+ * 不会出现「先空一块、之后才补图」的跳动。
+ */
+let LOGO_URL = '/img/logo.jpg';
+
+/** 拉一次 logo 地址。与 loadMenu 同样缓存 Promise —— 一次会话里只该问一次 */
+let _logoPromise = null;
+function loadLogo() {
+    if (!_logoPromise) {
+        _logoPromise = (async function () {
+            try {
+                const res = await fetch('/api/logo');
+                const json = await res.json();
+                const d = (json && json.success) ? json.data : null;
+                if (d && d.url) {
+                    LOGO_URL = d.url;
+                }
+            } catch (e) {
+                // 拉不到就用出厂 logo
+            }
+            applyBrand();
+            return LOGO_URL;
+        })();
+    }
+    return _logoPromise;
+}
+
+/**
+ * 把 logo + 品牌名挂到顶栏品牌位、登录弹窗标题上。
+ *
+ * <p>顶栏 HTML 里写的是纯文字品牌（「影流数据」）。这里把它整体换成
+ * 「logo 图 + 文字」的结构；重绘是幂等的，logo 晚到（接口比首屏慢）时
+ * 会被再调一次，把 <img> 的 src 换成新的。
+ *
+ * <p>登录弹窗是 JS 按需创建的，创建时也在品牌位插 logo（见 openAuthModal），
+ * 所以这里只管已经存在于 DOM 里的那些，不去预先建弹窗。
+ */
+function applyBrand() {
+    const bars = document.querySelectorAll('.topbar .brand');
+    bars.forEach(el => {
+        el.innerHTML = brandInner();
+    });
+    // 首页品牌带的大标题也挂 logo（与顶栏同一张图、同一份名称），
+    // 换 logo 时首页跟着一起变 —— 只改 <img>，不重建 <h1>，免得把它的排版类丢掉
+    const hero = document.getElementById('heroBrand');
+    if (hero) {
+        hero.innerHTML = '<img class="hero-logo" src="' + esc(LOGO_URL) + '" alt=""'
+            + ' onerror="this.style.display=\'none\'">'
+            + '<span>' + esc(BRAND_NAME) + '</span>';
+    }
+}
+
+/** 品牌位的内容：logo 图 + 名称；logo 加载失败时自动隐藏图片，退回纯文字 */
+function brandInner() {
+    return '<img class="brand-logo" src="' + esc(LOGO_URL) + '" alt=""'
+        + ' onerror="this.style.display=\'none\'">'
+        + '<span class="brand-text">' + esc(BRAND_NAME) + '</span>';
+}
+
 /* ============ 导航 ============ */
 /**
  * 全站菜单：一级平铺，两种运行模式共用同一份。
@@ -1065,24 +1132,358 @@ function renderThemeToggle() {
  *
  * <p>{@code login: true} 的项点进去要登录（页面自己会跳登录页）；
  * {@code admin: true} 的项只有超管看得见。
+ *
+ * <p><b>v1.6.2 起「名称」与「顺序」可在「系统配置」页配置</b>（见 loadMenu / applyMenu）。
+ * 这份数组仍是<b>唯一真相源</b>：{@code href} 与 {@code login} / {@code admin} 都只在这里 ——
+ * 服务端只下发 key + 新名称 + 顺序，靠 {@code key} 回来索引本数组。
+ * 所以配置里出现本数组没有的 key 一律忽略，本数组有而配置漏掉的按这里的顺序补回。
+ * {@code key} 一旦定了就别改：它是配置行的落点，改了等于把用户配好的名称丢掉。
  */
 const NAV_ITEMS = [
-    {text: '概览', href: '/'},
-    {text: '股票列表', href: '/pages/stock-list.html'},
-    {text: 'K线查看', href: '/pages/chart.html'},
-    {text: '实时资讯', href: '/pages/news.html'},
-    {text: '策略回测', href: '/pages/backtest.html', login: true},
-    {text: '盯盘', href: '/pages/watch.html', login: true},
-    {text: '我的账户', href: '/pages/account.html', login: true},
-    {text: '用户反馈', href: '/pages/feedback.html'},
-    {text: '系统配置', href: '/pages/system.html', admin: true},
-    {text: '用户管理', href: '/pages/users.html', admin: true}
+    {key: 'home', text: '概览', href: '/'},
+    {key: 'stock-list', text: '股票列表', href: '/pages/stock-list.html'},
+    {key: 'chart', text: 'K线查看', href: '/pages/chart.html'},
+    {key: 'news', text: '实时资讯', href: '/pages/news.html'},
+    {key: 'backtest', text: '策略回测', href: '/pages/backtest.html', login: true},
+    {key: 'watch', text: '盯盘', href: '/pages/watch.html', login: true},
+    {key: 'account', text: '我的账户', href: '/pages/account.html', login: true},
+    {key: 'feedback', text: '问题反馈', href: '/pages/feedback.html'},
+    {key: 'system', text: '系统配置', href: '/pages/system.html', admin: true},
+    {key: 'users', text: '用户管理', href: '/pages/users.html', admin: true}
 ];
+
+/**
+ * 服务端下发的菜单配置：{customized, items:[{key,text,href}]}。
+ *
+ * <p>{@code null} 表示还没拿到（或拿不到）—— {@link renderNav} 直接按 {@link NAV_ITEMS} 的内置
+ * 名称与顺序渲染，所以接口挂了页面也照常可用，只是名称回到出厂值。
+ */
+let MENU_CFG = null;
+
+/**
+ * 拉一次菜单配置。与 loadMode / loadMe 同样缓存 Promise：一页里导航只会渲染一次，
+ * 但页面脚本可能也会去读，缓存住免得发两遍请求、两遍结果还可能一前一后。
+ */
+let _menuPromise = null;
+function loadMenu() {
+    if (!_menuPromise) {
+        _menuPromise = (async function () {
+            try {
+                const res = await fetch('/api/menu');
+                const json = await res.json();
+                const d = (json && json.success) ? json.data : null;
+                if (d && d.items && d.items.length) {
+                    MENU_CFG = d;
+                }
+            } catch (e) {
+                // 拉不到就按内置名称与顺序渲染
+            }
+            return MENU_CFG;
+        })();
+    }
+    return _menuPromise;
+}
+
+/**
+ * 把内置菜单与下发的配置合成「最终要渲染的那一份」。
+ *
+ * <p>做法是<b>以配置的 items 顺序为主、按 key 回索引内置项</b>：
+ * 内置里有而配置里没有的（新增了菜单但没重新配过），按内置顺序补到队尾。
+ * 这样加一个新页面时老配置不会把它挤掉。
+ *
+ * @returns {Array} [{key, text, href, login, admin}]，text 已按配置覆盖
+ */
+function menuItems() {
+    const cfg = MENU_CFG;
+    if (!cfg || !cfg.items || !cfg.items.length) {
+        return NAV_ITEMS.slice();
+    }
+    const byKey = {};
+    NAV_ITEMS.forEach(it => {
+        byKey[it.key] = it;
+    });
+    const out = [];
+    const used = {};
+    cfg.items.forEach(c => {
+        const base = c && c.key ? byKey[c.key] : null;
+        if (!base || used[base.key]) {
+            return;
+        }
+        used[base.key] = 1;
+        out.push(Object.assign({}, base, {text: (c.text || base.text)}));
+    });
+    // 配置里没有的（含内置新加的）按内置顺序补回队尾
+    NAV_ITEMS.forEach(it => {
+        if (!used[it.key]) {
+            out.push(it);
+        }
+    });
+    return out;
+}
 
 /** 当前身份下该菜单项是否可见 */
 function navVisible(item) {
     return !item.admin || isAdmin();
 }
+
+/* =====================================================================
+ * 菜单配置（v1.6.2）
+ *
+ * 「系统配置」页的「菜单配置」按钮 + 弹窗改的就是这里：名称与顺序可配，
+ * 地址与权限不给配。默认值 = NAV_ITEMS（当前数据），所以第一次打开弹窗
+ * 看到的就是现在页面上这一套。
+ *
+ * 可配的只有这两样是刻意的：地址可配等于开一堆 404 死菜单，
+ * 权限可配等于开越权入口 —— 这两件事代码说了算，配置说了不算。
+ * ===================================================================== */
+
+/**
+ * 菜单配置弹窗的 HTML。
+ *
+ * <p>与站内其它弹窗同一套结构：{@code .mask + .modal + .modal-actions}。
+ * 行内用 index 作 data 标识 —— 弹窗里的这一份是「待保存的草稿」，不是最终菜单，
+ * 靠 key 定位反而会在重排后错位。
+ */
+function menuModalHtml() {
+    return '<div class="mask" id="menuMask">'
+        + '<div class="modal modal-lg" role="dialog" aria-modal="true" aria-label="菜单配置">'
+        + '<h3>菜单配置</h3>'
+        + '<div class="dim" style="font-size:var(--fs-12);margin-bottom:14px">'
+        + '改的是<b>名称</b>与<b>顺序</b>。地址、登录要求与超管权限由代码决定，这里配不到 ——'
+        + '避免配出一个点进去 404 的死菜单，或把超管入口暴露给所有人。'
+        + '</div>'
+        + '<div class="menu-rows" id="menuRows"></div>'
+        + '<div class="modal-actions">'
+        + '<button class="btn-ghost" onclick="resetMenuConfig()">恢复默认</button>'
+        + '<button class="btn-ghost" onclick="closeMenuModal()">取消</button>'
+        + '<button id="menuSave">保存</button>'
+        + '</div>'
+        + '</div></div>';
+}
+
+/** 菜单配置弹窗里的编辑态：一份 {key,text} 的草稿数组 */
+let menuDraft = [];
+
+async function openMenuModal() {
+    const r = await get('/api/menu');
+    if (!r || !r.success) {
+        return;
+    }
+    // 草稿必须含「全部菜单项」，不能只用服务端下发的 items。
+    // 服务端会把自定义顺序里没出现的 key 补在队尾并下发，但一旦下发被裁剪
+    // （老后端 / 代理改包 / 字段缺失），只用 items 就会让超管看不到、也配不了那些项。
+    // 这里以「内置 NAV_ITEMS 为全集」做合并：配置给名称与顺序，内置补齐缺的。
+    const cfgItems = (r.data && r.data.items) || [];
+    const byKey = {};
+    NAV_ITEMS.forEach(it => { byKey[it.key] = {key: it.key, text: it.text, href: it.href}; });
+    const draft = [];
+    const used = {};
+    cfgItems.forEach(c => {
+        if (!c || !c.key || !byKey[c.key] || used[c.key]) {
+            return;
+        }
+        used[c.key] = 1;
+        draft.push(Object.assign({}, byKey[c.key], {text: c.text || byKey[c.key].text}));
+    });
+    NAV_ITEMS.forEach(it => {
+        if (!used[it.key]) {
+            draft.push({key: it.key, text: it.text, href: it.href});
+        }
+    });
+    menuDraft = draft;
+    let mask = document.getElementById('menuMask');
+    if (!mask) {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = menuModalHtml();
+        mask = wrap.firstChild;
+        document.body.appendChild(mask);
+        mask.addEventListener('mousedown', e => {
+            if (e.target === mask) {
+                closeMenuModal();
+            }
+        });
+        // 事件委托：行是重排后重建的，逐个绑太脆
+        mask.addEventListener('click', e => {
+            const btn = e.target.closest('button[data-act]');
+            if (!btn) {
+                return;
+            }
+            const row = btn.closest('.menu-row');
+            const i = Number(row.getAttribute('data-i'));
+            const act = btn.getAttribute('data-act');
+            if (act === 'up' && i > 0) {
+                menuDraft.splice(i - 1, 0, menuDraft.splice(i, 1)[0]);
+            } else if (act === 'down' && i < menuDraft.length - 1) {
+                menuDraft.splice(i + 1, 0, menuDraft.splice(i, 1)[0]);
+            } else {
+                return;
+            }
+            paintMenuRows();
+        });
+        mask.addEventListener('input', e => {
+            if (e.target.classList.contains('menu-text')) {
+                const row = e.target.closest('.menu-row');
+                menuDraft[Number(row.getAttribute('data-i'))].text = e.target.value;
+            }
+        });
+        mask.querySelector('#menuSave').addEventListener('click', saveMenuConfig);
+    }
+    paintMenuRows();
+    mask.classList.add('show');
+}
+
+function closeMenuModal() {
+    const mask = document.getElementById('menuMask');
+    if (mask) {
+        mask.classList.remove('show');
+    }
+}
+
+function paintMenuRows() {
+    const box = document.getElementById('menuRows');
+    if (!box) {
+        return;
+    }
+    box.innerHTML = menuDraft.map((it, i) => {
+        const base = NAV_ITEMS.filter(x => x.key === it.key)[0] || {};
+        const tag = base.admin ? '<span class="sl-tag">超管</span>' : '';
+        return '<div class="menu-row" data-i="' + i + '">'
+            + '<span class="menu-seq">' + (i + 1) + '</span>'
+            + '<input class="menu-text" maxlength="12" value="' + esc(it.text) + '"'
+            + ' aria-label="菜单名称" spellcheck="false">'
+            + '<span class="menu-href mono">' + esc(base.href || it.href || '') + '</span>'
+            + tag
+            + '<span class="menu-ops">'
+            + '<button type="button" class="btn-sm btn-ghost" data-act="up"'
+            + (i === 0 ? ' disabled' : '') + ' aria-label="上移">↑</button>'
+            + '<button type="button" class="btn-sm btn-ghost" data-act="down"'
+            + (i === menuDraft.length - 1 ? ' disabled' : '') + ' aria-label="下移">↓</button>'
+            + '</span>'
+            + '</div>';
+    }).join('');
+}
+
+async function saveMenuConfig() {
+    const items = menuDraft.map(it => ({key: it.key, text: (it.text || '').trim()}));
+    const empty = items.filter(it => !it.text);
+    if (empty.length) {
+        return toast('菜单名称不能为空', 'err');
+    }
+    const btn = document.getElementById('menuSave');
+    btn.disabled = true;
+    let r;
+    try {
+        r = await post('/api/admin/menu', {items: items});
+    } finally {
+        btn.disabled = false;
+    }
+    if (!r || !r.success) {
+        return;
+    }
+    // 保存成功 = 配置已生效，但本页导航还是旧的：重绘一次即可，不用刷新页面
+    applyMenuConfig(r.data);
+    closeMenuModal();
+    toast(r.message || '菜单配置已保存并生效', 'ok');
+}
+
+async function resetMenuConfig() {
+    if (!confirm('恢复默认后，菜单名称与顺序回到内置的那一套，确认？')) {
+        return;
+    }
+    const r = await post('/api/admin/menu/reset', {});
+    if (!r || !r.success) {
+        return;
+    }
+    applyMenuConfig(r.data);
+    closeMenuModal();
+    toast(r.message || '已恢复默认菜单', 'ok');
+}
+
+/**
+ * 把一份新的菜单配置应用到当前页面。
+ *
+ * <p>MENU_CFG 换掉之后重绘导航与首页功能入口 —— 保存完不刷新页面就能看到效果，
+ * 不然用户会以为没生效、又点一次。
+ */
+function applyMenuConfig(data) {
+    MENU_CFG = (data && data.items && data.items.length) ? data : null;
+    // 把已缓存的 Promise 也换掉，免得同一会话里其它页面脚本再拿到旧的那份
+    _menuPromise = Promise.resolve(MENU_CFG);
+    renderNav();
+    if (typeof renderQuick === 'function') {
+        renderQuick();
+    }
+}
+
+/* =====================================================================
+ * 系统 logo 上传（v1.6.2）
+ * ===================================================================== */
+
+/** 打开系统配置页的 logo 上传入口：选文件 → 上传 → 顶栏立刻换图 */
+function pickLogoFile() {
+    let input = document.getElementById('logoFile');
+    if (!input) {
+        input = document.createElement('input');
+        input.type = 'file';
+        input.id = 'logoFile';
+        input.accept = 'image/jpeg,image/png,image/webp,image/gif';
+        input.style.display = 'none';
+        input.addEventListener('change', () => {
+            const f = input.files && input.files[0];
+            input.value = '';
+            if (f) {
+                uploadLogo(f);
+            }
+        });
+        document.body.appendChild(input);
+    }
+    input.click();
+}
+
+async function uploadLogo(file) {
+    const fd = new FormData();
+    fd.append('file', file);
+    let r;
+    try {
+        const res = await fetch('/api/admin/logo/upload', {method: 'POST', body: fd});
+        r = await res.json();
+    } catch (e) {
+        return toast('上传失败，请重试', 'err');
+    }
+    if (!r || !r.success) {
+        return;
+    }
+    // 换掉地址（服务端带了 ?v= 时间戳，浏览器会立刻拉新图，不吃 7 天缓存）
+    if (r.data && r.data.url) {
+        LOGO_URL = r.data.url;
+    }
+    _logoPromise = Promise.resolve(LOGO_URL);
+    applyBrand();
+    toast(r.message || 'logo 已更新', 'ok');
+    if (typeof onLogoChanged === 'function') {
+        onLogoChanged();
+    }
+}
+
+async function resetLogo() {
+    if (!confirm('恢复默认后，系统 logo 回到出厂的那张图，确认？')) {
+        return;
+    }
+    const r = await post('/api/admin/logo/reset', {});
+    if (!r || !r.success) {
+        return;
+    }
+    if (r.data && r.data.url) {
+        LOGO_URL = r.data.url;
+    }
+    _logoPromise = Promise.resolve(LOGO_URL);
+    applyBrand();
+    toast(r.message || '已恢复默认 logo', 'ok');
+    if (typeof onLogoChanged === 'function') {
+        onLogoChanged();
+    }
+}
+
 
 /** 渲染导航并高亮当前页面 */
 function renderNav() {
@@ -1091,7 +1492,7 @@ function renderNav() {
         return;
     }
     const path = location.pathname === '/index.html' ? '/' : location.pathname;
-    nav.innerHTML = NAV_ITEMS.filter(navVisible).map(item => navLink(item, path)).join('');
+    nav.innerHTML = menuItems().filter(navVisible).map(item => navLink(item, path)).join('');
     // 未登录点「策略回测」「盯盘」这类页面：先弹登录框，登上了再放行，不用先跳空页面
     nav.querySelectorAll('a[data-login]').forEach(a => {
         a.addEventListener('click', e => {
@@ -1107,7 +1508,8 @@ function renderNav() {
 
 function navLink(item, path) {
     const flag = item.login && !isLogin() ? ' data-login="1"' : '';
-    return `<a class="nav-item${path === item.href ? ' active' : ''}" href="${item.href}"${flag}>${item.text}</a>`;
+    // 名称可能来自系统配置页（用户自己填的），一律转义后再拼 —— 否则一个 < 就能把导航拆了
+    return `<a class="nav-item${path === item.href ? ' active' : ''}" href="${esc(item.href)}"${flag}>${esc(item.text)}</a>`;
 }
 
 /* ============ 顶栏账号区 ============ */
@@ -1409,15 +1811,20 @@ function scheduleLabelGridTables() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[影流数据] 前端版本 20260920e（v1.6.0：品牌改影流数据 / 多模块拆分 / 通知 SDK / 提示文案收进 ? 气泡）');
+    console.info('[影流数据] 前端版本 20261011a（v1.6.2：菜单名称与顺序可配 / 系统 logo 可上传 / 反馈入口统一改名）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();
     await loadMode();
+    // 菜单的名称与顺序可能被超管配过，导航渲染前先拿到；拿不到就按内置的渲染
+    await loadMenu();
     // 登录态决定「用户管理」是否出现、顶栏显示邮箱还是登录入口，必须在渲染导航前拿到
     await loadMe();
     renderNav();
     renderUserArea();
+    // 品牌（顶栏 / 登录弹窗 / 首页）挂 logo + 名称，与菜单同一套配置，也放在导航之后
+    applyBrand();
+    loadLogo();
     // 页脚放最后注入：它是 appendChild 到 body 末尾的，若前面的脚本中途抛错也不会连累它
     renderFooter();
     // 窄屏把宽表格渲染成卡片，靠的是 td 上的列名（data-label）：这里统一标一次，

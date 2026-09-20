@@ -14,14 +14,14 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 用户反馈：校验 → 限流 → 拼消息 → 推钉钉。
+ * 问题反馈：校验 → 限流 → 拼消息 → 推钉钉。
  *
  * <p>反馈<b>不落库</b>（无数据库模式没有表），所以「留痕」靠两处：
  * 服务端 INFO 日志（<code>app.log</code> 里可回溯）+ 钉钉群里那条消息。
  *
  * <p>消息固定四段，前三段由服务端生成，用户只能左右最后一段：
  * <pre>
- * [智能盯盘] 用户反馈
+ * [智能盯盘] 问题反馈
  * IP：1.2.3.4
  * 时间：2026-09-11 14:45:12
  * 内容：
@@ -132,7 +132,7 @@ public class FeedbackService {
     private String buildText(String content, String ip, String when) {
         String keyword = integration.feedbackKeyword();
         StringBuilder sb = new StringBuilder();
-        sb.append(keyword.isEmpty() ? "" : "[" + keyword + "] ").append("用户反馈\n");
+        sb.append(keyword.isEmpty() ? "" : "[" + keyword + "] ").append("问题反馈\n");
         sb.append("IP：").append(ip).append('\n');
         sb.append("时间：").append(when).append('\n');
         sb.append("内容：\n").append(content);

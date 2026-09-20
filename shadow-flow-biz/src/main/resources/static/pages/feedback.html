@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-    <title>用户反馈</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920e">
+    <title>问题反馈</title>
+    <link rel="stylesheet" href="/css/common.css?v=20261011a">
 </head>
 <body>
 <header class="topbar">
@@ -18,7 +18,7 @@
 
     <section class="panel fb-panel" id="fbPanel">
         <div class="cfg-panel-head">
-            <h2 style="margin:0">用户反馈</h2>
+            <h2 style="margin:0">问题反馈</h2>
         </div>
         <div class="field fb-field">
             <textarea id="fContent" maxlength="500" spellcheck="false"
@@ -34,14 +34,14 @@
     </section>
 
     <section class="panel" id="fbClosedPanel" style="display:none">
-        <h2>用户反馈</h2>
+        <h2>问题反馈</h2>
         <div class="msg msg-err" style="display:block">
             反馈入口暂时关闭，有急事请直接联系管理员。
         </div>
     </section>
 </main>
 
-<script src="/js/common.js?v=20260920e"></script>
+<script src="/js/common.js?v=20261011a"></script>
 <script>
     /* 服务端没取到限制参数时的兜底值，与 application.yml 的默认值一致 */
     var FB = {enabled: true, maxLength: 500, cooldownSeconds: 30};

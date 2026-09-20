@@ -36,14 +36,17 @@ const PLAINS = [
 ];
 // 允许出现的地方：app.env（不入库，本机/服务器上的真实配置），
 // 以及本脚本自己 —— 下面 PLAINS 里的原值就是这里用来做「探针」的字符串。
+// 另外排除运行期目录（data/ 等，.gitignore 里已忽略、不进包）：它们装的是本机跑出来的
+// 配置快照，明文只存在于这台机器的磁盘上，与「仓库里有没有硬编码密钥」无关。
 const ALLOW = new Set(['app.env', 'check_v161.js']);
+const SKIP_DIRS = ['target', 'node_modules', '.git', '.build', 'data', 'logs'];
 function walk(dir, out) {
     out = out || [];
     for (const n of fs.readdirSync(dir)) {
         const p = path.join(dir, n);
         const st = fs.statSync(p);
         if (st.isDirectory()) {
-            if (['target', 'node_modules', '.git', '.build'].includes(n)) continue;
+            if (SKIP_DIRS.includes(n)) continue;
             walk(p, out);
         } else {
             out.push(p);

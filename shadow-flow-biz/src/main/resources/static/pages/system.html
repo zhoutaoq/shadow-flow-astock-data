@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>系统配置 - 影流数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920e">
+    <link rel="stylesheet" href="/css/common.css?v=20261011a">
 </head>
 <body>
 <header class="topbar">
@@ -91,7 +91,28 @@
         </section>
 
         <section class="panel">
-            <h2>第三方对接<span class="hint-q" tabindex="0" role="button" aria-label="第三方对接说明">?<span class="hint-box"><b>平台自己</b>对接第三方用的凭据，全局一份、全站生效 —— 行情抓取与系统通知（发布通知 / 注册通知 / 用户反馈）都从这里取值，改完即生效不用重启。<span class="hint-li">令牌与 Webhook 只回显前后各 4 位；输入框留空表示这一项不动，要让它回落到配置文件的出厂值请点旁边的「清除」。</span><span class="hint-li">注意：盯盘告警的机器人<b>不在这里</b> —— 那是每个用户自己的推送通道，在「盯盘 → 推送」页各人配自己的；用户没配才落到这里的系统通知机器人。</span></span></span></h2>
+            <h2>外观与导航<span class="hint-q" tabindex="0" role="button" aria-label="外观与导航说明">?<span class="hint-box">系统 logo 与顶部菜单都属于「全站外观」，改完所有页面下一次加载即生效，不用重启服务。<span class="hint-li">菜单只开放<b>名称</b>与<b>顺序</b>：地址、登录要求与超管权限由代码决定 —— 地址可配等于开一堆 404 死菜单，权限可配等于开越权入口。</span><span class="hint-li">logo 支持 jpg / png / webp / gif，单张不超过 2MB；上传后存在数据目录，不会打进发布包。</span></span></span></h2>
+
+            <div class="logo-box">
+                <div class="logo-prev"><img id="logoPrev" src="/img/logo.jpg" alt="系统 logo 预览"></div>
+                <div class="logo-meta">
+                    <div id="logoState" class="dim">出厂 logo</div>
+                    <div class="logo-tip">建议正方形、背景干净的小图；顶栏只占 26×26 像素。</div>
+                    <div class="modal-actions" style="margin-top:10px;justify-content:flex-start">
+                        <button onclick="pickLogoFile()">上传新 logo</button>
+                        <button class="btn-ghost" onclick="resetLogo()">恢复默认</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top:18px">
+                <button onclick="openMenuModal()">菜单配置</button>
+            </div>
+            <div class="sp-hint" id="menuState"></div>
+        </section>
+
+        <section class="panel">
+            <h2>第三方对接<span class="hint-q" tabindex="0" role="button" aria-label="第三方对接说明">?<span class="hint-box"><b>平台自己</b>对接第三方用的凭据，全局一份、全站生效 —— 行情抓取与系统通知（发布通知 / 注册通知 / 问题反馈）都从这里取值，改完即生效不用重启。<span class="hint-li">令牌与 Webhook 只回显前后各 4 位；输入框留空表示这一项不动，要让它回落到配置文件的出厂值请点旁边的「清除」。</span><span class="hint-li">注意：盯盘告警的机器人<b>不在这里</b> —— 那是每个用户自己的推送通道，在「盯盘 → 推送」页各人配自己的；用户没配才落到这里的系统通知机器人。</span></span></span></h2>
             <div class="ig-rows" id="igList"></div>
             <div class="modal-actions" style="margin-top:14px">
                 <button id="igSave" onclick="saveIntegration()">保存对接配置</button>
@@ -119,9 +140,9 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=20260920e"></script>
-<script src="/js/date-picker.js?v=20260920e"></script>
-<script src="/js/stock-picker.js?v=20260920e"></script>
+<script src="/js/common.js?v=20261011a"></script>
+<script src="/js/date-picker.js?v=20261011a"></script>
+<script src="/js/stock-picker.js?v=20261011a"></script>
 <script>
     /** 与后端口径一致：背景区间最长一年 */
     const MAX_SPAN_DAYS = 365;
@@ -623,6 +644,55 @@
         return '<span class="ig-src is-none">未设置</span>';
     }
 
+    /* =====================================================================
+     * 外观与导航（v1.6.2）
+     *
+     * 两块：系统 logo（上传 / 恢复默认）与菜单配置（按钮弹窗）。
+     * 交互逻辑在 common.js 里（applyBrand / openMenuModal 等全站共用），
+     * 这一页只负责把当前状态摊到页面上，并在改动后刷新预览与状态行。
+     * ===================================================================== */
+
+    /** 拉一次 logo 状态，把预览图与「自定义 / 出厂」标出来 */
+    async function loadLogoState() {
+        const r = await get('/api/logo');
+        const d = (r && r.success && r.data) ? r.data : null;
+        if (d && d.url) {
+            LOGO_URL = d.url;
+        }
+        paintLogoState(d);
+        applyBrand();
+    }
+
+    function paintLogoState(d) {
+        const img = document.getElementById('logoPrev');
+        if (img) {
+            img.src = LOGO_URL;
+        }
+        const st = document.getElementById('logoState');
+        if (st) {
+            st.textContent = (d && d.customized) ? '已使用自定义 logo' : '出厂 logo';
+            st.classList.toggle('dim', !(d && d.customized));
+        }
+    }
+
+    /** logo 传完 / 恢复默认后由 common.js 回调：刷新本页预览 */
+    function onLogoChanged() {
+        loadLogoState();
+    }
+
+    /** 把菜单配置的状态摊到状态行：改动过没有、一共有几项 */
+    function paintMenuState() {
+        const el = document.getElementById('menuState');
+        if (!el) {
+            return;
+        }
+        const items = menuItems();
+        const custom = MENU_CFG && MENU_CFG.customized;
+        el.textContent = (custom ? '当前菜单已自定义' : '当前菜单为默认配置')
+            + '，共 ' + items.length + ' 项：'
+            + items.map(i => i.text).join(' · ');
+    }
+
     (async function init() {
         await loadMode();
         if (!(await requireLogin())) {
@@ -650,6 +720,8 @@
         await reload();
         await loadStockLinkCfg();
         await loadIntegration();
+        await loadLogoState();
+        paintMenuState();
     })();
 </script>
 </body>
