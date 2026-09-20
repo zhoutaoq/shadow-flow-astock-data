@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260919a">
-    <link rel="stylesheet" href="/css/account.css?v=20260919a">
+    <link rel="stylesheet" href="/css/common.css?v=20260920a">
+    <link rel="stylesheet" href="/css/account.css?v=20260920a">
 </head>
 <body>
 <header class="topbar">
@@ -167,9 +167,9 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260919a"></script>
-<script src="/js/date-picker.js?v=20260919a"></script>
-<script src="/js/stock-picker.js?v=20260919a"></script>
+<script src="/js/common.js?v=20260920a"></script>
+<script src="/js/date-picker.js?v=20260920a"></script>
+<script src="/js/stock-picker.js?v=20260920a"></script>
 <script>
     let overview = null;     // /api/account/accounts 一级列表
     let cfg = null;          // /api/account 当前账户设置
@@ -199,15 +199,6 @@
         const n = Number(p.availableQty);
         if (p.availableQty === null || p.availableQty === undefined || isNaN(n)) return Number(p.quantity) || 0;
         return Math.max(0, Math.min(n, Number(p.quantity) || 0));
-    }
-
-    /** 雪球个股页地址：6/9 开头是沪市、4/8 开头是北交所，其余（0/2/3）是深市 */
-    function xueqiuUrl(code) {
-        const c = String(code || '').trim();
-        if (!/^\d{6}$/.test(c)) return '';
-        const head = c.charAt(0);
-        const market = (head === '6' || head === '9') ? 'SH' : (head === '4' || head === '8') ? 'BJ' : 'SZ';
-        return 'https://xueqiu.com/S/' + market + c;
     }
 
     /** 金额：两位小数 + 千分位；null / 拿不到显示 — */
@@ -427,14 +418,10 @@
         body.innerHTML = rows.map(p => {
             const dayDir = dir(p.dayProfit);
             const totDir = dir(p.totalProfit);
-            const url = xueqiuUrl(p.code);
             const usable = usableQty(p);
             return '<tr>'
-                + '<td class="code">' + (url
-                    ? '<a class="code-link" href="' + url + '" target="_blank" rel="noopener" title="在雪球查看">'
-                        + esc(p.code) + '</a>'
-                    : esc(p.code)) + '</td>'
-                + '<td class="name">' + esc(p.name || '')
+                + '<td class="code">' + esc(p.code) + '</td>'
+                + '<td class="name">' + stockLinkHtml(p.code, p.name)
                 + (p.quoted ? '' : '<span class="abadge">成本价兜底</span>')
                 + (p.dayBuyQty > 0 ? '<span class="abadge abadge-day">当日买入 ' + fmtNum(p.dayBuyQty, 0) + ' 股</span>' : '')
                 + '</td>'
@@ -847,7 +834,9 @@
             const same = x.sameDay ? '<span class="arec-tag">当天</span>' : '';
             return '<div class="arec-row">'
                 + '<span class="arec-act ' + (buy ? 'buy' : 'sell') + '">' + (buy ? '买入' : '卖出') + '</span>'
-                + '<span class="arec-time">' + esc(x.name || x.code) + ' · ' + esc(x.code) + same + '</span>'
+                + '<span class="arec-time">'
+                + stockLinkHtml(x.code, x.name, {text: x.name || x.code})
+                + ' · ' + esc(x.code) + same + '</span>'
                 + '<span>' + money(x.price) + ' 元</span>'
                 + '<span>' + fmtNum(x.quantity, 0) + ' 股</span>'
                 + '<span class="' + dir(x.realizedProfit) + '">'
@@ -1064,6 +1053,8 @@
         if (!(await requireLogin())) {
             return;
         }
+        // 持仓与操作记录里的标的要渲染成跳转链接，配置先拿到
+        await loadStockLink();
         const lr = await get('/api/account/limits');
         if (lr && lr.success) {
             limits = lr.data;

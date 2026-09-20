@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>策略回测 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260919a">
-    <link rel="stylesheet" href="/css/backtest.css?v=20260919a">
+    <link rel="stylesheet" href="/css/common.css?v=20260920a">
+    <link rel="stylesheet" href="/css/backtest.css?v=20260920a">
 </head>
 <body>
 <header class="topbar">
@@ -232,9 +232,9 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260919a"></script>
-<script src="/js/date-picker.js?v=20260919a"></script>
-<script src="/js/stock-picker.js?v=20260919a"></script>
+<script src="/js/common.js?v=20260920a"></script>
+<script src="/js/date-picker.js?v=20260920a"></script>
+<script src="/js/stock-picker.js?v=20260920a"></script>
 <script>
     const UP = '#e5484d';    // 涨/买入：红
     const DOWN = '#2ea043';  // 跌/卖出：绿
@@ -908,7 +908,7 @@
         const cls = ratio >= 0 ? 'up' : 'down';
         document.getElementById('summary').innerHTML = `
             <table class="kv">
-                <tr><th>股票</th><td>${esc(codeWithName(bt))}</td></tr>
+                <tr><th>股票</th><td>${stockLinkOf(bt)}</td></tr>
                 <tr><th>回测区间</th><td>${esc(bt.startDate)} ~ ${esc(bt.endDate)}（${bt.tradeDays} 个交易日）</td></tr>
                 <tr><th>起始金额 / 费率</th><td>${fmtNum(bt.initAmount)} / ${(Number(bt.feeRate) * 100).toFixed(4)}%</td></tr>
                 <tr><th>期末账户总额</th><td><b id="sumFinal">0</b></td></tr>
@@ -939,6 +939,20 @@
         return bt.stockCode + (name ? ' ' + name : '');
     }
 
+    /**
+     * 回测标的渲染成全站统一的股票跳转链接。
+     *
+     * <p>链接文本是「代码 名称」整体，不是只把名称做成链接 ——
+     * 回测结果里「000001 平安银行」是一个不可拆的标识，只让后半截变可点很别扭。
+     */
+    function stockLinkOf(bt) {
+        const text = codeWithName(bt);
+        if (!bt || !bt.stockCode) {
+            return esc(text);
+        }
+        return stockLinkHtml(bt.stockCode, bt.stockName || '', {text: text});
+    }
+
     /** 结果里说明「这次到底按什么规则跑的」：规则、账户、成交口径 */
     function renderStrategy(bt) {
         const buy = parseRule(bt.buyRule);
@@ -946,7 +960,7 @@
         const feePct = (Number(bt.feeRate || 0) * 100).toFixed(4) + '%';
         document.getElementById('strategy').innerHTML = `
             <div class="strat-line"><span class="k">标的</span><span class="v">
-                ${esc(codeWithName(bt))}
+                ${stockLinkOf(bt)}
             </span></div>
             <div class="strat-line"><span class="k">区间</span><span class="v">
                 ${esc(bt.startDate)} ~ ${esc(bt.endDate)}
@@ -1294,7 +1308,8 @@
             const ratio = Number(b.profitRatio || 0);
             const cls = ratio >= 0 ? 'up' : 'down';
             return `<tr>
-                <td><b>${esc(b.stockCode)}</b>${b.stockName ? ' ' + esc(b.stockName) : ''}</td>
+                <td>${stockLinkHtml(b.stockCode, b.stockName,
+                    {text: b.stockCode + (b.stockName ? ' ' + b.stockName : '')})}</td>
                 <td>${esc(b.startDate)} ~ ${esc(b.endDate)}</td>
                 <td class="num">${fmtNum(b.initAmount)}</td>
                 <td class="num">${fmtNum(b.finalAmount)}</td>
@@ -1343,6 +1358,8 @@
         renderSpanHint();
         renderLimit('buy');
         renderLimit('sell');
+        // 历史列表与结果里的标的要渲染成跳转链接，配置先拿到
+        await loadStockLink();
         loadHistory();
         // 从股票列表跳过来时带上 ?code=，直接预填标的
         const q = new URLSearchParams(location.search);

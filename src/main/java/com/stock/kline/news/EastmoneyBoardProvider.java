@@ -2,6 +2,7 @@ package com.stock.kline.news;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stock.kline.support.AShareCodes;
 import com.stock.kline.support.SimpleHttp;
 import org.springframework.stereotype.Component;
 
@@ -53,10 +54,11 @@ public class EastmoneyBoardProvider implements BoardProvider {
             "/api/qt/clist/get?np=1&fltt=2&invt=2&po=1&fid=f8&fs=" + A_SHARE_FS
                     + "&fields=f2,f3,f8,f12,f14";
 
-    /** 行业板块：m:90 t:2 是行业板块，f:!50 过滤掉退市/异常板块；fltt=2 让东财直接回真实小数 */
+    /** 行业板块：m:90 t:2 是行业板块，f:!50 过滤掉退市/异常板块；fltt=2 让东财直接回真实小数。
+     *  f128 / f140 / f136 = 领涨股名称 / 代码 / 涨跌幅（v1.5.8 起要代码，名称点开才有地方跳） */
     private static final String SECTOR_PATH =
             "/api/qt/clist/get?np=1&fltt=2&invt=2&po=1&fid=f3&fs=m:90+t:2+f:!50"
-                    + "&fields=f2,f3,f12,f14,f128,f136";
+                    + "&fields=f2,f3,f12,f14,f128,f136,f140";
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -141,6 +143,12 @@ public class EastmoneyBoardProvider implements BoardProvider {
             if (!leader.isEmpty() && !"-".equals(leader)) {
                 row.setLeaderName(leader);
                 row.setLeaderChangePercent(emNumber(node.get("f136")));
+                // f140 = 领涨股代码（实测 BK1599 → 000504）；缺了或不是 6 位数字就不给代码，
+                // 页面那边按「没有代码就不做链接」处理，宁可不点也不跳错票
+                String leaderCode = node.path("f140").asText("");
+                if (AShareCodes.isAShare(leaderCode)) {
+                    row.setLeaderCode(leaderCode);
+                }
             }
             out.add(row);
         }

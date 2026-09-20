@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>实时资讯</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260919a">
-    <link rel="stylesheet" href="/css/news.css?v=20260919a">
+    <link rel="stylesheet" href="/css/common.css?v=20260920a">
+    <link rel="stylesheet" href="/css/news.css?v=20260920a">
 </head>
 <body>
 <header class="topbar">
@@ -50,25 +50,25 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/common.js?v=20260920a"></script>
 <script>
 /* =========================================================================
  * 实时资讯页
  *
  * 数据来自 /api/board/hot 与 /api/board/sectors：后端已经把三家平台并起来取完，
- * 这里只负责「按平台出卡片 + 每 3 秒换一遍数」。
+ * 这里只负责「按平台出卡片 + 每一分钟换一遍数」。
  *
  * 三个刻意的做法：
- *   1. 行原地更新，不整块重建 tbody —— 3 秒一次的重绘若把 DOM 掀了重来，
+ *   1. 行原地更新，不整块重建 tbody —— 一分钟一次的重绘若把 DOM 掀了重来，
  *      鼠标悬停会被打断、滚动位置会被顶回顶部；这里按 code 认行，只改内容变了的格子。
  *   2. 用「跑完再排下一次」的 setTimeout 链，不用 setInterval ——
- *      上游偶尔卡过 3 秒时，setInterval 会把请求叠起来发，越堵越多。
+ *      上游偶尔卡过一轮时，setInterval 会把请求叠起来发，越堵越多。
  *   3. 页面不可见就停轮询 —— 切到别的标签页时没人看，不必继续压上游接口。
  * ========================================================================= */
 (function () {
     'use strict';
 
-    var POLL_MS = 3000;   // 需求：3 秒刷新
+    var POLL_MS = 60000;  // 一分钟刷新一次（原 3 秒）
     var LIMIT = 20;       // 每张卡片展示的条数
 
     var auto = true;      // 自动刷新开关
@@ -170,8 +170,12 @@
     /**
      * 一个格子的内容与样式。
      *
-     * <p>返回 html 而不是文本：题材列要套一个 .badge 标签，其余列都是转义后的纯文本，
-     * 统一走 innerHTML 才能既安全又少一次分支。
+     * <p>返回 html 而不是文本：题材列要套一个 .badge 标签，名称/领涨股列要套
+     * 股票跳转链接，其余列都是转义后的纯文本，统一走 innerHTML
+     * 才能既安全又少一次分支。
+     *
+     * <p>名次、价格这些格子的 HTML 是「纯函数结果」—— 同样的数据算出同样的字符串，
+     * syncRows 靠它比对决定要不要重绘，所以这里不能掺时间戳之类的随机内容。
      */
     function cellOf(col, r) {
         var n;
@@ -180,7 +184,7 @@
                 n = num(r.rank);
                 return {html: n === null ? '' : String(n), cls: n !== null && n <= 3 ? 'rk top' : 'rk'};
             case 'name':
-                return {html: esc(r.name || '-'), cls: 'nname'};
+                return {html: stockLinkHtml(r.code, r.name, {text: r.name || '-'}), cls: 'nname'};
             case 'code':
                 return {html: esc(r.code || '-'), cls: 'ncode num'};
             case 'price':
@@ -194,7 +198,13 @@
             case 'tag':
                 return {html: r.tag ? '<span class="badge">' + esc(r.tag) + '</span>' : '', cls: ''};
             case 'leader':
-                return {html: r.leaderName ? esc(r.leaderName) : '-', cls: 'nname'};
+                /* 领涨股只有名称、没有代码时退化成纯文本（东财 f140 / 新浪下标 8 缺了就拼不出链接） */
+                return {
+                    html: r.leaderName
+                        ? stockLinkHtml(r.leaderCode, r.leaderName, {text: r.leaderName})
+                        : '-',
+                    cls: 'nname'
+                };
             case 'leaderPct':
                 return {html: fmtPct(r.leaderChangePercent), cls: 'num ' + clsPct(r.leaderChangePercent)};
             default:
@@ -301,7 +311,7 @@
     /**
      * 渲染一组平台卡片。
      *
-     * <p>卡片本身也复用：同一个平台每 3 秒重建一次 DOM 也会闪，这里按 platform 认卡片，
+     * <p>卡片本身也复用：同一个平台每轮重建一次 DOM 也会闪，这里按 platform 认卡片，
      * 只换表体。
      *
      * @param gridEl 承载卡片的栅格容器（hotGrid / secGrid）
@@ -377,7 +387,7 @@
     /**
      * 直接走原生 fetch，不用 common.js 的 get()。
      *
-     * <p>那个封装在失败时会弹顶部提示条 —— 页面 3 秒一刷，上游真挂了就会每 3 秒弹一次，
+     * <p>那个封装在失败时会弹顶部提示条 —— 页面一分钟一刷，上游真挂了就会每分钟弹一次，
      * 反倒把页面淹没。这里把失败状态收进工具条那一行，安静地表达「这次没取到」。
      */
     function reqJSON(url) {
@@ -465,7 +475,7 @@
      * 排下一次刷新。
      *
      * <p>必须是「这一轮跑完再排下一次」，不能用 setInterval：
-     * 上游偶尔卡 5 秒时，setInterval 会照 3 秒的节奏继续发，
+     * 上游偶尔卡过一轮的时长时，setInterval 会照固定节奏继续发，
      * 请求越叠越多，最后整页都在等一个早就没意义的响应。
      */
     function schedule() {
@@ -522,8 +532,10 @@
         }
     });
 
-    /* 需求：页面加载时就刷一次 */
-    load().then(schedule);
+    /* 页面加载时就刷一次；名称与领涨股要渲染成跳转链接，配置先拿到 */
+    loadStockLink().then(function () {
+        return load();
+    }).then(schedule);
 
     /* 平台清单：说明这一页实际接进来的是哪几家、谁不提供哪块。
        问后端而不是写死，避免以后加了一家平台这里忘了改。 */

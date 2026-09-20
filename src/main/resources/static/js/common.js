@@ -553,6 +553,216 @@ const post = (url, body) => api(url, {method: 'POST', body: JSON.stringify(body 
 const put = (url, body) => api(url, {method: 'PUT', body: JSON.stringify(body || {})});
 const del = (url) => api(url, {method: 'DELETE'});
 
+/* ============ 股票名称跳转 ============ */
+/**
+ * 全站股票名称加超链接：点名称开新窗口跳转到「系统配置」页指定的平台。
+ *
+ * <p>「跳到哪」由后端 {@code /api/stock-link} 下发 —— URL 模板在 application.yml
+ * （换域名改路径只动配置），「启用哪几个 / 默认点是哪个」由超管在「系统配置」页维护。
+ * 下面这份默认值与 application.yml 的出厂值一致：接口还没回来时页面照样能渲染出
+ * 可用的链接，等配置到了再由 {@link repaintStockLinks} 就地改写成实际配置，
+ * 不会出现「先渲染成纯文本、之后永远不带链接」。
+ *
+ * <p>三个占位符（后端模板里写的）：{code} 6 位代码、{market} 交易所前缀、
+ * {name} 名称。<b>{name} 替换时就地做 URL 编码</b>，模板里不用再套一层。
+ */
+const STOCK_LINK = {
+    enabled: true,
+    defaultTarget: 'chart',
+    /** 是否已从服务端拿到过配置；拿不到就一直用下面这份内置默认 */
+    loaded: false,
+    targets: [
+        {
+            key: 'chart', label: '本系统 K 线查看', shortLabel: '本系统',
+            url: '/pages/chart.html?code={code}', external: false, enabled: true
+        },
+        {
+            key: 'baidu', label: '百度股市通', shortLabel: '百度',
+            url: 'https://finance.baidu.com/stock/ab-{code}?name={name}', external: true, enabled: true
+        },
+        {
+            key: 'xueqiu', label: '雪球', shortLabel: '雪球',
+            url: 'https://xueqiu.com/S/{market}{code}', external: true, enabled: true
+        }
+    ]
+};
+
+/** 与 loadMode / loadMe 同样缓存 Promise：一页里几十行名称只拉一次配置 */
+let _stockLinkPromise = null;
+function loadStockLink() {
+    if (!_stockLinkPromise) {
+        _stockLinkPromise = (async function () {
+            try {
+                const res = await fetch('/api/stock-link');
+                const json = await res.json();
+                const d = (json && json.success) ? json.data : null;
+                if (d && d.targets && d.targets.length) {
+                    STOCK_LINK.enabled = d.enabled !== false;
+                    STOCK_LINK.defaultTarget = d.defaultTarget || STOCK_LINK.defaultTarget;
+                    STOCK_LINK.targets = d.targets;
+                }
+            } catch (e) {
+                // 拉不到就用内置默认：链接照旧可用，只是可能不是超管最后配的那一份
+            }
+            STOCK_LINK.loaded = true;
+            // 配置比首屏渲染晚到时，把已经渲染好的名称原地补成链接（页面不用重排）
+            try {
+                repaintStockLinks();
+            } catch (e) {
+                // 重绘失败不影响页面：链接已按默认配置渲染过了
+            }
+            return STOCK_LINK;
+        })();
+    }
+    return _stockLinkPromise;
+}
+
+/**
+ * 交易所前缀：6 / 9 开头是沪市（含 688 科创板），4 / 8 开头是北交所，其余按深市算。
+ *
+ * <p>雪球的路径要「市场前缀 + 代码」，而系统内部只存 6 位代码。
+ * 指数（如 000001 上证指数）在这里会被判成深市 —— 同一个 6 位代码
+ * 在两个交易所都成立时无法从代码本身区分，这是接口口径的固有歧义，
+ * 不为了它去猜。
+ */
+function stockMarketOf(code) {
+    const c = String(code == null ? '' : code).trim();
+    const head = c.charAt(0);
+    if (head === '6' || head === '9') return 'SH';
+    if (head === '4' || head === '8') return 'BJ';
+    return 'SZ';
+}
+
+/** 按模板拼出最终 URL；模板为空返回空串（调用方据此退化成纯文本） */
+function stockUrlOf(target, code, name) {
+    if (!target || !target.url) {
+        return '';
+    }
+    const c = String(code == null ? '' : code).trim();
+    const n = String(name == null || name === '' ? c : name);
+    return String(target.url)
+        .replace(/\{code\}/g, encodeURIComponent(c))
+        .replace(/\{market\}/g, stockMarketOf(c))
+        .replace(/\{name\}/g, encodeURIComponent(n));
+}
+
+/** 当前配置下可用的跳转目标 */
+function stockTargetsOn() {
+    const all = STOCK_LINK.targets || [];
+    const on = [];
+    for (let i = 0; i < all.length; i++) {
+        const t = all[i];
+        if (t && t.enabled !== false && t.url) {
+            on.push(t);
+        }
+    }
+    return on;
+}
+
+/** 目标链接的公共属性：一律新窗口，站外加 noopener noreferrer */
+function stockAnchor(t, url, cls, inner, title) {
+    return '<a class="' + cls + '" href="' + esc(url) + '" target="_blank"'
+        + ' rel="' + (t.external ? 'noopener noreferrer' : 'noopener') + '"'
+        + ' title="' + esc(title) + '">' + inner + '</a>';
+}
+
+function stockShortOf(t) {
+    return t.shortLabel || t.label || t.key || '';
+}
+
+/** 名称链接 + 其余目标的小图标；配置不可用时返回空串（调用方退回纯文本） */
+function stockRefInner(code, name, text, plain) {
+    const c = String(code == null ? '' : code).trim();
+    if (!c || !STOCK_LINK.enabled) {
+        return '';
+    }
+    const targets = stockTargetsOn();
+    if (!targets.length) {
+        return '';
+    }
+    const label = esc(text == null || text === '' ? c : text);
+    let def = null;
+    for (let i = 0; i < targets.length; i++) {
+        if (targets[i].key === STOCK_LINK.defaultTarget) {
+            def = targets[i];
+            break;
+        }
+    }
+    if (!def) {
+        def = targets[0];
+    }
+    const defUrl = stockUrlOf(def, c, name);
+    if (!defUrl) {
+        return '';
+    }
+    let html = stockAnchor(def, defUrl, 'sk-name', label,
+        '跳转：' + (def.label || def.key) + '（新窗口）');
+    if (!plain && targets.length > 1) {
+        let icons = '';
+        for (let i = 0; i < targets.length; i++) {
+            const t = targets[i];
+            if (t === def) {
+                continue;
+            }
+            const u = stockUrlOf(t, c, name);
+            if (!u) {
+                continue;
+            }
+            icons += stockAnchor(t, u, 'sk-ico', esc(stockShortOf(t)),
+                '跳转：' + (t.label || t.key) + '（新窗口）');
+        }
+        if (icons) {
+            html += '<span class="sk-links">' + icons + '</span>';
+        }
+    }
+    return html;
+}
+
+/**
+ * 渲染一个「股票名称」：可点则输出带跳转的整块，不可点则退化成转义后的纯文本。
+ *
+ * <p>外层 {@code .stock-ref} 上带 code / name / 文本三个 data 属性，
+ * 是为了配置晚到时能原地重绘（见 {@link repaintStockLinks}），页面不用重排。
+ *
+ * @param {string} code 6 位代码
+ * @param {string} name 名称，可为空（为空时用代码当显示文本）
+ * @param {object} [opt] {text} 指定显示文本（如「000001 上证指数」整体当链接文本）；
+ *                       {plain:true} 只出名称链接、不出那排小图标（选择器 chip 这种窄容器用）
+ */
+function stockLinkHtml(code, name, opt) {
+    const o = opt || {};
+    const c = String(code == null ? '' : code).trim();
+    const raw = (name == null || name === '') ? c : String(name);
+    const text = (o.text == null || o.text === '') ? raw : String(o.text);
+    const inner = stockRefInner(c, raw, text, !!o.plain);
+    if (!inner) {
+        return esc(text);
+    }
+    return '<span class="stock-ref' + (o.plain ? ' sk-plain' : '') + '" data-sk-code="' + esc(c)
+        + '" data-sk-name="' + esc(raw) + '" data-sk-text="' + esc(text)
+        + '" data-sk-plain="' + (o.plain ? '1' : '0') + '">' + inner + '</span>';
+}
+
+/** 配置到货后的原地重绘：只改 .stock-ref 里的内容，不动外层节点与其所在行 */
+function repaintStockLinks() {
+    const nodes = document.querySelectorAll('.stock-ref[data-sk-code]');
+    for (let i = 0; i < nodes.length; i++) {
+        const el = nodes[i];
+        const inner = stockRefInner(el.getAttribute('data-sk-code'),
+            el.getAttribute('data-sk-name'), el.getAttribute('data-sk-text'),
+            el.getAttribute('data-sk-plain') === '1');
+        if (inner && el.innerHTML !== inner) {
+            el.innerHTML = inner;
+        }
+    }
+}
+
+/**
+ * 配置一到手就重绘，所以这里在脚本解析阶段就把请求发出去 ——
+ * 各页面的数据都要走一次接口才拿得到，这一份配置几乎总是先到。
+ */
+loadStockLink();
+
 /* ============ 图标 ============ */
 /** 提示条 / 弹窗共用的内联图标，避免为几个小图标引一整包字体或图标库 */
 const ICON = {
@@ -1099,7 +1309,7 @@ async function submitChangePassword(hide) {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260919a（v1.5.7：修「操作记录-买入」不能选股票 + 全站移除需求式/机制式说明文案）');
+    console.info('[金牛数据] 前端版本 20260920a（v1.5.8：全站股票名称跳转链接 + 实时资讯一分钟刷新 + K线查看默认渲染 000001）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();

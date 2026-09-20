@@ -63,6 +63,35 @@ app:
     session-hours: 12
     # 是否开放注册；false 时只能由超管建账号
     registration-enabled: true
+  # ============================================================
+  # 股票名称跳转：全站股票名称加超链接，点击开新窗口
+  #
+  # 这里只放「URL 怎么拼」——平台换域名/改路径改这段即可；
+  # 「启用哪几个、默认点名称跳到哪」由超管在「系统配置」页维护，
+  # 落在系统级配置行（waizao_sys_config 场景 stock-link），改完即生效不用重启。
+  # 占位符：{code} 6位代码 / {market} 交易所前缀 SH|SZ|BJ / {name} 名称（自带 URL 编码）
+  # ============================================================
+  stock-link:
+    enabled: true
+    default-target: chart
+    targets:
+      - key: chart
+        label: 本系统 K 线查看
+        short-label: 本系统
+        url-template: /pages/chart.html?code={code}
+        external: false
+      # 百度股市通：ab- 后跟 6 位代码，name 只用于展示（名称缺失时后端会补代码）
+      - key: baidu
+        label: 百度股市通
+        short-label: 百度
+        url-template: https://finance.baidu.com/stock/ab-{code}?name={name}
+        external: true
+      # 雪球：路径是「市场前缀 + 代码」，市场由代码前缀推导（6/9 → SH，4/8 → BJ，其余 SZ）
+      - key: xueqiu
+        label: 雪球
+        short-label: 雪球
+        url-template: https://xueqiu.com/S/{market}{code}
+        external: true
 
 waizao:
   # 是否启用数据库（决定各仓储装配哪种持久化策略）

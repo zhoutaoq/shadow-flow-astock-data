@@ -1407,6 +1407,130 @@ button:disabled { box-shadow: none; }
     font-variant-numeric: tabular-nums;
 }
 
+/* =========================================================================
+ * 股票名称跳转
+ *
+ * 名称本体不染成链接蓝：表格里一列蓝字会把数字列的信息密度压掉，
+ * 这里用「虚线下划线 + hover 变主色」表达可点，静息态保持正文色。
+ * 右侧一排小图标是「其它还能跳的地方」，静息半透明、悬停才实心 ——
+ * 它们要在每一行都出现，不能抢了名称本身的注意力。
+ * ========================================================================= */
+.stock-ref {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    max-width: 100%;
+}
+.stock-ref .sk-name {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px dashed var(--border);
+    transition: color .15s, border-color .15s;
+}
+.stock-ref .sk-name:hover,
+.stock-ref .sk-name:focus-visible {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+.stock-ref .sk-links {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    opacity: .45;
+    transition: opacity .15s;
+}
+.stock-ref:hover .sk-links { opacity: 1; }
+.stock-ref .sk-ico {
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-dim);
+    font-size: var(--fs-11);
+    line-height: 15px;
+    white-space: nowrap;
+    transition: color .15s, border-color .15s;
+}
+.stock-ref .sk-ico:hover {
+    color: var(--primary);
+    border-color: var(--primary);
+}
+/* 名称本来就该整块可点的位置（如弹窗标题、卡片标题）用这个去掉下划线 */
+.stock-ref.sk-plain .sk-name { border-bottom: 0; }
+/*
+ * 选择器 chip 里的名称交回 chip 自己的规则（.sp-chip span 的省略号截断）：
+ * 整站的 .stock-ref 是 inline-flex，塞进 chip 会把那套截断顶掉、长名字直接溢出。
+ */
+.sp-chip .stock-ref { display: inline; overflow: hidden; text-overflow: ellipsis; }
+.sp-chip .stock-ref .sk-name:hover { color: var(--primary); }
+
+/* =========================================================================
+ * 系统配置 · 股票名称跳转
+ *
+ * 一行一个平台：勾选 → 名称旁边会出现它的小图标；「默认」单选 → 点名称直接开它。
+ * 停用整行压暗但不禁用（还能再勾回来），避免用户以为这一行坏了。
+ * ========================================================================= */
+.chk-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-13);
+    color: var(--text);
+    cursor: pointer;
+}
+.chk-inline input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+.sl-rows { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
+.sl-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--bg-input);
+    transition: border-color .15s, opacity .15s;
+}
+.sl-row:hover { border-color: var(--primary); }
+.sl-row.is-off { opacity: .55; }
+.sl-row label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-13);
+    color: var(--text);
+    cursor: pointer;
+}
+.sl-row input[type="checkbox"],
+.sl-row input[type="radio"] {
+    width: auto;
+    margin: 0;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+.sl-row input:disabled { cursor: not-allowed; }
+.sl-name { min-width: 110px; font-weight: 600; }
+.sl-tag {
+    flex: 0 0 auto;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-dim);
+    font-size: var(--fs-11);
+    line-height: 18px;
+}
+.sl-url {
+    flex: 1 1 240px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-11);
+    color: var(--text-dim);
+    word-break: break-all;
+}
+.sl-def { margin-left: auto; }
+
 /* 尊重系统"减少动态效果"设置 */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

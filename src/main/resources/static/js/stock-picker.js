@@ -106,16 +106,27 @@ const STOCK_PICKER_DROP_MAX_W = 420;
             chipsEl.innerHTML = '';
             return;
         }
-        // grid 模式：每个 chip 都带省略号的紧凑样式（grid item 可能被压缩）
+        /**
+         * 已选标的的名称挂全站统一的跳转链接。
+         *
+         * <p>两个刻意的取法：
+         * <ul>
+         *   <li>只把名称做成链接，chip 本体不动 —— chip 的语义是「已选，点 × 移除」，
+         *       整块可点会让人分不清点下去是移除还是跳转；</li>
+         *   <li>用 plain 模式（只出名称链接、不出那排小图标）：chip 只有 28px 高、
+         *       还要保留自己的省略号截断，塞一排图标进去两头都不好看。</li>
+         * </ul>
+         */
         if (boxEl.classList.contains('sp-box-grid')) {
             chipsEl.innerHTML = items.map((it, i) =>
                 '<span class="sp-chip"><b>' + esc(it.code) + '</b>'
-                + '<span>' + esc(it.name || '') + '</span>'
+                + '<span>' + stockLinkHtml(it.code, it.name, {plain: true}) + '</span>'
                 + '<i data-i="' + i + '" title="移除">×</i></span>'
             ).join('');
         } else {
             chipsEl.innerHTML = items.map((it, i) =>
-                '<span class="sp-chip"><b>' + esc(it.code) + '</b> ' + esc(it.name || '')
+                '<span class="sp-chip"><b>' + esc(it.code) + '</b> '
+                + stockLinkHtml(it.code, it.name, {plain: true})
                 + '<i data-i="' + i + '" title="移除">×</i></span>'
             ).join('');
         }

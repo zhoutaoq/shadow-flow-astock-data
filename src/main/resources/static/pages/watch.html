@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>盯盘</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260919a">
-    <link rel="stylesheet" href="/css/watch.css?v=20260919a">
+    <link rel="stylesheet" href="/css/common.css?v=20260920a">
+    <link rel="stylesheet" href="/css/watch.css?v=20260920a">
 </head>
 <body>
 <header class="topbar">
@@ -139,8 +139,8 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260919a"></script>
-<script src="/js/stock-picker.js?v=20260919a"></script>
+<script src="/js/common.js?v=20260920a"></script>
+<script src="/js/stock-picker.js?v=20260920a"></script>
 <script>
     let picker = null;
     let cfg = null;
@@ -388,10 +388,12 @@
 
     (async function init() {
         await loadMode();
-        // 盯盘要登录：配置跟着账号走，没登录就不知道该读谁的
+        // 盯盘名单要登录：配置跟着账号走，没登录就不知道该读谁的
         if (!(await requireLogin())) {
             return;
         }
+        // 已选标的的名称要渲染成跳转链接，配置先拿到
+        await loadStockLink();
         await reload();
     })();
 </script>

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>K线分析 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260919a">
+    <link rel="stylesheet" href="/css/common.css?v=20260920a">
 </head>
 <body>
 <header class="topbar">
@@ -43,15 +43,18 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260919a"></script>
-<script src="/js/date-picker.js?v=20260919a"></script>
-<script src="/js/stock-picker.js?v=20260919a"></script>
+<script src="/js/common.js?v=20260920a"></script>
+<script src="/js/date-picker.js?v=20260920a"></script>
+<script src="/js/stock-picker.js?v=20260920a"></script>
 <script>
     const VIEW_DAYS = 92;              // 默认渲染近三个月
     const CHUNK_DAYS = 180;            // 数据库模式懒加载步长
     const CHUNK_NODB = 365;            // 无数据库模式：向左每次补一年
     const NODB_FLOOR = '1990-12-19';   // 无数据库模式回溯下界，防止无限往回拉
     const EDGE = 0.08;
+    /** 直接打开本页（地址栏不带 code）时默认渲染的标的 */
+    const DEFAULT_CODE = '000001';
+    const DEFAULT_NAME = '上证指数';
 
     let chart = echarts.init(document.getElementById('chart'), 'dark');
     const state = {
@@ -349,8 +352,9 @@
         const vis = visibleIndexRange();
         const visRows = rows.slice(vis.from, vis.to);
         // 无数据库模式没有"总条数"这个口径，改成"已加载多少、最早到哪天"
-        document.getElementById('chartTitle').textContent =
-            `K线图 - ${state.code}${state.name ? ' ' + state.name : ''}（`
+        // 标题里的「代码 + 名称」走全站统一的股票跳转链接
+        document.getElementById('chartTitle').innerHTML =
+            `K线图 - ${stockLinkHtml(state.code, state.name, {text: state.code + (state.name ? ' ' + state.name : '')})}（`
             + (MODE.noDb
                 ? `已加载 ${rows.length} 个交易日，最早 ${rows[0].tradeDate}`
                 : `已加载 ${rows.length} / ${state.total} 个交易日`)
@@ -562,12 +566,23 @@
 
     (async function initFromQuery() {
         await loadMode();
+        // 名称要渲染成跳转链接，配置先拿到再画，免得首屏那一下用的是内置默认
+        await loadStockLink();
         const p = new URLSearchParams(location.search);
         if (p.get('code')) {
             // pickByCode 内部会触发 onChange → loadStock()，这里不用再调一次
             const ok = await codePicker.pickByCode(p.get('code'));
-            if (!ok) toast(`代码 ${p.get('code')} 不在股票列表中`, 'err');
+            if (!ok) {
+                toast(`代码 ${p.get('code')} 不在股票列表中`, 'err');
+            }
+            // 地址栏给了 code 就以它为准，绝不能落到下面的默认标的上
+            return;
         }
+        /* 直接进这一页（地址栏不带 code）时默认渲染 000001 上证指数，省得进来先看到一块空白。
+           名称写的是「上证指数」而不是让名录去反查 —— 名录里 000001 同时挂着平安银行与
+           上证指数两条，反查只会拿到排在前面的那只。 */
+        codePicker.setItems([{code: DEFAULT_CODE, name: DEFAULT_NAME}]);
+        loadStock();
     })();
 </script>
 </body>

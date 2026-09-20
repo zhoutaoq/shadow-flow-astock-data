@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>系统配置 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260919a">
+    <link rel="stylesheet" href="/css/common.css?v=20260920a">
 </head>
 <body>
 <header class="topbar">
@@ -70,12 +70,32 @@
             <div class="sp-hint" id="stateLine"></div>
         </section>
 
+        <section class="panel">
+            <h2>股票名称跳转</h2>
+            <div class="sp-hint">
+                全站的股票名称都会带上跳转链接，点击开新窗口。勾选的平台会出现在名称旁边
+                （点名称本身直接开「默认」那个）；一个都不勾选时名称退回纯文本。
+            </div>
+            <div class="form-row" style="margin-top:12px">
+                <label class="chk-inline">
+                    <input type="checkbox" id="slEnabled"> 启用股票名称跳转
+                </label>
+            </div>
+            <div class="sl-rows" id="slList"></div>
+            <div class="modal-actions" style="margin-top:14px;justify-content:flex-start">
+                <button class="btn-ghost" onclick="resetStockLink()">恢复默认</button>
+                <button id="slSave" onclick="saveStockLink()">保存跳转配置</button>
+                <button class="btn-ghost" onclick="window.open('/pages/news.html','_blank')">看实际效果</button>
+            </div>
+            <div class="sp-hint" id="slState"></div>
+        </section>
+
     </div>
 </main>
 
-<script src="/js/common.js?v=20260919a"></script>
-<script src="/js/date-picker.js?v=20260919a"></script>
-<script src="/js/stock-picker.js?v=20260919a"></script>
+<script src="/js/common.js?v=20260920a"></script>
+<script src="/js/date-picker.js?v=20260920a"></script>
+<script src="/js/stock-picker.js?v=20260920a"></script>
 <script>
     /** 与后端口径一致：背景区间最长一年 */
     const MAX_SPAN_DAYS = 365;
@@ -208,6 +228,138 @@
         toast('已恢复默认背景', 'ok');
     }
 
+    /* =====================================================================
+     * 股票名称跳转
+     *
+     * 配置分两层，这一页只动「开关」那一层：
+     *   · URL 模板 —— application.yml 的 app.stock-link（页面只读展示，不开放编辑，
+     *     免得把平台地址改坏之后全站链接一起失效）；
+     *   · 启用哪些 / 默认跳哪个 —— 这里保存到系统级配置行，改完即生效不用重启。
+     * ===================================================================== */
+    let slCfg = null;
+
+    async function loadStockLinkCfg() {
+        const r = await get('/api/stock-link');
+        slCfg = (r && r.success && r.data) ? r.data : null;
+        renderStockLink();
+    }
+
+    function renderStockLink() {
+        const c = slCfg || {enabled: false, defaultTarget: '', targets: []};
+        const targets = c.targets || [];
+        document.getElementById('slEnabled').checked = c.enabled !== false;
+
+        document.getElementById('slList').innerHTML = targets.length
+            ? targets.map(t => {
+                const off = t.enabled === false;
+                return '<div class="sl-row' + (off ? ' is-off' : '') + '" data-key="' + esc(t.key) + '">'
+                    + '<label class="sl-on-wrap"><input type="checkbox" class="sl-on"'
+                    + (off ? '' : ' checked') + '>'
+                    + '<span class="sl-name">' + esc(t.label || t.key) + '</span></label>'
+                    + '<span class="sl-tag">' + (t.external ? '站外' : '本系统') + '</span>'
+                    + '<span class="sl-url">' + esc(t.url || '') + '</span>'
+                    + '<label class="sl-def"><input type="radio" name="slDefault" value="' + esc(t.key) + '"'
+                    + (t.key === c.defaultTarget && !off ? ' checked' : '')
+                    + (off ? ' disabled' : '') + '> 默认</label>'
+                    + '</div>';
+            }).join('')
+            : '<div class="sp-hint">application.yml 里没有配置任何跳转目标（app.stock-link.targets）</div>';
+
+        bindStockLinkRows();
+        paintStockLinkState();
+    }
+
+    /** 勾选变化时即时联动：停用的目标不能当默认，整行变淡 */
+    function bindStockLinkRows() {
+        document.querySelectorAll('#slList .sl-row').forEach(row => {
+            const on = row.querySelector('.sl-on');
+            const radio = row.querySelector('input[name="slDefault"]');
+            const sync = () => {
+                const off = !on.checked;
+                row.classList.toggle('is-off', off);
+                radio.disabled = off;
+                if (off && radio.checked) {
+                    radio.checked = false;
+                }
+            };
+            on.addEventListener('change', sync);
+            radio.addEventListener('change', paintStockLinkState);
+            sync();
+        });
+    }
+
+    function collectStockLink() {
+        const targets = [];
+        document.querySelectorAll('#slList .sl-row').forEach(row => {
+            targets.push({
+                key: row.getAttribute('data-key'),
+                enabled: row.querySelector('.sl-on').checked
+            });
+        });
+        const picked = document.querySelector('#slList input[name="slDefault"]:checked');
+        return {
+            enabled: document.getElementById('slEnabled').checked,
+            defaultTarget: picked ? picked.value : '',
+            targets: targets
+        };
+    }
+
+    function paintStockLinkState() {
+        const body = collectStockLink();
+        const on = body.targets.filter(t => t.enabled);
+        const el = document.getElementById('slState');
+        if (!body.enabled) {
+            el.textContent = '当前状态：已停用，全站股票名称按纯文本显示。';
+            return;
+        }
+        if (!on.length) {
+            el.textContent = '当前状态：一个目标都没勾选 —— 保存会被拒绝，名称仍是纯文本。';
+            return;
+        }
+        const def = body.defaultTarget || (on[0] && on[0].key) || '';
+        const row = document.querySelector('#slList .sl-row[data-key="' + def + '"]');
+        const name = row ? row.querySelector('.sl-name').textContent : def;
+        el.textContent = '当前状态：启用 ' + on.length + ' 个平台，点名称跳到「' + name + '」。'
+            + '（保存后所有页面下一次加载即生效）';
+    }
+
+    async function saveStockLink() {
+        const body = collectStockLink();
+        if (body.enabled && !body.targets.filter(t => t.enabled).length) {
+            return toast('至少勾选一个跳转目标', 'err');
+        }
+        if (body.enabled && !body.defaultTarget) {
+            return toast('请指定一个「默认」跳转目标', 'err');
+        }
+        const btn = document.getElementById('slSave');
+        btn.disabled = true;
+        let r;
+        try {
+            r = await post('/api/admin/stock-link', body);
+        } finally {
+            btn.disabled = false;
+        }
+        if (!r || !r.success) {
+            return;
+        }
+        slCfg = r.data;
+        renderStockLink();
+        toast(r.message || '已保存并生效', 'ok');
+    }
+
+    async function resetStockLink() {
+        if (!confirm('恢复默认后，跳转开关回到配置文件里的出厂值，确认？')) {
+            return;
+        }
+        const r = await post('/api/admin/stock-link/reset', {});
+        if (!r || !r.success) {
+            return;
+        }
+        slCfg = r.data;
+        renderStockLink();
+        toast(r.message || '已恢复默认跳转配置', 'ok');
+    }
+
     (async function init() {
         await loadMode();
         if (!(await requireLogin())) {
@@ -224,7 +376,9 @@
         if (typeof initDatePickers === 'function') {
             initDatePickers(document.getElementById('cfgPanel'));
         }
+        document.getElementById('slEnabled').addEventListener('change', paintStockLinkState);
         await reload();
+        await loadStockLinkCfg();
     })();
 </script>
 </body>

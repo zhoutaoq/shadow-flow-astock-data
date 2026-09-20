@@ -305,19 +305,6 @@ table.atable tbody tr:last-child td { border-bottom: none; }
     font-size: var(--fs-12);
 }
 
-/* 标的代码链到雪球个股页（v1.5.6）：保持代码的等宽观感，只在悬浮时给出可点的提示 */
-.atable .code-link {
-    color: inherit;
-    text-decoration: none;
-    border-bottom: 1px dashed var(--border);
-    transition: color .15s, border-color .15s;
-}
-
-.atable .code-link:hover {
-    color: var(--primary);
-    border-bottom-color: currentColor;
-}
-
 .atable .name { color: var(--text-strong); }
 
 .atable .up { color: var(--up); }

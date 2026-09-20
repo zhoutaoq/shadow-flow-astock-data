@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>股票列表 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260919a">
+    <link rel="stylesheet" href="/css/common.css?v=20260920a">
 </head>
 <body>
 <header class="topbar">
@@ -81,7 +81,7 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=20260919a"></script>
+<script src="/js/common.js?v=20260920a"></script>
 <script>
     /**
      * 两种模式共用一页，差别只在数据来源与写操作：
@@ -143,7 +143,7 @@
     function rowNoDb(x) {
         return `<tr>
             <td><b>${esc(x.code)}</b></td>
-            <td>${esc(x.name || '')}</td>
+            <td>${stockLinkHtml(x.code, x.name)}</td>
             <td>
                 <button class="btn-sm btn-ghost" onclick="go('chart','${esc(x.code)}')">K线</button>
                 <button class="btn-sm btn-ghost" onclick="go('backtest','${esc(x.code)}')">回测</button>
@@ -155,7 +155,7 @@
         return `<tr>
             <td>${x.id}</td>
             <td><b>${esc(x.stockCode)}</b></td>
-            <td>${esc(x.stockName)}</td>
+            <td>${stockLinkHtml(x.stockCode, x.stockName)}</td>
             <td>${x.enabled === 1 ? '<span class="badge badge-ok">启用</span>'
                 : '<span class="badge">停用</span>'}</td>
             <td class="dim">${esc(x.createTime || '')}</td>
@@ -230,6 +230,8 @@
             document.getElementById('writeOps').style.display = '';
         }
         renderHead();
+        // 名称列要渲染成跳转链接，配置先拿到
+        await loadStockLink();
         load();
     })();
 </script>

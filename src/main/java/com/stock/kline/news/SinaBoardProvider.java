@@ -52,10 +52,11 @@ public class SinaBoardProvider implements BoardProvider {
     private static final String SECTOR_URL =
             "https://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php";
 
-    /** 板块值串的下标：0 代码 / 1 名称 / 2 家数 / 5 涨跌幅 / 9 领涨股涨跌幅 / 12 领涨股名称 */
+    /** 板块值串的下标：0 代码 / 1 名称 / 2 家数 / 5 涨跌幅 / 8 领涨股代码 / 9 领涨股涨跌幅 / 12 领涨股名称 */
     private static final int S_CODE = 0;
     private static final int S_NAME = 1;
     private static final int S_PCT = 5;
+    private static final int S_LEADER_CODE = 8;
     private static final int S_LEADER_PCT = 9;
     private static final int S_LEADER_NAME = 12;
     /** 板块值串至少要这么多段才敢按下标取 */
@@ -136,6 +137,11 @@ public class SinaBoardProvider implements BoardProvider {
             if (!leader.isEmpty() && !"--".equals(leader)) {
                 row.setLeaderName(leader);
                 row.setLeaderChangePercent(num(f[S_LEADER_PCT]));
+                // 下标 8 是带市场前缀的代码（实测 sh600847 / sz002623），剥成 6 位给页面拼链接用
+                String leaderCode = stripMarket(f[S_LEADER_CODE].trim());
+                if (AShareCodes.isAShare(leaderCode)) {
+                    row.setLeaderCode(leaderCode);
+                }
             }
             all.add(row);
         }
@@ -163,6 +169,25 @@ public class SinaBoardProvider implements BoardProvider {
         int begin = body.indexOf('{');
         int end = body.lastIndexOf('}');
         return (begin < 0 || end <= begin) ? "{}" : body.substring(begin, end + 1);
+    }
+
+    /**
+     * 剥掉新浪代码的市场前缀：{@code sh600847} / {@code sz002623} → {@code 600847} / {@code 002623}。
+     *
+     * <p>只认 sh / sz / bj 三种前缀，别的一律按原样返回，交给 {@link AShareCodes#isAShare} 判。
+     */
+    private static String stripMarket(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String s = raw.trim();
+        String lower = s.toLowerCase(java.util.Locale.ROOT);
+        for (String p : new String[]{"sh", "sz", "bj"}) {
+            if (lower.startsWith(p)) {
+                return s.substring(p.length()).trim();
+            }
+        }
+        return s;
     }
 
     /** 新浪的数字一律是字符串（"0.000"），空串 / 非法一律给 null 表示「平台没给」 */
