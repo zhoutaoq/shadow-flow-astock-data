@@ -36,10 +36,18 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *   <li>老版本的 {@code watch-config.json} 在首次启动时自动迁成超管的配置。</li>
  * </ul>
  *
- * <p><b>v1.5.9：钉钉机器人不再属于这份配置</b>。改造前每人可以在盯盘页配自己的机器人，
- * 结果是「换一只机器人要挨个通知」、且 webhook 明文散落在多个落盘文件里；
- * 现在全站只有系统配置页维护的那一只（见 {@link #webhookOf(long)}），
- * 落盘里的 {@code dingtalk} 字段仅为兼容老文件而保留，不再读写。
+ * <p><b>钉钉推送目标是两层，不是一层</b>（v1.5.9 修正）：
+ * <ol>
+ *   <li><b>用户级</b> —— 本份配置里的 {@code dingtalk.webhook}。盯盘是各人盯各人的票，
+ *       告警当然要进各人自己的群，所以这一层由用户在盯盘页自己配；</li>
+ *   <li><b>系统级</b> —— 系统配置页维护的「系统通知机器人」（见
+ *       {@link com.stock.kline.config.IntegrationConfigService#dingtalkWebhook()}）。
+ *       它是平台自己发通知（发布通知 / 注册通知 / 反馈兜底）的出口，
+ *       同时兼作<b>用户没自配时的兜底群</b>。</li>
+ * </ol>
+ * 取值顺序在 {@link #webhookOf(long)}：本人配了用本人的，没配才落到系统级。
+ * 早先版本曾把两层压成一层（全站共用一个机器人），那等于把所有用户的告警
+ * 都塞进同一个群，也丢掉了多租户能力 —— 不要再往那个方向改。
  *
  * <p>取配置的顺序（对每个用户）：
  * <ol>
@@ -102,7 +110,7 @@ public class WatchConfigStore {
     private final DataDir dataDir;
     /** 依赖它不只是为了取 id：注入进来才能保证「超管账号已建好」发生在解析配置归属之前 */
     private final AuthService authService;
-    /** 钉钉机器人的唯一来源（系统配置页维护） */
+    /** 取系统级兜底机器人（用户没自配时用），来源是系统配置页 */
     private final IntegrationConfigService integration;
     private final ObjectProvider<StockNameIndex> indexProvider;
     private final ObjectProvider<WatchListLoader> loaderProvider;
@@ -310,17 +318,28 @@ public class WatchConfigStore {
     }
 
     /**
-     * 这个用户的告警该推到哪。
+     * 这个用户的告警该推到哪：<b>本人配了机器人就用本人的，没配才落到系统默认那个</b>。
      *
-     * <p><b>v1.5.9 起不再有「每人一只机器人」</b>：机器人属于系统对接第三方的设施，
-     * 全站只有系统配置页维护的那一只，谁盯盘都推同一个群 ——
-     * 分散到人头上时，换一只机器人要挨个通知大家去改，令牌/地址这类凭据也会散落在多个落盘文件里。
+     * <p>盯盘是多租户的 —— 每人盯自己的票、告警进自己的群，所以目标必须按 {@code userId} 取。
+     * 只有当他自己没配时才回落到系统级那份（系统配置页的「系统通知机器人」），
+     * 这样「不配也照推」不会让告警凭空消失：页面上的机器人留空就是「用默认群」的意思。
      *
-     * <p>参数保留 {@code userId} 是为了不动 {@code PriceWatchTask}、{@code WatchNotifier}、
-     * {@code WatchKeyTimePusher} 那一圈的调用签名。
+     * <p>调用方一律走这个方法，不要直接读系统级那份 —— 直接读会让所有用户的告警
+     * 都进同一个群，等于把多租户退化成单租户。
      */
     public synchronized String webhookOf(long userId) {
-        return integration.dingtalkWebhook();
+        String own = get(userId).getDingtalk() == null ? null : get(userId).getDingtalk().getWebhook();
+        if (own != null && !own.trim().isEmpty()) {
+            return own.trim();
+        }
+        String sys = integration.dingtalkWebhook();
+        return sys == null ? "" : sys.trim();
+    }
+
+    /** 这个用户是否配了自己的机器人（页面据此显示「推送到我的群」还是「推送到默认群」） */
+    public synchronized boolean hasOwnWebhook(long userId) {
+        String own = get(userId).getDingtalk() == null ? null : get(userId).getDingtalk().getWebhook();
+        return own != null && !own.trim().isEmpty();
     }
 
     /* ---------------- 按用户读写 ---------------- */
@@ -333,8 +352,15 @@ public class WatchConfigStore {
     /**
      * 保存某个用户的配置：先更新内存（立刻生效），再落盘。
      *
-     * <p>超管那份额外回写全局 webhook（它是系统级推送的出口）。
-     * 任何用户的变更都会通知监听方 —— 调度器按新的基础节拍重排、
+     * <p>钉钉机器人是<b>用户级</b>的，保存语义分三种，别弄反：
+     * <ul>
+     *   <li>提交里带了非空 webhook → 用新的（配自己的群）；</li>
+     *   <li>提交里是空串 → 用户主动清空，之后回落到系统默认群；</li>
+     *   <li>提交里压根没这个字段（null）→ 从当前内存继承，别把已配的群冲掉。
+     *       页面总会带该字段，所以这条主要防的是别的调用方（脚本、老版本页面）。</li>
+     * </ul>
+     *
+     * <p>任何用户的变更都会通知监听方 —— 调度器按新的基础节拍重排、
      * 通知器把变更说明推到<b>改配置那个人自己的群</b>。
      *
      * @return 校验并规范化后的最新配置
@@ -344,9 +370,13 @@ public class WatchConfigStore {
             return snapshot(userId);
         }
         normalize(incoming);
-        // 钉钉机器人已经不在这一份配置里了（v1.5.9 收到系统配置页）：
-        // 老落盘文件里可能还躺着一份个人 webhook，保存时一并抹掉，避免凭据继续留在磁盘上
-        incoming.setDingtalk(new WatchSettings.DingTalkCfg());
+        WatchSettings prev = get(userId);
+        // 没带钉钉字段的，从当前内存继承，避免把已经配好的机器人退回默认群
+        if (incoming.getDingtalk() == null) {
+            incoming.setDingtalk(copyDingtalk(prev.getDingtalk()));
+        } else {
+            mergeDingtalk(incoming.getDingtalk(), prev.getDingtalk());
+        }
         byUser.put(userId, incoming);
         persist(userId, incoming);
         notifyListeners(userId, copy(incoming));
@@ -388,7 +418,8 @@ public class WatchConfigStore {
                 String json = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
                 WatchSettings loaded = mapper.readValue(json, WatchSettings.class);
                 if (loaded != null) {
-                    // 老落盘文件里的 dingtalk 字段不再读：机器人统一从系统配置页取（见 webhookOf）
+                    // 落盘里的 dingtalk 就是这个人自己的机器人，照常读；
+                    // 为空表示他没配，取值时回落到系统默认群（见 webhookOf）
                     normalize(loaded);
                     log.info("[watch] 用户 {} 的盯盘配置已载入 {}", userId, p);
                     return loaded;
@@ -440,7 +471,7 @@ public class WatchConfigStore {
         s.setEnabled(props.isEnabled());
         s.setIntervalSeconds(props.getIntervalSeconds());
         s.setRules(defaultRulesFromProps());
-        // 钉钉机器人不在这份配置里（v1.5.9 收到系统配置页），落盘保持空值
+        // 新用户默认不配自己的机器人：留空即「用系统默认群」，取值时回落（见 webhookOf）
         s.setDingtalk(new WatchSettings.DingTalkCfg());
         s.setSurge(new WatchSettings.SurgeCfg(props.getSurge().getAmountWan(), props.getSurge().getTimes()));
         s.setStocks(new ArrayList<>());
@@ -502,6 +533,21 @@ public class WatchConfigStore {
             out.setWebhook(src.getWebhook() == null ? "" : src.getWebhook());
         }
         return out;
+    }
+
+    /**
+     * 合并钉钉字段：提交里为 {@code null} 的字段从老内存继承。
+     *
+     * <p>注意判的是 {@code null} 而不是空串 —— 空串是用户主动清空自己的机器人，
+     * 必须原样落盘（之后回落到系统默认群）；只有「压根没带这个字段」才继承。
+     */
+    private void mergeDingtalk(WatchSettings.DingTalkCfg in, WatchSettings.DingTalkCfg old) {
+        if (old == null) {
+            return;
+        }
+        if (in.getWebhook() == null) {
+            in.setWebhook(old.getWebhook() == null ? "" : old.getWebhook());
+        }
     }
 
     /** 放量阈值拷贝；null 时退回 yml 默认值，保证调用方永远拿到可用对象 */

@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>盯盘</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920b">
-    <link rel="stylesheet" href="/css/watch.css?v=20260920b">
+    <link rel="stylesheet" href="/css/common.css?v=20260920c">
+    <link rel="stylesheet" href="/css/watch.css?v=20260920c">
 </head>
 <body>
 <header class="topbar">
@@ -94,11 +94,15 @@
                     <span class="wcard-note" id="pushTarget"></span>
                 </header>
                 <div class="wcard-bd">
-                    <div class="push-managed">
-                        <b>钉钉机器人已改由「系统配置」页统一维护</b>
-                        <span>全站共用一个机器人，盯盘告警、启动通知、用户反馈都进同一个群；
-                            换机器人或改地址请到 <a href="/pages/system.html">系统配置 → 第三方对接</a>
-                            （只有超管能改）。</span>
+                    <div class="field">
+                        <label for="fWebhook">我的钉钉机器人</label>
+                        <input type="text" id="fWebhook" autocomplete="off" spellcheck="false"
+                               placeholder="留空则推送到平台默认群">
+                    </div>
+                    <div class="push-hint">
+                        这里填的是<b>你自己的群</b>，只影响你自己的盯盘告警。
+                        留空表示用平台默认群 —— 平台默认群在
+                        <a href="/pages/system.html">系统配置 → 第三方对接</a>，由超管维护。
                     </div>
                 </div>
             </section>
@@ -141,8 +145,8 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260920b"></script>
-<script src="/js/stock-picker.js?v=20260920b"></script>
+<script src="/js/common.js?v=20260920c"></script>
+<script src="/js/stock-picker.js?v=20260920c"></script>
 <script>
     let picker = null;
     let cfg = null;
@@ -198,10 +202,11 @@
 
     function renderDingtalk() {
         const dt = cfg.dingtalk || {};
-        // 机器人不再由本页维护（v1.5.9 收到「系统配置」页），这里只回答「现在还推不推得出去」
-        document.getElementById('pushTarget').textContent = dt.targetConfigured
-            ? '机器人在系统配置页维护'
-            : '未配置机器人';
+        document.getElementById('fWebhook').value = dt.webhook || '';
+        // 这条配置的告警会进哪个群：自己配了就进自己的，没配才落到平台默认群
+        document.getElementById('pushTarget').textContent = !dt.targetConfigured
+            ? '未配置机器人'
+            : (dt.ownGroup ? '推送到我的群' : '推送到平台默认群');
     }
 
     /** 回显放量阈值：cfg.surge 缺失（老落盘文件）时用默认 2000 万 / 10 倍 */
@@ -351,7 +356,10 @@
                     enabled: document.getElementById('fEnabled').checked,
                     intervalSeconds: interval,
                     rules: rules,
-                    // 钉钉机器人不在这里提交：v1.5.9 起由「系统配置」页维护（全局一份）
+                    // 我自己的推送机器人：空串 = 清空、回落到平台默认群
+                    dingtalk: {
+                        webhook: document.getElementById('fWebhook').value.trim()
+                    },
                     surge: surge,
                     stocks: stocks
                 })
@@ -366,6 +374,8 @@
         // 请求往返期间用户可能又改了名单，重刷会把这段编辑悄悄回滚，
         // 表现就是「刚删掉的股票又冒出来」，再存一次又变成移除 —— 名单来回抖。
         cfg = r.data;
+        // 推送目标要跟着刷新：用户刚配了自己的群，页头却还写着「推送到平台默认群」会很费解
+        renderDingtalk();
         setDirty(false);
         updateSummary();
         toast('已保存：' + stocks.length + ' 只标的，' + rules.length + ' 条规则，每 ' + cfg.intervalSeconds

@@ -24,19 +24,24 @@ import java.util.Set;
 /**
  * 第三方对接配置的统一出口（v1.5.9）。
  *
- * <p><b>为什么要有这一个类</b>：改造前这些凭据散在三处，归属还不一样 ——
- * waizao 令牌挂在每个用户名下（个人一份）、盯盘钉钉机器人挂在盯盘的个人落盘文件里、
- * 反馈与注册的关键词又埋在 application.yml。结果是「换一个机器人要登服务器改文件重启」，
- * 或者「A 用户配了令牌、B 用户没配就取不到数」。
+ * <p><b>为什么要有这一个类</b>：改造前平台自己的凭据散在两处、归属还不对 ——
+ * waizao 令牌挂在每个用户名下（个人一份，谁没配谁取不到数）、
+ * 反馈与注册的关键词又埋在 application.yml（换个词要登服务器改文件重启）。
  *
- * <p>现在的口径统一成一句话：<b>对接第三方的东西是系统的事，只存一份、只改一处、全站生效</b>。
+ * <p>现在的口径：<b>平台自己对接第三方的凭据归系统，只存一份、只改一处、全站生效</b>。
  * 全部落在系统级配置行（{@code ownerId = 0}），与具体用户无关：
  * <ul>
  *   <li>{@code waizao / token} —— 行情数据接口令牌；</li>
- *   <li>{@code dingtalk / webhook} —— 钉钉机器人，盯盘告警 / 启动通知 / 注册埋点的总出口；</li>
+ *   <li>{@code dingtalk / webhook} —— <b>系统通知机器人</b>：平台自己发通知的出口
+ *       （发布通知 / 注册通知 / 反馈兜底），兼作盯盘的默认群；</li>
  *   <li>{@code feedback / webhook} —— 反馈专用机器人，留空即复用上面那只；</li>
  *   <li>{@code feedback / keyword}、{@code auth-notify / keyword} —— 「自定义关键词」模式必须命中的词。</li>
  * </ul>
+ *
+ * <p><b>但别把用户的东西也收进来</b>：盯盘告警是各人发各人的群，属于用户级 ——
+ * 机器人配在盯盘页、存在各人的 {@code watch-{userId}.json} 里，用户没自配才回落到
+ * 上面的系统通知机器人（见 {@link com.stock.kline.watch.WatchConfigStore#webhookOf(long)}）。
+ * 把这一层也收归系统级等于让所有用户的告警挤进同一个群，那不是 SaaS 化，是把多租户砍成单租户。
  *
  * <p><b>取值规则</b>：配置行优先，行里没有（或为空）才回落到 application.yml 里的出厂值。
  * 这样新装环境不配也能跑（yml 里有种子值），而改配置不必再碰文件。
@@ -77,10 +82,12 @@ public class IntegrationConfigService implements TokenProvider {
     private static final List<Field> FIELDS = Collections.unmodifiableList(Arrays.asList(
             new Field("waizaoToken", SCENE_WAIZAO, KEY_TOKEN, "数据接口令牌", true,
                     "抓行情用的供应商令牌。令牌按次计费，泄露等于替别人付钱，页面只回显前后各 4 位。"),
-            new Field("dingtalkWebhook", SCENE_DINGTALK, KEY_WEBHOOK, "钉钉机器人 Webhook", true,
-                    "盯盘告警、启动通知、注册埋点的共同出口。留空即钉钉推送整体失效（只留日志）。"),
+            new Field("dingtalkWebhook", SCENE_DINGTALK, KEY_WEBHOOK, "系统通知机器人", true,
+                    "平台自己发通知的出口：发布通知、注册通知、用户反馈兜底。"
+                            + "另外也兼作盯盘的默认群 —— 用户没在盯盘页配自己的机器人时，他的告警发到这里。"
+                            + "用户配了自己的机器人就只进他自己的群，不受这里影响。"),
             new Field("feedbackWebhook", SCENE_FEEDBACK, KEY_WEBHOOK, "反馈专用 Webhook", true,
-                    "留空表示复用上面的钉钉机器人 —— 反馈与告警进同一个群，不用重复配一只。"),
+                    "留空表示复用上面的系统通知机器人 —— 反馈与平台通知进同一个群，不用重复配一只。"),
             new Field("feedbackKeyword", SCENE_FEEDBACK, KEY_KEYWORD, "反馈消息关键词", false,
                     "钉钉「自定义关键词」模式下必须命中的词，消息首行会拼成 [关键词] 用户反馈。"),
             new Field("registerKeyword", SCENE_AUTH_NOTIFY, KEY_KEYWORD, "注册通知关键词", false,

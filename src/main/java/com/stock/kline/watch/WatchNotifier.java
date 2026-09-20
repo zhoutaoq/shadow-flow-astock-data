@@ -119,8 +119,9 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         String version = resolveVersion();
         log.info("[watch] 生产发布启动通知：版本 {}，标的 {} 只", version,
                 snap.getStocks() == null ? 0 : snap.getStocks().size());
-        // 启动通知是给运维看的系统消息，固定进系统默认群（超管那份配置出口的机器人）
-        dispatch(buildStartup(snap, version), "启动通知", store.webhookOf(store.systemUserId()));
+        // 启动通知是给运维看的平台消息，固定走系统级「系统通知机器人」，
+        // 不能取超管个人的盯盘机器人 —— 那是他私人的群，不该收平台发布通知
+        dispatch(buildStartup(snap, version), "启动通知", props.getDingtalk().getWebhook());
     }
 
     /** store 变更回调：只在与该用户上次基线不同的名单/规则变化时，往他自己的群推差异 */

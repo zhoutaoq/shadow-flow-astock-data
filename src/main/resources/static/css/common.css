@@ -1582,10 +1582,9 @@ button:disabled { box-shadow: none; }
 .ig-in .ig-val { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); }
 .ig-clear { flex: 0 0 auto; white-space: nowrap; }
 
-/* 盯盘页「推送」卡：机器人改由系统配置页维护之后的只读说明 */
-.push-managed { display: flex; flex-direction: column; gap: 4px; }
-.push-managed b { font-size: var(--fs-13); font-weight: 600; color: var(--text-strong); }
-.push-managed span { font-size: var(--fs-12); line-height: 1.6; color: var(--text-dim); }
+/* 盯盘页「推送」卡：机器人是用户级的，输入框下面附一句「留空 = 用平台默认群」的说明 */
+.push-hint { margin-top: var(--sp-2); font-size: var(--fs-12); line-height: 1.6; color: var(--text-dim); }
+.push-hint b { color: var(--text-strong); font-weight: 600; }
 
 /* =========================================================================
  * 移动端适配（v1.5.9 第 1 条）

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>系统配置 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920b">
+    <link rel="stylesheet" href="/css/common.css?v=20260920c">
 </head>
 <body>
 <header class="topbar">
@@ -93,10 +93,13 @@
         <section class="panel">
             <h2>第三方对接</h2>
             <div class="sp-hint">
-                系统对接第三方用的凭据，<b>全局一份、全站生效</b> —— 行情抓取、钉钉推送、
-                用户反馈、注册通知都从这里取值，改完即生效不用重启。
+                <b>平台自己</b>对接第三方用的凭据，全局一份、全站生效 —— 行情抓取与系统通知
+                （发布通知 / 注册通知 / 用户反馈）都从这里取值，改完即生效不用重启。
                 令牌与 Webhook 只回显前后各 4 位；输入框留空表示这一项不动，
                 要让它回落到配置文件的出厂值请点旁边的「清除」。
+                <br>
+                注意：盯盘告警的机器人<b>不在这里</b> —— 那是每个用户自己的推送通道，
+                在「盯盘 → 推送」页各人配自己的；用户没配才落到这里的系统通知机器人。
             </div>
             <div class="ig-rows" id="igList"></div>
             <div class="modal-actions" style="margin-top:14px;justify-content:flex-start">
@@ -110,9 +113,9 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260920b"></script>
-<script src="/js/date-picker.js?v=20260920b"></script>
-<script src="/js/stock-picker.js?v=20260920b"></script>
+<script src="/js/common.js?v=20260920c"></script>
+<script src="/js/date-picker.js?v=20260920c"></script>
+<script src="/js/stock-picker.js?v=20260920c"></script>
 <script>
     /** 与后端口径一致：背景区间最长一年 */
     const MAX_SPAN_DAYS = 365;
@@ -380,9 +383,13 @@
     /* =====================================================================
      * 第三方对接（v1.5.9）
      *
-     * 这一块维护的是系统级凭据：waizao 令牌、钉钉机器人 webhook、反馈与注册的关键词。
-     * 改造前它们散在三处 —— 令牌按用户各存一份、钉钉机器人存在盯盘的个人落盘文件里、
-     * 关键词埋在 application.yml，换一只机器人要登服务器改文件重启；现在统一在这里。
+     * 这一块维护的是<b>平台级</b>凭据：waizao 令牌、系统通知机器人、反馈与注册的关键词。
+     * 改造前令牌按用户各存一份（谁没配谁取不到数）、关键词埋在 application.yml
+     * （换个词要登服务器改文件重启），现在统一在这里。
+     *
+     * 边界：只有「平台自己对接第三方」的东西放这里。用户自己的推送通道不放 ——
+     * 盯盘告警进的是各人自己的群，机器人在「盯盘 → 推送」页由各人自配，
+     * 这里那份 dingtalkWebhook 只是「用户没自配时的默认群」。
      *
      * 提交语义（与后端口径一致）：
      *   · 输入框留空 = 这一项不动。凭据是打码回显的，用户没碰就不该被当成「要清空」，
