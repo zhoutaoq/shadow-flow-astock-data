@@ -62,7 +62,8 @@ set "PLINK=%HERE%plink.exe"
 set "PSCP=%HERE%pscp.exe"
 set "RSCRIPT=%HERE%remote.sh"
 set "AUTH=-batch -hostkey %HOSTKEY% -pw %PWD% %SSH%"
-set "LOCAL_JAR=%PROJECT_DIR%\target\%JAR_NAME%.jar"
+REM v1.6.0 多模块拆分后，可执行 jar 落在业务模块 shadow-flow-biz/target 下（父工程 target 里没有 jar）
+set "LOCAL_JAR=%PROJECT_DIR%\shadow-flow-biz\target\%JAR_NAME%.jar"
 set "ACTION=%~1"
 if "%ACTION%"=="" set "ACTION=all"
 
