@@ -346,8 +346,13 @@ public class IntegrationConfigService implements TokenProvider {
         return s == null ? "" : s.trim();
     }
 
-    /** 打码：只露前后各 4 位，短值整体隐掉 */
-    private static String mask(String v) {
+    /**
+     * 打码：只露前后各 4 位，短值整体隐掉。
+     *
+     * <p>包内可见（而非 private）：{@link EnvViewService} 的「环境变量查看」也要按同一口径抹，
+     * 两处各写一份迟早会走偏。
+     */
+    static String mask(String v) {
         if (v == null || v.isEmpty()) {
             return "";
         }

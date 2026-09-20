@@ -26,8 +26,10 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/mydb?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: root
-    # 本地开发可用默认值，正式环境用环境变量覆盖：DB_PASSWORD=xxx
-    password: ${DB_PASSWORD:root123456}
+    # 口令不写进本文件：真实值放 sh/app.env 的 DB_PASSWORD（服务器上同名文件保留真实配置），
+    # 由发布脚本注入进程环境，这里只留占位符。缺 env 时为空串 ——
+    # 无数据库模式不连库、不受影响；数据库模式会连不上，这是有意的，口令不留明文兜底。
+    password: ${DB_PASSWORD:}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 2
@@ -59,9 +61,10 @@ app:
   admin:
     # 超管用户名固定 admin；初始密码只在「账号还不存在」时用于初始化，
     # 之后一律以页面改过的为准（否则每次重启都会把密码打回初始值）。
-    # 用环境变量覆盖，别把口令写进仓库：ADMIN_PASSWORD=xxx java -jar xxx.jar
+    # 口令不写进本文件：真实值放 sh/app.env 的 ADMIN_PASSWORD（服务器上同名文件保留真实配置），
+    # 由发布脚本注入进程环境，这里只留占位符。
     username: admin
-    password: ${ADMIN_PASSWORD:1}
+    password: ${ADMIN_PASSWORD:}
   auth:
     # 登录态有效时长（小时），到期重新登录
     session-hours: 12
@@ -146,8 +149,10 @@ shadowflow:
     # ⚠️ token 是频繁变动的凭据。v1.5.9 起由超管在「系统配置」页维护（
     #    http://<host>/pages/system.html → 第三方对接），存在系统级配置行
     #    （场景 shadowflow / 键 token / 归属 0），全局一份、全站共用，保存即生效。
-    # 下面这个值只是出厂兜底：首次启动会把它播种进配置行，之后一律以配置行为准。
-    token: "305c8974672f4bbe953e52a94a1f070c"
+    # 出厂兜底值不写进本文件：真实值放 sh/app.env 的 SHADOWFLOW_API_TOKEN
+    # （服务器上同名文件保留真实配置），由发布脚本注入进程环境，这里只留占位符。
+    # 首次启动把该值播种进配置行，之后一律以配置行为准。
+    token: ${SHADOWFLOW_API_TOKEN:}
     # 总开关：false 时抓取请求在发出前就被拦住
     enabled: true
     connect-timeout-ms: 10000
@@ -241,10 +246,12 @@ watch:
     #    发布通知 / 注册通知 / 用户反馈兜底。
     #    它同时是盯盘的<b>默认群</b> —— 用户没在「盯盘 → 推送」页配自己的机器人时，
     #    他的告警发到这里；配了自己的就只进他自己的群，不受这里影响。
-    # 下面这个值只是出厂兜底：配置行没填时用它。
+    # 出厂兜底值不写进本文件：真实值放 sh/app.env 的 DINGTALK_WEBHOOK
+    # （服务器上同名文件保留真实配置），由发布脚本注入进程环境，这里只留占位符；
+    # 配置行没填时用它。
     # 机器人只支持"自定义关键词"模式（消息文本必须含后台配置的关键词），不支持「加签」，
     # 所以也不需要 secret 字段。
-    webhook: "https://oapi.dingtalk.com/robot/send?access_token=ebcfa7713cec091fcbabaff738f68e3453365b47bf43d8e65894a9793fc33317"
+    webhook: ${DINGTALK_WEBHOOK:}
     # 盯盘消息的关键词（品牌词）：进群消息拼成 [关键词-主机] 时间 正文。
     # 留空则不加标签；换机器人时改成对方后台配的那个词。
     keyword: "智能盯盘"

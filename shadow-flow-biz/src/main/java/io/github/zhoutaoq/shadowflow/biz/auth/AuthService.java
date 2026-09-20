@@ -27,8 +27,9 @@ import java.util.regex.Pattern;
  * </ul>
  *
  * <p>超管 {@code admin} 在首次启动时自动创建，初始密码取 {@code app.admin.password}
- * （由启动环境变量 {@code ADMIN_PASSWORD} 覆盖）。账号已存在时不覆盖密码，
- * 否则页面改完一重启就回到初始值。
+ * （即启动环境变量 {@code ADMIN_PASSWORD}，v1.6.1 起没有默认值，真实值在 {@code sh/app.env}）。
+ * 账号已存在时不覆盖密码，否则页面改完一重启就回到初始值；
+ * 口令为空则本轮不建账号并打一条 WARN（见 {@link #ensureAdmin()}）。
  *
  * <p>注册成功后会经 {@link RegistrationNotifier} 推一条钉钉埋点（注册时间 + 邮箱）。
  * 那是「顺手通知」而不是注册流程的一环：异步发送、推不出去也只写日志，注册照常成功。
@@ -67,15 +68,25 @@ public class AuthService {
         if (users.findByUsername(name) != null) {
             return;
         }
+        // v1.6.1 起口令没有默认值（源码与 application.yml 里都只留 ADMIN_PASSWORD 占位符），
+        // 空着就说明发布时没把 sh/app.env 带上。这时刻意不建账号 ——
+        // 否则会留下一个「口令是空串、怎么都登不上」的 admin，比没有账号更难排查。
+        String initial = props.getAdmin().getPassword();
+        if (initial == null || initial.trim().isEmpty()) {
+            log.warn("[auth] 超管账号 {} 尚未创建，但 ADMIN_PASSWORD 为空，本轮跳过初始化。"
+                    + "口令不写进仓库也不设默认值，请在 sh/app.env（服务器上同名文件）里设好 ADMIN_PASSWORD 后重启",
+                    name);
+            return;
+        }
         User admin = new User();
         admin.setUsername(name);
         admin.setRole(User.ROLE_ADMIN);
         admin.setEnabled(true);
         String salt = PasswordHasher.newSalt();
         admin.setPasswordSalt(salt);
-        admin.setPasswordHash(PasswordHasher.hash(props.getAdmin().getPassword(), salt));
+        admin.setPasswordHash(PasswordHasher.hash(initial, salt));
         users.save(admin);
-        log.info("[auth] 已初始化超管账号 {}（初始密码来自 ADMIN_PASSWORD 环境变量，未设置时为默认值）", name);
+        log.info("[auth] 已初始化超管账号 {}（初始密码来自 ADMIN_PASSWORD 环境变量）", name);
     }
 
     /**

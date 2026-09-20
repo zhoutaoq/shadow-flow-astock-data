@@ -21,6 +21,7 @@
         <div class="cfg-panel-head">
             <h2>系统配置</h2>
             <div class="cfg-panel-actions">
+                <button class="btn-ghost" onclick="openEnvModal()">环境变量查看</button>
                 <button class="btn-ghost" onclick="reload()">放弃改动</button>
                 <button onclick="save()" id="btnSave">保存并应用</button>
             </div>
@@ -102,6 +103,21 @@
 
     </div>
 </main>
+
+<!-- 环境变量查看（v1.6.1）：只读弹窗，内容由 openEnvModal() 填充 -->
+<div class="mask" id="envMask">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-label="服务环境变量">
+        <h3>服务环境变量</h3>
+        <div class="dim" style="font-size:var(--fs-12);margin-bottom:14px">
+            本服务启动时由发布脚本注入的环境变量。凭据只露前后各 4 位；真实值保留在服务器发布目录的
+            <span class="mono">sh/app.env</span>，改完跑一次发布即生效 —— 本页只读。
+        </div>
+        <div id="envBody"></div>
+        <div class="modal-actions">
+            <button class="btn-ghost" onclick="closeEnvModal()">关闭</button>
+        </div>
+    </div>
+</div>
 
 <script src="/js/common.js?v=20260920e"></script>
 <script src="/js/date-picker.js?v=20260920e"></script>
@@ -525,6 +541,88 @@
         toast(r.message || '已恢复出厂值', 'ok');
     }
 
+    /* =====================================================================
+     * 环境变量查看（v1.6.1）
+     *
+     * v1.6.0 之前凭据是写死在 application.yml 里的；v1.6.1 起全部搬到发布目录的
+     * sh/app.env（服务器上同名文件保留真实配置），启动时注入进程环境，
+     * yml 里只留 ${...} 占位符。仓库是干净了，但「线上到底注进来了没有」也跟着看不见了 ——
+     * 这一块把那层补上：只读，凭据脱敏（只露前后各 4 位）、运行参数明文。
+     *
+     * 页面不提供写入口：改值去改 sh/app.env（服务器上那份），改完跑一次发布即生效。
+     * 这里能改等于给口令开了第二个写入口，两边不一致时反而更难查。
+     * ===================================================================== */
+    let envCfg = null;
+
+    async function openEnvModal() {
+        const r = await get('/api/admin/env');
+        if (!r || !r.success) {
+            return;
+        }
+        envCfg = r.data || {};
+        renderEnvModal();
+        document.getElementById('envMask').classList.add('show');
+    }
+
+    function closeEnvModal() {
+        document.getElementById('envMask').classList.remove('show');
+    }
+
+    function renderEnvModal() {
+        const c = envCfg || {};
+        document.getElementById('envBody').innerHTML =
+            '<div class="ig-label">凭据（值脱敏）</div>'
+            + envTable(['环境变量', '当前值', '来源'], envSecretRows(c.secrets))
+            + '<div class="ig-label" style="margin:18px 0 6px">运行参数</div>'
+            + envTable(['环境变量', '当前值'], envRuntimeRows(c.runtimes));
+    }
+
+    function envTable(heads, rows) {
+        return '<table class="grid"><thead><tr>'
+            + heads.map(h => '<th>' + h + '</th>').join('')
+            + '</tr></thead><tbody>'
+            + (rows || '<tr><td class="empty" colspan="' + heads.length + '">没有可展示的项</td></tr>')
+            + '</tbody></table>';
+    }
+
+    /** 变量名格：说明收进 title 原生气泡，不常驻表格（v1.6.0 文案规范） */
+    function envNameCell(f) {
+        return '<td class="mono"' + (f.hint ? ' title="' + esc(f.hint) + '"' : '') + '>'
+            + esc(f.name) + '</td>';
+    }
+
+    function envSecretRows(list) {
+        return (list || []).map(f => '<tr>'
+            + envNameCell(f)
+            + envValueCell(f.configured ? f.display : '')
+            + '<td>' + envSourceBadge(f.source) + '</td>'
+            + '</tr>').join('');
+    }
+
+    function envRuntimeRows(list) {
+        return (list || []).map(f => '<tr>'
+            + envNameCell(f)
+            + envValueCell(f.configured ? f.value : '')
+            + '</tr>').join('');
+    }
+
+    /** 值可能很长（如 ARGS），让它折行而不是把表格撑出横向滚动 */
+    function envValueCell(v) {
+        return '<td class="mono" style="white-space:normal;word-break:break-all">'
+            + (v ? esc(v) : '<span class="dim">—</span>') + '</td>';
+    }
+
+    /** 值的来源：系统配置页（覆盖了环境变量）/ 环境变量 / 未设置 */
+    function envSourceBadge(s) {
+        if (s === '系统配置页') {
+            return '<span class="ig-src is-cfg">系统配置页</span>';
+        }
+        if (s === '环境变量') {
+            return '<span class="ig-src">环境变量</span>';
+        }
+        return '<span class="ig-src is-none">未设置</span>';
+    }
+
     (async function init() {
         await loadMode();
         if (!(await requireLogin())) {
@@ -542,6 +640,13 @@
             initDatePickers(document.getElementById('cfgPanel'));
         }
         document.getElementById('slEnabled').addEventListener('change', paintStockLinkState);
+        // 环境变量弹窗：点遮罩关掉，与站内其它弹窗同一手势
+        const envMask = document.getElementById('envMask');
+        envMask.addEventListener('mousedown', e => {
+            if (e.target === envMask) {
+                closeEnvModal();
+            }
+        });
         await reload();
         await loadStockLinkCfg();
         await loadIntegration();
