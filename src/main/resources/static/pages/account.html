@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920c">
-    <link rel="stylesheet" href="/css/account.css?v=20260920c">
+    <link rel="stylesheet" href="/css/common.css?v=20260920d">
+    <link rel="stylesheet" href="/css/account.css?v=20260920d">
 </head>
 <body>
 <header class="topbar">
@@ -134,7 +134,7 @@
                                 <th>当前市值</th>
                                 <th>当日收益</th>
                                 <th>总收益</th>
-                                <th>操作</th>
+                                <th class="ops">操作</th>
                             </tr>
                             </thead>
                             <tbody id="posBody"></tbody>
@@ -167,9 +167,9 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260920c"></script>
-<script src="/js/date-picker.js?v=20260920c"></script>
-<script src="/js/stock-picker.js?v=20260920c"></script>
+<script src="/js/common.js?v=20260920d"></script>
+<script src="/js/date-picker.js?v=20260920d"></script>
+<script src="/js/stock-picker.js?v=20260920d"></script>
 <script>
     let overview = null;     // /api/account/accounts 一级列表
     let cfg = null;          // /api/account 当前账户设置
@@ -437,7 +437,7 @@
                 + '<br><small class="adim">基准 ' + esc(p.dayBasis || '—') + '</small></td>'
                 + '<td class="' + totDir + '">' + moneySigned(p.totalProfit)
                 + '<br><small>' + pctSigned(p.totalProfitPercent) + '</small></td>'
-                + '<td><span class="arow-act">'
+                + '<td class="ops"><span class="arow-act">'
                 + '<button class="btn-ghost btn-sm" onclick="openPositionModal(' + p.id + ')">改</button>'
                 + '<button class="btn-ghost btn-sm" onclick="removePosition(' + p.id + ')">删</button>'
                 + '</span></td>'

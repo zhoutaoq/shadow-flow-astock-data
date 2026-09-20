@@ -104,12 +104,24 @@ start_new() {
 }
 
 # ---------------- swap jar ----------------
+# 发布只保留「当前包 + 上一版备份」两份，历史版本一律清掉：
+#   1) 先把在跑的包留成 <JAR_NAME>.jar.bak —— 直接覆盖上一版备份，滚动只留最近一份；
+#   2) 再把 <JAR_NAME>.jar.new 换上去；
+#   3) 最后扫一遍部署目录，把同名前缀的其它包（旧的 .bak.1 / .20260919 / .old 之类）删掉。
+# 用 -maxdepth 1 + 完整前缀匹配，不碰目录里任何别的文件；-print -delete 会把删掉的打印出来，
+# 日志里看得到清了哪些。注意 ${JAR_NAME}.pid 不匹配 "${JAR_NAME}.jar*"，不会被误删。
 swap_jar() {
-  if [ -f "${P}.new" ]; then
-    mv -f "${P}.new" "$P" && echo "[swap] jar updated -> $P"
-  else
+  if [ ! -f "${P}.new" ]; then
     echo "[swap] no .jar.new present, keep current jar"
+    return 0
   fi
+  if [ -f "$P" ]; then
+    cp -p "$P" "${P}.bak" && echo "[backup] keep only latest: $P -> ${P}.bak"
+  fi
+  mv -f "${P}.new" "$P" && echo "[swap] jar updated -> $P"
+  echo "[prune] removing jars other than $P / ${P}.bak"
+  find . -maxdepth 1 -type f -name "${JAR_NAME}.jar*" \
+       ! -name "$P" ! -name "${P}.bak" -print -delete 2>/dev/null || true
 }
 
 # ---------------- status ----------------

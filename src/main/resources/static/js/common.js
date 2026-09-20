@@ -1371,7 +1371,7 @@ function scheduleLabelGridTables() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260920c（v1.5.9：移动端页面适配 + 平台级对接配置收到系统配置页，盯盘机器人仍归各人自配）');
+    console.info('[金牛数据] 前端版本 20260920d（v1.5.9：按钮统一靠右（顶栏亮暗按钮归位、表格操作列贴右、动作行 row-end）+ 移动端顶栏两行布局）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();

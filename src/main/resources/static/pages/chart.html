@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>K线分析 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920c">
+    <link rel="stylesheet" href="/css/common.css?v=20260920d">
     <style>
         /* K线图在手机上的高度（v1.5.9 移动端适配）：560px 是照桌面写的，
            手机上加上顶栏和上方的表单已经超一屏，图表本身还占掉大半屏，
@@ -45,7 +45,8 @@
 
     <section class="panel">
         <h2 id="chartTitle">K线图</h2>
-        <div class="form-row">
+        <!-- 这一行只有动作按钮，靠右排：与其它卡片头部的按钮组对齐（row-end = justify-content:flex-end） -->
+        <div class="form-row row-end">
             <button class="btn-ghost" onclick="openDetail()" id="btnDetail">当前视窗明细</button>
         </div>
         <div id="chart" style="width:100%;height:560px"></div>
@@ -53,9 +54,9 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260920c"></script>
-<script src="/js/date-picker.js?v=20260920c"></script>
-<script src="/js/stock-picker.js?v=20260920c"></script>
+<script src="/js/common.js?v=20260920d"></script>
+<script src="/js/date-picker.js?v=20260920d"></script>
+<script src="/js/stock-picker.js?v=20260920d"></script>
 <script>
     const VIEW_DAYS = 92;              // 默认渲染近三个月
     const CHUNK_DAYS = 180;            // 数据库模式懒加载步长

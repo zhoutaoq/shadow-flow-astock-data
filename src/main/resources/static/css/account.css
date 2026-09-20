@@ -437,7 +437,10 @@ table.atable tbody tr:last-child td { border-bottom: none; }
     .arec-row { grid-template-columns: 52px minmax(0, 1fr) 80px 70px; }
     .arec-row > :nth-child(5),
     .arec-row > :nth-child(6) { display: none; }
-    .ahead-r { margin-left: 0; }
+    /* 这里原来写 .ahead-r { margin-left: 0 }，想让它换行；
+       但没给 flex-basis，结果 721~760px 这段只是"解开右贴"：
+       按钮紧跟标题往左排，右侧空一大片。要占整行就写 flex:1 1 100%
+       （见下面 ≤720px 那段），否则继续贴右。 */
 }
 
 /* ============ 首页「我的账户」区块 ============ */

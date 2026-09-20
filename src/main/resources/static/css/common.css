@@ -332,6 +332,14 @@ a.nav-item { color: var(--text-dim); }
 .theme-toggle .ico-moon { display: none; }
 [data-theme='light'] .theme-toggle .ico-sun { display: none; }
 [data-theme='light'] .theme-toggle .ico-moon { display: inline-flex; }
+/* 顶栏右侧只留「最靠左那一组」的 margin-left:auto：
+   .theme-toggle 与 .user-area 各自都写 auto 时，按 flex 规范自由空间要在两个
+   auto 边距之间**平分**，结果亮暗按钮停在顶栏中段、只有账号区贴住右边缘。
+   让掉账号区的 auto（它本来就是为了贴右，但前面那组已经先占住了），
+   两组才会一起靠右，间距交给 .topbar 的 gap。
+   用相邻兄弟选择器而不是直接写 .user-area —— 顺序是 renderThemeToggle()
+   先 appendChild、renderUserArea() 后 appendChild，二者相邻。 */
+.theme-toggle + .user-area { margin-left: 0; }
 
 /* ============ 顶栏账号区（登录 / 注册 / 已登录邮箱） ============ */
 .user-area {
@@ -477,6 +485,9 @@ a.nav-item { color: var(--text-dim); }
 
 /* ============ 表单 ============ */
 .form-row { display: flex; gap: var(--sp-3); flex-wrap: wrap; align-items: flex-end; margin-bottom: var(--sp-3); }
+/* 一整行只有动作按钮（整行没有输入控件）时，用这个把按钮推到右边，
+   与各卡头右侧的动作按钮组对齐。 */
+.form-row.row-end { justify-content: flex-end; }
 .field { display: flex; flex-direction: column; gap: var(--sp-1); }
 .field label { font-size: var(--fs-12); color: var(--text-dim); }
 .field.grow { flex: 1 1 160px; }
@@ -556,6 +567,10 @@ table.grid td.num, table.grid th.num {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
+/* 「操作」列：整列按钮贴右边缘。各页表格给该列的 th 与 td 都加上 .ops ——
+   PC 上按钮不再紧跟在左边文字后、随列宽漂到中间；窄屏卡片模式下 td 走
+   space-between，值本来就靠右，两边口径一致。 */
+table.grid th.ops, table.grid td.ops { text-align: right; }
 
 table.kv th {
     text-align: left;
@@ -1604,7 +1619,9 @@ button:disabled { box-shadow: none; }
 @media (max-width: 900px) {
     /* 面板头（标题 + 右侧按钮组）挤不下时换行，别把按钮压出屏幕 */
     .cfg-panel-head { flex-wrap: wrap; gap: var(--sp-2); }
-    .cfg-panel-actions { margin-left: 0; flex-wrap: wrap; }
+    /* 按钮组仍然贴右：写成 margin-left:0 会让它在标题后紧跟左排、右侧空一大片；
+       换成独占一行时靠 auto 边距一样落在右边 */
+    .cfg-panel-actions { margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
     /* 统计卡单列：两列时数字列会被挤成竖排 */
     .cards .card { flex: 1 1 100%; }
 }
@@ -1617,9 +1634,16 @@ button:disabled { box-shadow: none; }
         padding: 6px 12px var(--sp-2);
         gap: var(--sp-3);
     }
-    .brand { font-size: var(--fs-14); }
+    /* ---- 顶栏：品牌 + 亮暗按钮 + 账号挤在第一行，导航整条挪到第二行横滑 ----
+       只给 .nav 写 flex-basis:100% 是不够的：DOM 顺序是「品牌 → 导航 → 亮暗
+       → 账号」，导航先占满一行，亮暗与账号就被顶到第三行，第一行只剩品牌
+       孤零零一个。用 order 把导航押到最后，第一行才是「品牌 … 亮暗 账号」。 */
+    .brand { order: 1; font-size: var(--fs-14); }
+    .theme-toggle { order: 2; }
+    .user-area { order: 3; }
 
     .nav {
+        order: 4;
         flex: 1 1 100%;
         display: flex;
         gap: var(--sp-1);

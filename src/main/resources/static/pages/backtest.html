@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>策略回测 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920c">
-    <link rel="stylesheet" href="/css/backtest.css?v=20260920c">
+    <link rel="stylesheet" href="/css/common.css?v=20260920d">
+    <link rel="stylesheet" href="/css/backtest.css?v=20260920d">
 </head>
 <body>
 <header class="topbar">
@@ -223,7 +223,7 @@
                     <th class="num">盈亏比例</th>
                     <th class="num">成交</th>
                     <th>回测时间</th>
-                    <th>操作</th>
+                    <th class="ops">操作</th>
                 </tr>
                 </thead>
                 <tbody id="histBody"></tbody>
@@ -233,9 +233,9 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260920c"></script>
-<script src="/js/date-picker.js?v=20260920c"></script>
-<script src="/js/stock-picker.js?v=20260920c"></script>
+<script src="/js/common.js?v=20260920d"></script>
+<script src="/js/date-picker.js?v=20260920d"></script>
+<script src="/js/stock-picker.js?v=20260920d"></script>
 <script>
     const UP = '#e5484d';    // 涨/买入：红
     const DOWN = '#2ea043';  // 跌/卖出：绿
@@ -1318,7 +1318,7 @@
                 <td class="num ${cls}">${(ratio * 100).toFixed(2)}%</td>
                 <td class="num">${b.tradeCount}</td>
                 <td>${esc(b.createTime || '')}</td>
-                <td>
+                <td class="ops">
                     <button class="btn-ghost" onclick="viewBt(${b.id})">查看</button>
                     <button class="btn-ghost" onclick="delBt(${b.id})">删除</button>
                 </td>

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>系统配置 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920c">
+    <link rel="stylesheet" href="/css/common.css?v=20260920d">
 </head>
 <body>
 <header class="topbar">
@@ -63,7 +63,10 @@
                     <input type="date" id="fEnd">
                 </div>
             </div>
-            <div class="modal-actions" style="margin-top:14px;justify-content:flex-start">
+            <!-- 动作按钮组统一靠右（.modal-actions 默认 justify-content:flex-end），
+                 与页面顶部那组「放弃改动 / 保存并应用」同一口径；原来写 flex-start
+                 会把它们摁在左边，右侧空一大片 -->
+            <div class="modal-actions" style="margin-top:14px">
                 <button class="btn-ghost" onclick="resetDefault()">恢复默认</button>
                 <button class="btn-ghost" onclick="location.href='/'">去看首页</button>
             </div>
@@ -82,7 +85,7 @@
                 </label>
             </div>
             <div class="sl-rows" id="slList"></div>
-            <div class="modal-actions" style="margin-top:14px;justify-content:flex-start">
+            <div class="modal-actions" style="margin-top:14px">
                 <button class="btn-ghost" onclick="resetStockLink()">恢复默认</button>
                 <button id="slSave" onclick="saveStockLink()">保存跳转配置</button>
                 <button class="btn-ghost" onclick="window.open('/pages/news.html','_blank')">看实际效果</button>
@@ -102,7 +105,7 @@
                 在「盯盘 → 推送」页各人配自己的；用户没配才落到这里的系统通知机器人。
             </div>
             <div class="ig-rows" id="igList"></div>
-            <div class="modal-actions" style="margin-top:14px;justify-content:flex-start">
+            <div class="modal-actions" style="margin-top:14px">
                 <button id="igSave" onclick="saveIntegration()">保存对接配置</button>
                 <button class="btn-ghost" onclick="loadIntegration()">重新载入</button>
                 <button class="btn-ghost" onclick="resetIntegration()">全部恢复出厂值</button>
@@ -113,9 +116,9 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260920c"></script>
-<script src="/js/date-picker.js?v=20260920c"></script>
-<script src="/js/stock-picker.js?v=20260920c"></script>
+<script src="/js/common.js?v=20260920d"></script>
+<script src="/js/date-picker.js?v=20260920d"></script>
+<script src="/js/stock-picker.js?v=20260920d"></script>
 <script>
     /** 与后端口径一致：背景区间最长一年 */
     const MAX_SPAN_DAYS = 365;

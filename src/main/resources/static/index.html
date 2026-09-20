@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920c">
-    <link rel="stylesheet" href="/css/home.css?v=20260920c">
-    <link rel="stylesheet" href="/css/account.css?v=20260920c">
+    <link rel="stylesheet" href="/css/common.css?v=20260920d">
+    <link rel="stylesheet" href="/css/home.css?v=20260920d">
+    <link rel="stylesheet" href="/css/account.css?v=20260920d">
 </head>
 <body>
 <header class="topbar">
@@ -243,9 +243,9 @@
 
 </main>
 
-<script src="/js/common.js?v=20260920c"></script>
-<script src="/js/date-picker.js?v=20260920c"></script>
-<script src="/js/home.js?v=20260920c"></script>
+<script src="/js/common.js?v=20260920d"></script>
+<script src="/js/date-picker.js?v=20260920d"></script>
+<script src="/js/home.js?v=20260920d"></script>
 <script>
     /* 全站功能入口：与顶部导航同一套，两种运行模式共用（第 4 项是内联图标，不转义） */
     var QUICK = [
@@ -259,14 +259,18 @@
             '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 8-3 8h18s-3-2-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'],
         ['我的账户', '/pages/account.html', '账号期初市值、持仓与买卖操作记录',
             '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/>'],
-        ['实时通知配置', '/pages/config.html', '数据接口令牌',
-            '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 3h3v3"/>'],
+        // 「实时通知配置」那一项原来指向 config 页 —— v1.5.9 把该页并进「系统配置」后文件已删，
+        // 首页点它只会 404。这里改指系统配置页，并按导航同一口径只给超管看（第 5 位 'admin'）。
+        ['系统配置', '/pages/system.html', '数据接口令牌、通知机器人与平台对接凭据',
+            '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 3h3v3"/>', 'admin'],
         ['用户反馈', '/pages/feedback.html', '写下问题或建议',
             '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.3 9.3 0 0 1-2.6-.4L4 21l1.4-4.2A8.4 8.4 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/>']
     ];
 
     function renderQuick(list) {
-        document.getElementById('quick').innerHTML = list.map(function (it, i) {
+        // 第 5 位是可见性标记：'admin' 的项只有超管看得到，与顶部导航的 navVisible 同一口径
+        var visible = list.filter(function (it) { return it[4] !== 'admin' || isAdmin(); });
+        document.getElementById('quick').innerHTML = visible.map(function (it, i) {
             return '<a class="quick-item" href="' + it[1] + '">'
                 + '<b><span class="qi-ico"><svg viewBox="0 0 24 24">' + it[3] + '</svg></span>'
                 + esc(it[0]) + '<span class="idx">' + (i + 1) + '</span></b>'
@@ -436,9 +440,10 @@
         setInterval(loadIndices, TAPE_INTERVAL);
         startTapeClock();
         await loadMode();
-        renderQuick(QUICK);
-        // 登录态要在账户取数之前拿到：未登录时这块整块不显示
+        // 登录态要在账户取数之前拿到：未登录时这块整块不显示。
+        // 「功能入口」也得等它 —— 其中「系统配置」是超管专属项，先知道身份才决定显不显示
         await loadMe();
+        renderQuick(QUICK);
         // 账户里的持仓名要渲染成跳转链接，配置先拿到
         await loadStockLink();
         loadAccount();

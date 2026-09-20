@@ -83,7 +83,8 @@
 }
 @media (max-width: 760px) {
     .wcard-q { grid-column: span 12; }
-    .whead-r { margin-left: 0; }
+    /* 「重新载入 / 保存」保持贴右：原来这里把 margin-left 归零，
+       按钮就紧跟在标题后面往左排，右侧留一大片空。 */
 }
 
 /* 卡片头：图标 + 标题 +（右）计数 */

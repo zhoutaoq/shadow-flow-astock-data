@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>股票列表 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920c">
+    <link rel="stylesheet" href="/css/common.css?v=20260920d">
 </head>
 <body>
 <header class="topbar">
@@ -82,7 +82,7 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=20260920c"></script>
+<script src="/js/common.js?v=20260920d"></script>
 <script>
     /**
      * 两种模式共用一页，差别只在数据来源与写操作：
@@ -110,7 +110,9 @@
         const cols = MODE.noDb
             ? ['股票代码', '股票名称', '操作']
             : ['ID', '股票代码', '股票名称', '状态', '创建时间', '更新时间', '操作'];
-        document.getElementById('thead').innerHTML = cols.map(c => `<th>${c}</th>`).join('');
+        // 「操作」列整列贴右：列头与单元格都要带 .ops（规则见 common.css 的 table.grid）
+        document.getElementById('thead').innerHTML =
+            cols.map(c => `<th${c === '操作' ? ' class="ops"' : ''}>${c}</th>`).join('');
     }
 
     async function load() {
@@ -145,7 +147,7 @@
         return `<tr>
             <td><b>${esc(x.code)}</b></td>
             <td>${stockLinkHtml(x.code, x.name)}</td>
-            <td>
+            <td class="ops">
                 <button class="btn-sm btn-ghost" onclick="go('chart','${esc(x.code)}')">K线</button>
                 <button class="btn-sm btn-ghost" onclick="go('backtest','${esc(x.code)}')">回测</button>
             </td>
@@ -161,7 +163,7 @@
                 : '<span class="badge">停用</span>'}</td>
             <td class="dim">${esc(x.createTime || '')}</td>
             <td class="dim">${esc(x.updateTime || '')}</td>
-            <td>
+            <td class="ops">
                 <button class="btn-sm btn-ghost" onclick='openEdit(${JSON.stringify(x)})'>编辑</button>
                 <button class="btn-sm btn-ghost" onclick="go('chart','${x.stockCode}')">分析</button>
                 <button class="btn-sm btn-ghost" onclick="go('backtest','${x.stockCode}')">回测</button>
