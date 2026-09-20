@@ -1,9 +1,9 @@
 package com.stock.kline.auth;
 
 import com.stock.kline.auth.model.User;
+import com.stock.kline.config.IntegrationConfigService;
 import com.stock.kline.watch.DingTalkNotifier;
 import com.stock.kline.watch.TradeSessions;
-import com.stock.kline.watch.WatchProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -37,6 +37,9 @@ import java.util.concurrent.Executors;
  *
  * <p>邮箱就是用户名：本项目的用户名规则本身就要求是合法邮箱（见 {@link AuthService#checkUsername}），
  * 所以不需要另取字段。
+ *
+ * <p><b>v1.5.9</b>：机器人地址与关键词都改从系统配置页取（{@link IntegrationConfigService}），
+ * 不再读 {@code watch.dingtalk.webhook} 这个 bean 字段 —— 换机器人、改关键词不用重启。
  */
 @Service
 public class RegistrationNotifier {
@@ -47,16 +50,16 @@ public class RegistrationNotifier {
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final RegistrationNotifyProperties props;
-    private final WatchProperties watchProps;
+    private final IntegrationConfigService integration;
     private final DingTalkNotifier notifier;
 
     private final ExecutorService executor;
 
     public RegistrationNotifier(RegistrationNotifyProperties props,
-                                WatchProperties watchProps,
+                                IntegrationConfigService integration,
                                 DingTalkNotifier notifier) {
         this.props = props;
-        this.watchProps = watchProps;
+        this.integration = integration;
         this.notifier = notifier;
         this.executor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "register-notify");
@@ -89,11 +92,11 @@ public class RegistrationNotifier {
     /** 真正发送。这里已经不在请求线程上了，任何异常都只记日志 */
     private void push(String email, String when) {
         try {
-            // webhook 在「发的那一刻」从系统配置里取：运维在页面上改了「实时通知配置」，
-            // 注册埋点跟着走，不需要重启（和盯盘告警读的是同一个字段）
-            String webhook = watchProps.getDingtalk().getWebhook();
-            if (webhook == null || webhook.trim().isEmpty()) {
-                log.warn("[register] 钉钉未配置 webhook（watch.dingtalk.webhook 为空），注册埋点只留在日志里：{}", email);
+            // webhook 在「发的那一刻」取：运维在系统配置页换了机器人，注册埋点跟着走，
+            // 不需要重启（和盯盘告警读的是同一只）
+            String webhook = integration.dingtalkWebhook();
+            if (webhook == null || webhook.isEmpty()) {
+                log.warn("[register] 钉钉未配置 webhook（系统配置页未填、yml 兜底也为空），注册埋点只留在日志里：{}", email);
                 return;
             }
             if (notifier.postAlways(webhook, buildText(email, when))) {
@@ -110,7 +113,7 @@ public class RegistrationNotifier {
 
     /** 拼钉钉文本：首行带关键词前缀，后面固定两行 —— 时间、邮箱 */
     private String buildText(String email, String when) {
-        String keyword = props.getKeyword() == null ? "" : props.getKeyword().trim();
+        String keyword = integration.registerKeyword();
         StringBuilder sb = new StringBuilder();
         sb.append(keyword.isEmpty() ? "" : "[" + keyword + "] ").append("新用户注册\n");
         sb.append("时间：").append(when).append('\n');

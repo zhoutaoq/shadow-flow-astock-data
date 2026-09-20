@@ -2,9 +2,19 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>K线分析 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920a">
+    <link rel="stylesheet" href="/css/common.css?v=20260920b">
+    <style>
+        /* K线图在手机上的高度（v1.5.9 移动端适配）：560px 是照桌面写的，
+           手机上加上顶栏和上方的表单已经超一屏，图表本身还占掉大半屏，
+           进来先得滚一下才看得见图。这里只压高度；横向留白由下方 option 里
+           按容器实际宽度算，写死的边距在 360px 宽的屏上会吃掉三成宽度。 */
+        @media (max-width: 720px) {
+            #chart { height: 360px !important; }
+        }
+    </style>
 </head>
 <body>
 <header class="topbar">
@@ -43,9 +53,9 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260920a"></script>
-<script src="/js/date-picker.js?v=20260920a"></script>
-<script src="/js/stock-picker.js?v=20260920a"></script>
+<script src="/js/common.js?v=20260920b"></script>
+<script src="/js/date-picker.js?v=20260920b"></script>
+<script src="/js/stock-picker.js?v=20260920b"></script>
 <script>
     const VIEW_DAYS = 92;              // 默认渲染近三个月
     const CHUNK_DAYS = 180;            // 数据库模式懒加载步长
@@ -304,10 +314,26 @@
                 }
             },
             axisPointer: {link: [{xAxisIndex: 'all'}]},
-            grid: [
-                {left: 60, right: 40, top: 40, height: 340},
-                {left: 60, right: 40, top: 420, height: 110}
-            ],
+            // 上下两栏（K线 + 成交量）的边距与高度按容器实际尺寸现算（v1.5.9 移动端适配）：
+            // 原先写死 560px 高的坐标（left 60 / top 420 / height 110），容器一矮
+            // 成交量那栏就被挤出画布；窄屏上左右各留 60/40 也会白白吃掉三成宽度。
+            grid: (function () {
+                const el = document.getElementById('chart');
+                const w = (el && el.clientWidth) || 800;
+                const h = (el && el.clientHeight) || 560;
+                const narrow = w < 620;
+                const left = narrow ? 46 : 60;
+                const right = narrow ? 12 : 40;
+                const top = narrow ? 28 : 40;
+                const bottom = 30;
+                const gap = narrow ? 16 : 40;
+                const volH = Math.max(60, Math.round((h - top - bottom) * 0.22));
+                const mainH = Math.max(80, h - top - bottom - volH - gap);
+                return [
+                    {left: left, right: right, top: top, height: mainH},
+                    {left: left, right: right, top: top + mainH + gap, height: volH}
+                ];
+            })(),
             xAxis: [
                 {type: 'category', data: dates, boundaryGap: false, axisLine: {lineStyle: {color: '#3a4256'}}},
                 {
@@ -559,7 +585,12 @@
         }
     });
 
-    window.addEventListener('resize', () => chart.resize());
+    // 尺寸一变不仅要 resize，还要重画：图内两栏的边距是按容器尺寸现算的，
+    // 只 resize 会沿用上一次的坐标（手机横竖屏切换时尤其明显）
+    window.addEventListener('resize', () => {
+        chart.resize();
+        paint();
+    });
     document.querySelectorAll('.ma').forEach(x => x.onchange = () => {
         if (state.rows.length) paint(false);
     });

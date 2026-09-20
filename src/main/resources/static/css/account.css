@@ -711,3 +711,35 @@ a.acct-hold-item.acct-more:hover { background: var(--bg-tint); }
 
 /* 新建 / 重命名共用同一个弹窗：重命名时只留名字，金额字段整体收起 */
 .mask.rename .acc-only-create { display: none; }
+
+/* =========================================================================
+ * v1.5.9 移动端收口（账户页）
+ *
+ * 放在文件最末：同一优先级下后写的赢，靠层叠盖掉上面的宽屏值，
+ * 上面那些规则本身不动（宽屏行为保持原样，回归面小）。
+ * 持仓表本身（table.atable，12 列）的卡片化在 common.css 的 720px 断点里，
+ * 那边按 .grid-tagged 统一处理，这里只管账户页自己的布局组件。
+ * ========================================================================= */
+@media (max-width: 720px) {
+    /* 头部：右侧三个按钮在手机上放不满一行，让它独占一行并均分宽度 */
+    .ahead { align-items: flex-start; }
+    .ahead-r {
+        margin-left: 0;
+        flex: 1 1 100%;
+        flex-wrap: wrap;
+    }
+    .ahead-r > button { flex: 1 1 auto; justify-content: center; }
+
+    /* 卡片内边距收窄，与 common.css 里 .panel 的 12px 对齐，把宽度让给持仓表 */
+    .acard-bd { padding: var(--sp-3) 12px var(--sp-4); }
+
+    /* 卡头：图标 + 标题 + 计数 + 动作按钮挤不下时换行，动作按钮独占一行 */
+    .acard-hd {
+        flex-wrap: wrap;
+        row-gap: 6px;
+        padding: 11px 14px;
+    }
+    .acard-note { margin-left: auto; }
+    .acard-acts { margin-left: 0; flex: 1 1 100%; }
+    .acard-acts > button { flex: 1 1 auto; justify-content: center; }
+}

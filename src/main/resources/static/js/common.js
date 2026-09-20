@@ -1036,7 +1036,6 @@ const NAV_ITEMS = [
     {text: '策略回测', href: '/pages/backtest.html', login: true},
     {text: '盯盘', href: '/pages/watch.html', login: true},
     {text: '我的账户', href: '/pages/account.html', login: true},
-    {text: '实时通知配置', href: '/pages/config.html', login: true},
     {text: '用户反馈', href: '/pages/feedback.html'},
     {text: '系统配置', href: '/pages/system.html', admin: true},
     {text: '用户管理', href: '/pages/users.html', admin: true}
@@ -1306,10 +1305,73 @@ async function submitChangePassword(hide) {
     }
 }
 
+/* =====================================================================
+ * 窄屏表格卡片化：把表头列名写进每个单元格（v1.5.9 移动端适配）
+ *
+ * 为什么要这一手：窄屏下 width:100% 的宽表格只能横向拖，十几列的表拖起来
+ * 根本对不上号。CSS 能把 <tr> 显示成卡片（见 common.css 的 720px 断点），
+ * 但 CSS 读不到表头文字，标不出「这一格是什么」—— 只能由 JS 在这里补 data-label，
+ * CSS 再用 ::before 渲染到值的左边。
+ *
+ * 选在 JS 里统一做、而不是去改十几处表格的渲染代码：各页表格有的写在 HTML 里、
+ * 有的是拼字符串生成的（股票列表、实时资讯、回测明细、调用日志），逐个改既容易漏，
+ * 下次加一列还会再漏一次。这里按「表头第 N 列 → 第 N 格」的位置对应来标，
+ * 任何表格渲染完都能自动跟上。
+ *
+ * 覆盖两类宽表：主表格 table.grid，以及账户页持仓表 table.atable（12 列，
+ * 只靠 .atable-wrap 横向滚动，窄屏拖起来同样对不上号，一并卡片化）。
+ * ===================================================================== */
+function labelGridTables(root) {
+    const scope = root || document;
+    if (!scope.querySelectorAll) {
+        return;
+    }
+    scope.querySelectorAll('table.grid, table.atable').forEach(function (t) {
+        const heads = [];
+        t.querySelectorAll('thead th').forEach(function (th) {
+            heads.push((th.textContent || '').trim());
+        });
+        // 没有表头就无从知道列名，保持原样（窄屏下退化成可横向拖动的普通表格）
+        if (!heads.length) {
+            return;
+        }
+        t.querySelectorAll('tbody tr').forEach(function (tr) {
+            const cells = tr.children;
+            for (let i = 0; i < cells.length; i++) {
+                const td = cells[i];
+                if (td.tagName !== 'TD') {
+                    continue;
+                }
+                // 跨列的空态行不参与卡片化（CSS 那边也按 colspan 放行）
+                if (td.hasAttribute('colspan')) {
+                    continue;
+                }
+                const label = heads[i];
+                if (label && td.getAttribute('data-label') !== label) {
+                    td.setAttribute('data-label', label);
+                }
+            }
+        });
+        t.classList.add('grid-tagged');
+    });
+}
+
+/** 表格内容由各页自己刷新，改完 DOM 得重新标一次；防抖兜住高频刷新（实时资讯是分钟级轮询） */
+let _gridLabelTimer = null;
+function scheduleLabelGridTables() {
+    if (_gridLabelTimer) {
+        return;
+    }
+    _gridLabelTimer = setTimeout(function () {
+        _gridLabelTimer = null;
+        labelGridTables();
+    }, 120);
+}
+
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260920a（v1.5.8：全站股票名称跳转链接 + 实时资讯一分钟刷新 + K线查看默认渲染 000001）');
+    console.info('[金牛数据] 前端版本 20260920b（v1.5.9：移动端页面适配 + 第三方对接配置统一收到系统配置页）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();
@@ -1320,6 +1382,16 @@ document.addEventListener('DOMContentLoaded', async function () {
     renderUserArea();
     // 页脚放最后注入：它是 appendChild 到 body 末尾的，若前面的脚本中途抛错也不会连累它
     renderFooter();
+    // 窄屏把宽表格渲染成卡片，靠的是 td 上的列名（data-label）：这里统一标一次，
+    // 并盯着各页后续的表格刷新（分页、轮询、重算）自动补标。只观察 childList，
+    // 本函数自己不增删节点，不会自触发成死循环。
+    labelGridTables();
+    if (window.MutationObserver) {
+        new MutationObserver(scheduleLabelGridTables).observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
     if (typeof initDatePickers === 'function') {
         initDatePickers(document);
     }

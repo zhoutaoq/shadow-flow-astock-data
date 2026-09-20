@@ -3,6 +3,7 @@ package com.stock.kline.watch;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.stock.kline.auth.AuthService;
+import com.stock.kline.config.IntegrationConfigService;
 import com.stock.kline.store.DataDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,13 +29,17 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /**
  * 盯盘配置的唯一来源：<b>每个用户一份</b>，内存里留一份，落盘一份 JSON。
  *
- * <p>v1.3 起盯盘配置跟着账号走（SaaS 化的第一步）：
+ * <p>v1.3 起盯盘配置跟着账号走（名单 / 间隔 / 阈值各人一份）：
  * <ul>
  *   <li>落盘位置 {@code ./data/watch/watch-{userId}.json}；</li>
- *   <li>超管那份同时是「系统默认配置」：系统级推送（启动通知、用户反馈兜底）
- *       与未自配机器人的用户都走它的 webhook；</li>
+ *   <li>超管那份同时是「系统默认配置」：系统级推送（启动通知）认它；</li>
  *   <li>老版本的 {@code watch-config.json} 在首次启动时自动迁成超管的配置。</li>
  * </ul>
+ *
+ * <p><b>v1.5.9：钉钉机器人不再属于这份配置</b>。改造前每人可以在盯盘页配自己的机器人，
+ * 结果是「换一只机器人要挨个通知」、且 webhook 明文散落在多个落盘文件里；
+ * 现在全站只有系统配置页维护的那一只（见 {@link #webhookOf(long)}），
+ * 落盘里的 {@code dingtalk} 字段仅为兼容老文件而保留，不再读写。
  *
  * <p>取配置的顺序（对每个用户）：
  * <ol>
@@ -97,6 +102,8 @@ public class WatchConfigStore {
     private final DataDir dataDir;
     /** 依赖它不只是为了取 id：注入进来才能保证「超管账号已建好」发生在解析配置归属之前 */
     private final AuthService authService;
+    /** 钉钉机器人的唯一来源（系统配置页维护） */
+    private final IntegrationConfigService integration;
     private final ObjectProvider<StockNameIndex> indexProvider;
     private final ObjectProvider<WatchListLoader> loaderProvider;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -109,11 +116,13 @@ public class WatchConfigStore {
     private volatile Long adminId;
 
     public WatchConfigStore(WatchProperties props, DataDir dataDir, AuthService authService,
+                            IntegrationConfigService integration,
                             ObjectProvider<StockNameIndex> indexProvider,
                             ObjectProvider<WatchListLoader> loaderProvider) {
         this.props = props;
         this.dataDir = dataDir;
         this.authService = authService;
+        this.integration = integration;
         this.indexProvider = indexProvider;
         this.loaderProvider = loaderProvider;
     }
@@ -141,8 +150,6 @@ public class WatchConfigStore {
         long uid = defaultUserId();
         WatchSettings s = loadOrDefaults(uid);
         byUser.put(uid, s);
-        // 系统级推送（启动通知、用户反馈兜底）认超管那份的 webhook
-        writeDingtalkBack(s);
         notifyListeners(uid, copy(s));
         log.info("[watch] 系统默认盯盘配置（{}）已载入 {}：开关 {}，间隔 {}s，{} 条规则，{} 只标的",
                 authService.adminUsername(), fileOf(uid), s.isEnabled(), s.getIntervalSeconds(),
@@ -303,23 +310,17 @@ public class WatchConfigStore {
     }
 
     /**
-     * 这个用户的告警该推到哪：本人配了机器人就用本人的，没配才落到系统默认那个。
+     * 这个用户的告警该推到哪。
      *
-     * <p>不配也照推是为了不让告警凭空消失 —— 页面上的「钉钉机器人」留空就是「用默认群」的意思。
+     * <p><b>v1.5.9 起不再有「每人一只机器人」</b>：机器人属于系统对接第三方的设施，
+     * 全站只有系统配置页维护的那一只，谁盯盘都推同一个群 ——
+     * 分散到人头上时，换一只机器人要挨个通知大家去改，令牌/地址这类凭据也会散落在多个落盘文件里。
+     *
+     * <p>参数保留 {@code userId} 是为了不动 {@code PriceWatchTask}、{@code WatchNotifier}、
+     * {@code WatchKeyTimePusher} 那一圈的调用签名。
      */
     public synchronized String webhookOf(long userId) {
-        String own = get(userId).getDingtalk() == null ? null : get(userId).getDingtalk().getWebhook();
-        if (own != null && !own.trim().isEmpty()) {
-            return own.trim();
-        }
-        String sys = props.getDingtalk().getWebhook();
-        return sys == null || sys.trim().isEmpty() ? "" : sys.trim();
-    }
-
-    /** 这个用户是否配了自己的机器人（页面据此显示推送目标） */
-    public synchronized boolean hasOwnWebhook(long userId) {
-        String own = get(userId).getDingtalk() == null ? null : get(userId).getDingtalk().getWebhook();
-        return own != null && !own.trim().isEmpty();
+        return integration.dingtalkWebhook();
     }
 
     /* ---------------- 按用户读写 ---------------- */
@@ -343,18 +344,10 @@ public class WatchConfigStore {
             return snapshot(userId);
         }
         normalize(incoming);
-        WatchSettings prev = get(userId);
-        // 用户没填的钉钉字段从当前内存继承下来（不每次都退回 yml 默认值）
-        if (incoming.getDingtalk() == null) {
-            incoming.setDingtalk(copyDingtalk(prev.getDingtalk()));
-        } else {
-            mergeDingtalk(incoming.getDingtalk(), prev.getDingtalk());
-        }
-        boolean systemDefault = userId == defaultUserId();
+        // 钉钉机器人已经不在这一份配置里了（v1.5.9 收到系统配置页）：
+        // 老落盘文件里可能还躺着一份个人 webhook，保存时一并抹掉，避免凭据继续留在磁盘上
+        incoming.setDingtalk(new WatchSettings.DingTalkCfg());
         byUser.put(userId, incoming);
-        if (systemDefault) {
-            writeDingtalkBack(incoming);
-        }
         persist(userId, incoming);
         notifyListeners(userId, copy(incoming));
         log.info("[watch] 用户 {} 的盯盘配置已更新：开关 {}，间隔 {}s，{} 条规则，{} 只标的",
@@ -395,8 +388,7 @@ public class WatchConfigStore {
                 String json = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
                 WatchSettings loaded = mapper.readValue(json, WatchSettings.class);
                 if (loaded != null) {
-                    // 启动时把 yml 的钉钉默认值灌进来（落盘里为空时 fallback）
-                    applyDingtalkDefaults(loaded);
+                    // 老落盘文件里的 dingtalk 字段不再读：机器人统一从系统配置页取（见 webhookOf）
                     normalize(loaded);
                     log.info("[watch] 用户 {} 的盯盘配置已载入 {}", userId, p);
                     return loaded;
@@ -448,9 +440,8 @@ public class WatchConfigStore {
         s.setEnabled(props.isEnabled());
         s.setIntervalSeconds(props.getIntervalSeconds());
         s.setRules(defaultRulesFromProps());
-        WatchSettings.DingTalkCfg dt = new WatchSettings.DingTalkCfg();
-        dt.setWebhook(props.getDingtalk().getWebhook() == null ? "" : props.getDingtalk().getWebhook());
-        s.setDingtalk(dt);
+        // 钉钉机器人不在这份配置里（v1.5.9 收到系统配置页），落盘保持空值
+        s.setDingtalk(new WatchSettings.DingTalkCfg());
         s.setSurge(new WatchSettings.SurgeCfg(props.getSurge().getAmountWan(), props.getSurge().getTimes()));
         s.setStocks(new ArrayList<>());
         return s;
@@ -505,38 +496,6 @@ public class WatchConfigStore {
         return list;
     }
 
-    /** 启动时把 yml 的钉钉默认值灌进 loaded.dingtalk（仅在落盘字段为空时）。v1.4 起只剩 webhook。 */
-    private void applyDingtalkDefaults(WatchSettings loaded) {
-        WatchSettings.DingTalkCfg dt = loaded.getDingtalk();
-        if (dt == null) {
-            dt = new WatchSettings.DingTalkCfg();
-            loaded.setDingtalk(dt);
-        }
-        if (isBlank(dt.getWebhook()) && !isBlank(props.getDingtalk().getWebhook())) {
-            dt.setWebhook(props.getDingtalk().getWebhook());
-        }
-    }
-
-    /** 把超管配置里的钉钉字段回写到 props，DingTalkNotifier.send 读的是 props.getDingtalk() */
-    private void writeDingtalkBack(WatchSettings s) {
-        if (s.getDingtalk() == null) {
-            return;
-        }
-        // 内存里的值始终代表运行时实际生效的 webhook
-        // 空字符串清掉：这样 notifier.configured() 会返回 false（钉钉关）
-        props.getDingtalk().setWebhook(s.getDingtalk().getWebhook() == null ? "" : s.getDingtalk().getWebhook());
-    }
-
-    /** 合并：用户新提交里为空的字段从老内存里继承，避免把已配的 webhook 又退回 yml 默认 */
-    private void mergeDingtalk(WatchSettings.DingTalkCfg in, WatchSettings.DingTalkCfg old) {
-        if (old == null) {
-            return;
-        }
-        if (in.getWebhook() == null) {
-            in.setWebhook(old.getWebhook() == null ? "" : old.getWebhook());
-        }
-    }
-
     private static WatchSettings.DingTalkCfg copyDingtalk(WatchSettings.DingTalkCfg src) {
         WatchSettings.DingTalkCfg out = new WatchSettings.DingTalkCfg();
         if (src != null) {
@@ -551,10 +510,6 @@ public class WatchConfigStore {
             return new WatchSettings.SurgeCfg(props.getSurge().getAmountWan(), props.getSurge().getTimes());
         }
         return new WatchSettings.SurgeCfg(src.getAmountWan(), src.getTimes());
-    }
-
-    private static boolean isBlank(String s) {
-        return s == null || s.trim().isEmpty();
     }
 
     /** 首次启动时把 watch-list.txt 里的名单搬进超管的配置，避免升级后要重新填一遍 */

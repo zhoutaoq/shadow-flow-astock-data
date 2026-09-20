@@ -111,12 +111,9 @@ public class WatchController {
             rules.add(one);
         }
         data.put("rules", rules);
-        // 钉钉配置（页面回显）：v1.4 起只有 webhook 一个字段；
-        // v1.5.2 起附一个「这条配置推给谁」的状态，页面据此显示推送目标
+        // 钉钉推送状态（页面回显）：v1.5.9 起机器人由「系统配置」页统一维护，
+        // 这一页只回答「现在还推不推得出去」，不再回显地址本身、也不再有「自己的群」这个概念
         Map<String, Object> dt = new LinkedHashMap<>();
-        dt.put("webhook", s.getDingtalk() == null || s.getDingtalk().getWebhook() == null
-                ? "" : s.getDingtalk().getWebhook());
-        dt.put("ownGroup", store.hasOwnWebhook(userId));
         dt.put("targetConfigured", !store.webhookOf(userId).isEmpty());
         data.put("dingtalk", dt);
         // 涨跌停放量阈值（页面回显）：amountWan 单位万元，times 是相对上一间隔的倍数

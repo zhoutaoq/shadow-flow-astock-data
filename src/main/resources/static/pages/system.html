@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>系统配置 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920a">
+    <link rel="stylesheet" href="/css/common.css?v=20260920b">
 </head>
 <body>
 <header class="topbar">
@@ -90,12 +90,29 @@
             <div class="sp-hint" id="slState"></div>
         </section>
 
+        <section class="panel">
+            <h2>第三方对接</h2>
+            <div class="sp-hint">
+                系统对接第三方用的凭据，<b>全局一份、全站生效</b> —— 行情抓取、钉钉推送、
+                用户反馈、注册通知都从这里取值，改完即生效不用重启。
+                令牌与 Webhook 只回显前后各 4 位；输入框留空表示这一项不动，
+                要让它回落到配置文件的出厂值请点旁边的「清除」。
+            </div>
+            <div class="ig-rows" id="igList"></div>
+            <div class="modal-actions" style="margin-top:14px;justify-content:flex-start">
+                <button id="igSave" onclick="saveIntegration()">保存对接配置</button>
+                <button class="btn-ghost" onclick="loadIntegration()">重新载入</button>
+                <button class="btn-ghost" onclick="resetIntegration()">全部恢复出厂值</button>
+            </div>
+            <div class="sp-hint" id="igState"></div>
+        </section>
+
     </div>
 </main>
 
-<script src="/js/common.js?v=20260920a"></script>
-<script src="/js/date-picker.js?v=20260920a"></script>
-<script src="/js/stock-picker.js?v=20260920a"></script>
+<script src="/js/common.js?v=20260920b"></script>
+<script src="/js/date-picker.js?v=20260920b"></script>
+<script src="/js/stock-picker.js?v=20260920b"></script>
 <script>
     /** 与后端口径一致：背景区间最长一年 */
     const MAX_SPAN_DAYS = 365;
@@ -360,6 +377,152 @@
         toast(r.message || '已恢复默认跳转配置', 'ok');
     }
 
+    /* =====================================================================
+     * 第三方对接（v1.5.9）
+     *
+     * 这一块维护的是系统级凭据：waizao 令牌、钉钉机器人 webhook、反馈与注册的关键词。
+     * 改造前它们散在三处 —— 令牌按用户各存一份、钉钉机器人存在盯盘的个人落盘文件里、
+     * 关键词埋在 application.yml，换一只机器人要登服务器改文件重启；现在统一在这里。
+     *
+     * 提交语义（与后端口径一致）：
+     *   · 输入框留空 = 这一项不动。凭据是打码回显的，用户没碰就不该被当成「要清空」，
+     *     否则一次普通保存就能把线上机器人配没了；
+     *   · 要清掉某一项点它自己的「清除」，清掉后该项回落到 application.yml 的出厂值。
+     * ===================================================================== */
+    let igCfg = null;
+    /**
+     * 各字段这次回显出来的值。
+     *
+     * 关键词这类非密字段是明文回显的，用户不碰输入框它也已经「有值」——
+     * 若照单全收地提交，每点一次保存都会把它们照抄成一份配置行，
+     * 日后 application.yml 里改了出厂值也再盖不住。所以只提交真正改动过的项。
+     */
+    let igBaseline = {};
+
+    async function loadIntegration() {
+        const r = await get('/api/admin/integration');
+        if (!r || !r.success) {
+            return;
+        }
+        igCfg = r.data || {};
+        renderIntegration();
+    }
+
+    function renderIntegration() {
+        const items = (igCfg && igCfg.items) || [];
+        document.getElementById('igList').innerHTML = items.length
+            ? items.map(it => {
+                const src = it.source === 'config'
+                    ? '<span class="ig-src is-cfg">配置页</span>'
+                    : (it.source === 'yml'
+                        ? '<span class="ig-src">出厂默认</span>'
+                        : '<span class="ig-src is-none">未配置</span>');
+                const ph = it.secret
+                    ? (it.configured ? '已配置 ' + it.display + '，留空表示不修改' : '未配置，粘贴后保存即生效')
+                    : '';
+                return '<div class="ig-row" data-name="' + esc(it.name) + '">'
+                    + '<div class="ig-hd"><span class="ig-label">' + esc(it.label) + '</span>' + src + '</div>'
+                    + '<div class="ig-hint">' + esc(it.hint || '') + '</div>'
+                    + '<div class="ig-in">'
+                    + '<input class="ig-val" type="' + (it.secret ? 'password' : 'text') + '"'
+                    + ' autocomplete="off" spellcheck="false"'
+                    + ' placeholder="' + esc(ph) + '"'
+                    + (it.secret ? '' : ' value="' + esc(it.display || '') + '"') + '>'
+                    + '<button class="btn-sm btn-ghost ig-clear"'
+                    + (it.source === 'config' ? '' : ' disabled') + '>清除</button>'
+                    + '</div>'
+                    + '</div>';
+            }).join('')
+            : '<div class="sp-hint">接口没有返回可维护的对接项</div>';
+
+        // 记下这一轮的回显值，供「哪些项真被改过」的判断使用（见 collectIntegration）
+        igBaseline = {};
+        items.forEach(it => {
+            igBaseline[it.name] = it.secret ? '' : (it.display || '');
+        });
+
+        // 「清除」只在确实有配置页覆盖时才可点，否则点了也没变化，反而让人以为清不掉
+        document.querySelectorAll('#igList .ig-clear').forEach(btn => {
+            btn.addEventListener('click', () => clearIntegrationItem(btn));
+        });
+
+        const total = igCfg.total || 0;
+        document.getElementById('igState').textContent = total
+            ? '当前有 ' + (igCfg.overridden || 0) + ' / ' + total
+              + ' 项由配置页覆盖，其余取 application.yml 的出厂值。'
+            : '';
+    }
+
+    /**
+     * 收集本次要写的项，两条都满足才带上：非空、且与回显值不同。
+     *
+     * 非密字段（关键词）在页面上是明文回显的，不比对就会每次保存都把它原样写一遍配置行；
+     * 留空则表示「这一项不动」—— 凭据是打码的，用户没碰就不该被当成要清空。
+     */
+    function collectIntegration() {
+        const values = {};
+        document.querySelectorAll('#igList .ig-row').forEach(row => {
+            const name = row.getAttribute('data-name');
+            const v = (row.querySelector('.ig-val').value || '').trim();
+            if (v && v !== (igBaseline[name] || '')) {
+                values[name] = v;
+            }
+        });
+        return {values: values};
+    }
+
+    async function saveIntegration() {
+        const body = collectIntegration();
+        if (!Object.keys(body.values).length) {
+            return toast('没有检测到改动（留空表示该项不动）', 'info');
+        }
+        const btn = document.getElementById('igSave');
+        btn.disabled = true;
+        let r;
+        try {
+            r = await post('/api/admin/integration', body);
+        } finally {
+            btn.disabled = false;
+        }
+        if (!r || !r.success) {
+            return;
+        }
+        igCfg = r.data;
+        renderIntegration();
+        toast(r.message || '已保存并生效', 'ok');
+    }
+
+    /** 单项清除：删掉配置页的行，回落到配置文件里的出厂值 */
+    async function clearIntegrationItem(btn) {
+        const row = btn.closest('.ig-row');
+        const name = row.getAttribute('data-name');
+        const label = row.querySelector('.ig-label').textContent;
+        if (!confirm('清除「' + label + '」？清除后这一项回落到 application.yml 的出厂值。')) {
+            return;
+        }
+        const r = await post('/api/admin/integration', {values: {}, clear: [name]});
+        if (!r || !r.success) {
+            return;
+        }
+        igCfg = r.data;
+        renderIntegration();
+        toast(r.message || '已清除', 'ok');
+    }
+
+    async function resetIntegration() {
+        if (!confirm('把所有对接配置恢复成 application.yml 里的出厂值？'
+            + '配置页填过的令牌、机器人地址与关键词都会被删掉。')) {
+            return;
+        }
+        const r = await post('/api/admin/integration/reset', {});
+        if (!r || !r.success) {
+            return;
+        }
+        igCfg = r.data;
+        renderIntegration();
+        toast(r.message || '已恢复出厂值', 'ok');
+    }
+
     (async function init() {
         await loadMode();
         if (!(await requireLogin())) {
@@ -379,6 +542,7 @@
         document.getElementById('slEnabled').addEventListener('change', paintStockLinkState);
         await reload();
         await loadStockLinkCfg();
+        await loadIntegration();
     })();
 </script>
 </body>

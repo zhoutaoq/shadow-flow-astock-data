@@ -76,13 +76,8 @@ public class FileSysConfigRepository implements SysConfigRepository {
     }
 
     @Override
-    public String waizaoToken(long ownerId) {
-        return get(ownerId, SCENE_WAIZAO, KEY_TOKEN, "");
-    }
-
-    @Override
     public String waizaoToken() {
-        return waizaoToken(SYSTEM_OWNER);
+        return get(SYSTEM_OWNER, SCENE_WAIZAO, KEY_TOKEN, "");
     }
 
     @Override

@@ -1539,3 +1539,190 @@ button:disabled { box-shadow: none; }
         transition-duration: .001ms !important;
     }
 }
+
+/* =========================================================================
+ * 第三方对接配置（「系统配置」页，v1.5.9 第 2 条）
+ *
+ * 每一项是一张「标题 + 来源标记 + 说明 + 输入框」的小卡：
+ * 来源标记（配置页 / 出厂默认 / 未配置）是这一页的关键信息 ——
+ * 同一格输入框，值可能来自配置表也可能来自 application.yml，
+ * 不标出来运维会以为改了这里就等于改了线上。
+ * ========================================================================= */
+.ig-rows { margin-top: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-3); }
+
+.ig-row {
+    padding: var(--sp-3);
+    background: var(--bg-elev);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-md);
+}
+
+.ig-hd { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.ig-label { font-size: var(--fs-13); font-weight: 600; color: var(--text-strong); }
+
+.ig-src {
+    padding: 0 6px;
+    font-size: var(--fs-11);
+    line-height: 18px;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+}
+.ig-src.is-cfg { color: var(--primary); border-color: var(--primary); }
+.ig-src.is-none { color: var(--warn); border-color: var(--warn); }
+
+.ig-hint {
+    margin-top: 3px;
+    font-size: var(--fs-12);
+    line-height: 1.55;
+    color: var(--text-dim);
+}
+
+.ig-in { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+.ig-in .ig-val { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); }
+.ig-clear { flex: 0 0 auto; white-space: nowrap; }
+
+/* 盯盘页「推送」卡：机器人改由系统配置页维护之后的只读说明 */
+.push-managed { display: flex; flex-direction: column; gap: 4px; }
+.push-managed b { font-size: var(--fs-13); font-weight: 600; color: var(--text-strong); }
+.push-managed span { font-size: var(--fs-12); line-height: 1.6; color: var(--text-dim); }
+
+/* =========================================================================
+ * 移动端适配（v1.5.9 第 1 条）
+ *
+ * 页面原本是照宽屏数据表设计的：顶栏横排一长串菜单、表单一行塞四个控件、
+ * 表格十几列。手机上这些一条都用不了 —— 而且有 8 个页面连 viewport 都没写，
+ * 浏览器直接按 980px 缩放，字小到看不清。
+ *
+ * 断点只留两档，够用又好维护：
+ *   900px —— 平板竖屏、手机横屏：并排的区块收成一列；
+ *   720px —— 手机：顶栏换行横滑、表单纵排、宽表格改成纵向卡片。
+ *
+ * 位置放在文件最末：同一优先级下后写的赢，靠层叠盖掉前面的宽屏值，
+ * 不去改动上面那些规则本身（宽屏行为保持原样，回归面小）。
+ * ========================================================================= */
+
+@media (max-width: 900px) {
+    /* 面板头（标题 + 右侧按钮组）挤不下时换行，别把按钮压出屏幕 */
+    .cfg-panel-head { flex-wrap: wrap; gap: var(--sp-2); }
+    .cfg-panel-actions { margin-left: 0; flex-wrap: wrap; }
+    /* 统计卡单列：两列时数字列会被挤成竖排 */
+    .cards .card { flex: 1 1 100%; }
+}
+
+@media (max-width: 720px) {
+    /* ---- 顶栏：菜单挪到第二行，横向滑动而不是换行堆高 ---- */
+    .topbar {
+        height: auto;
+        min-height: 52px;
+        padding: 6px 12px var(--sp-2);
+        gap: var(--sp-3);
+    }
+    .brand { font-size: var(--fs-14); }
+
+    .nav {
+        flex: 1 1 100%;
+        display: flex;
+        gap: var(--sp-1);
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .nav::-webkit-scrollbar { display: none; }
+    .nav a { white-space: nowrap; }
+
+    /* ---- 主体与卡片：边距收窄，把宽度让给内容 ---- */
+    .container { padding: var(--sp-3) 12px 40px; }
+    .panel {
+        padding: var(--sp-4) 12px;
+        margin-bottom: var(--sp-3);
+        border-radius: var(--r-lg);
+    }
+    .card { padding: var(--sp-3) var(--sp-4); }
+
+    /* ---- 表单：一行一个控件，按钮拉满 ---- */
+    .form-row { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+    .field.grow { flex: 1 1 auto; }
+    .form-row > button { width: 100%; }
+    /* 按钮组倒过来排：确认键在上，符合拇指从上往下点的习惯 */
+    .modal-actions { flex-direction: column-reverse; gap: var(--sp-2); }
+    .modal-actions > button { width: 100%; }
+
+    /* ---- 弹窗：铺满可用宽度，别在手机上留一条缝 ---- */
+    .modal, .modal-lg, .modal-auth {
+        width: auto;
+        max-width: none;
+        margin: 0 10px;
+        padding: 18px 14px;
+    }
+
+    /* ---- 分页 ---- */
+    .pager { justify-content: center; }
+    .pager .total { flex: 1 1 100%; margin-right: 0; text-align: center; }
+
+    /* ---- 键值表：标签列收窄，把宽度让给值 ---- */
+    table.kv th { width: 96px; }
+
+    /* ---- 股票选择器 ----
+       .sp 的 min-width: 280px 在 320 宽的小屏上（容器 + 面板内边距扣完只剩 ~272px）
+       会顶出横向滚动条；已选 chip 原先是 5 列网格，手机上每格太窄，降到 2 列。 */
+    .sp { min-width: 0; }
+    .sp-box.sp-box-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    /* ---- 宽表格 → 纵向卡片 ----
+       一行一张卡，每个单元格左边是列名、右边是值。
+       列名从哪来：common.js 的 labelGridTables() 把表头文字写进每个 td 的
+       data-label，下面的 ::before 才能渲染出来（纯 CSS 拿不到表头文本）。
+       标不上的表格（没有表头、或跨列的空态行）走原样，退化成普通表格，不会坏。
+       覆盖两张宽表：table.grid（各页主表）与 table.atable（账户页持仓表，
+       12 列，原来只靠 .atable-wrap 横向拖）。 */
+    table.grid.grid-tagged,
+    table.atable.grid-tagged { display: block; width: 100%; }
+
+    table.grid.grid-tagged thead,
+    table.atable.grid-tagged thead { display: none; }
+
+    table.grid.grid-tagged tbody,
+    table.atable.grid-tagged tbody { display: block; }
+
+    table.grid.grid-tagged tbody tr,
+    table.atable.grid-tagged tbody tr {
+        display: block;
+        margin-bottom: var(--sp-2);
+        padding: var(--sp-2) var(--sp-3);
+        background: var(--bg-elev);
+        border: 1px solid var(--border-soft);
+        border-radius: var(--r-md);
+    }
+    /* 卡片模式下整行已是卡片，行悬停高亮反而像「选中了」，去掉 */
+    table.grid.grid-tagged tbody tr:hover,
+    table.atable.grid-tagged tbody tr:hover { background: var(--bg-elev); }
+
+    table.grid.grid-tagged tbody td,
+    table.atable.grid-tagged tbody td {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--sp-3);
+        padding: 3px 0;
+        border: none;
+        white-space: normal;
+        text-align: right;
+    }
+    table.grid.grid-tagged tbody td::before,
+    table.atable.grid-tagged tbody td::before {
+        content: attr(data-label);
+        flex: 0 0 78px;
+        text-align: left;
+        font-size: var(--fs-12);
+        font-weight: 400;
+        color: var(--text-dim);
+    }
+
+    /* 空态行（colspan="N" 的「暂无数据」）不该被拆成卡片，保持居中的一行提示 */
+    table.grid.grid-tagged tbody td[colspan],
+    table.atable.grid-tagged tbody td[colspan] { display: block; text-align: center; }
+    table.grid.grid-tagged tbody td[colspan]::before,
+    table.atable.grid-tagged tbody td[colspan]::before { content: none; }
+}

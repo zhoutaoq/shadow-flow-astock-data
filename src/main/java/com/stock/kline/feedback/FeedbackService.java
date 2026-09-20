@@ -1,7 +1,7 @@
 package com.stock.kline.feedback;
 
+import com.stock.kline.config.IntegrationConfigService;
 import com.stock.kline.watch.DingTalkNotifier;
-import com.stock.kline.watch.WatchProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -45,15 +45,16 @@ public class FeedbackService {
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final FeedbackProperties props;
-    private final WatchProperties watchProps;
+    private final IntegrationConfigService integration;
     private final DingTalkNotifier notifier;
 
     /** IP → 最近一次提交时间戳（毫秒） */
     private final Map<String, Long> lastSubmitAt = new ConcurrentHashMap<>();
 
-    public FeedbackService(FeedbackProperties props, WatchProperties watchProps, DingTalkNotifier notifier) {
+    public FeedbackService(FeedbackProperties props, IntegrationConfigService integration,
+                           DingTalkNotifier notifier) {
         this.props = props;
-        this.watchProps = watchProps;
+        this.integration = integration;
         this.notifier = notifier;
     }
 
@@ -88,7 +89,7 @@ public class FeedbackService {
 
         String webhook = resolveWebhook();
         if (webhook == null) {
-            log.warn("[feedback] 没有可用的钉钉 webhook（feedback.webhook 与 watch.dingtalk.webhook 都为空），本条只留在日志里");
+            log.warn("[feedback] 没有可用的钉钉 webhook（反馈专用与钉钉机器人都没配），本条只留在日志里");
             throw new IllegalArgumentException("反馈暂不能送达，请稍后再试");
         }
 
@@ -113,22 +114,22 @@ public class FeedbackService {
     }
 
     /**
-     * 实际使用的 webhook：<code>feedback.webhook</code> 优先，
-     * 留空则复用盯盘的机器人（这样反馈和盯盘告警进同一个群，不用重复配置）。
+     * 实际使用的 webhook：反馈专用那只优先，没单独配就复用钉钉机器人
+     * （这样反馈和盯盘告警进同一个群，不用重复开一只机器人）。
+     *
+     * <p>两处的值都从系统配置页取、以 application.yml 兜底（v1.5.9），
+     * 这一层只负责「谁优先」，不再自己判断配置来源。
      *
      * @return 可用的 webhook，两处都没配时返回 null
      */
     private String resolveWebhook() {
-        if (props.webhookConfigured()) {
-            return props.getWebhook().trim();
-        }
-        String fromWatch = watchProps.getDingtalk().getWebhook();
-        return fromWatch == null || fromWatch.trim().isEmpty() ? null : fromWatch.trim();
+        String webhook = integration.feedbackWebhook();
+        return webhook == null || webhook.isEmpty() ? null : webhook;
     }
 
     /** 拼钉钉文本：首行带关键词前缀（机器人「自定义关键词」模式必须命中才放行） */
     private String buildText(String content, String ip, String when) {
-        String keyword = props.getKeyword() == null ? "" : props.getKeyword().trim();
+        String keyword = integration.feedbackKeyword();
         StringBuilder sb = new StringBuilder();
         sb.append(keyword.isEmpty() ? "" : "[" + keyword + "] ").append("用户反馈\n");
         sb.append("IP：").append(ip).append('\n');

@@ -2,9 +2,10 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>接口调试 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920a">
+    <link rel="stylesheet" href="/css/common.css?v=20260920b">
 </head>
 <body>
 <header class="topbar">
@@ -78,9 +79,9 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260920a"></script>
-<script src="/js/date-picker.js?v=20260920a"></script>
-<script src="/js/stock-picker.js?v=20260920a"></script>
+<script src="/js/common.js?v=20260920b"></script>
+<script src="/js/date-picker.js?v=20260920b"></script>
+<script src="/js/stock-picker.js?v=20260920b"></script>
 <script>
     document.getElementById('fStart').value = daysAgo(30);
     document.getElementById('fEnd').value = today();
@@ -147,20 +148,16 @@
         if (p.get('code')) await codePicker.pickByCode(p.get('code'));
     })();
 
-    // 令牌按用户维护在「实时通知配置」页，页面不留明文；生成 curl 时取一次自己名下的那一份
-    // 接口根地址来自配置文件，页面不回显，用默认值兜底
-    let apiToken = '';
-    (async function loadApiCfg() {
-        const r = await get('/api/sys-config/waizao/token');
-        if (r.success) apiToken = r.data || '';
-    })();
+    // 令牌是系统级凭据，v1.5.9 起统一收在「系统配置 → 第三方对接」，接口只对超管打码回显；
+    // 这里取不到明文，也不该在这里取 —— 生成的 curl 用占位符，粘贴执行前自己补一次真实令牌。
+    // 接口根地址来自配置文件，页面不回显，用默认值兜底。
 
     function curlText() {
         const p = params();
         const base = 'http://api.waizaowang.com';
         const url = `${base}/market/c/daykline?symbol=${p.market}&code=${p.code}`
             + `&period=1d&dividend=1&startDate=${p.startDate}&endDate=${p.endDate}`
-            + `&token=${apiToken || '<实时通知配置页维护的 token>'}`;
+            + `&token=<系统配置页维护的 token>`;
         const cmd = `curl --url '${url}' \\\n`
             + `  -H 'Accept: application/json, text/plain, */*' \\\n`
             + `  -H 'Origin: http://www.waizaowang.com' \\\n`
