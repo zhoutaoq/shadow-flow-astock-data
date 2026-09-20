@@ -4,11 +4,20 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.stock</groupId>
-    <artifactId>stock-kline-data-crawler</artifactId>
-    <!-- 发布版本号：会写进 jar 清单的 Implementation-Version，钉钉「生产发布」启动消息直接读它 -->
-    <version>1.5.9</version>
-    <packaging>jar</packaging>
+    <!-- ============================================================
+         影流数据 Shadow Flow Data —— 聚合工程
+         两个模块：
+           shadow-flow-notify  通用通知能力 SDK（通道 SPI + 目标解析 SPI + 开关/时段/限流策略，
+                               不含任何业务语义，可单独给别的项目用）
+           shadow-flow-biz     Web 服务（Spring Boot 应用），依赖 notify
+         只在这里收口版本与编译参数，模块各自的依赖写在各模块 pom 里。
+         ============================================================ -->
+    <groupId>io.github.zhoutaoq</groupId>
+    <artifactId>shadow-flow-parent</artifactId>
+    <version>1.6.0</version>
+    <packaging>pom</packaging>
+    <name>shadow-flow</name>
+    <description>影流数据 · Shadow Flow Data（聚合工程）</description>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -16,6 +25,11 @@
         <version>2.7.6</version>
         <relativePath/>
     </parent>
+
+    <modules>
+        <module>shadow-flow-notify</module>
+        <module>shadow-flow-biz</module>
+    </modules>
 
     <properties>
         <java.version>1.8</java.version>
@@ -26,63 +40,4 @@
              Instant.parse 可能解析失败，页脚就只能显示原始串甚至空。 -->
         <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
     </properties>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-jdbc</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
-            <version>8.0.31</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- IDE/Maven 启动 @SpringBootTest 必拉 junit-platform-launcher，本地仓库若缺，
-             显式声明成 test 依赖可走项目自带的版本，避免 surefire 2.22.2 触发「无法解析 1.8.2」 -->
-        <dependency>
-            <groupId>org.junit.platform</groupId>
-            <artifactId>junit-platform-launcher</artifactId>
-            <version>1.8.2</version>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <finalName>stock-kline-data-crawler</finalName>
-        <resources>
-            <!-- 常规资源原样拷贝 -->
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>false</filtering>
-                <excludes>
-                    <exclude>build-info.properties</exclude>
-                </excludes>
-            </resource>
-            <!-- 只有这一个文件做变量替换：版本号取 project.version，构建时间取
-                 maven.build.timestamp（UTC）。页面页脚的「版本 + 发布时间」读它。 -->
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>true</filtering>
-                <includes>
-                    <include>build-info.properties</include>
-                </includes>
-            </resource>
-        </resources>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
 </project>

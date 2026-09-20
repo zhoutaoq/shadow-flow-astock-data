@@ -1,0 +1,241 @@
+server:
+  port: 80
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+  # 压缩静态资源与接口响应：echarts.min.js 1MB gzip 后约 330KB，
+  # 低带宽服务器（~1Mbps）上首屏从 8s 降到 ~2.5s
+  compression:
+    enabled: true
+    min-response-size: 2048
+    mime-types: text/html,text/css,application/javascript,application/json
+
+spring:
+  application:
+    name: shadow-flow-biz
+  autoconfigure:
+    # 数据源改由 DataSourceConfig 按 waizao.db.enabled 条件装配。
+    # 无数据库模式下这里必须排除，否则启动阶段就会去连库并失败。
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/mydb?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+    username: root
+    # 本地开发可用默认值，正式环境用环境变量覆盖：DB_PASSWORD=xxx
+    password: ${DB_PASSWORD:root123456}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 2
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+  jackson:
+    default-property-inclusion: non_null
+  mvc:
+    static-path-pattern: /**
+  # 静态资源缓存策略：HTML 仍 no-store（改了立刻生效）；
+  # css/js/vendor 由 StaticCacheConfig 单独放行缓存 7 天（URL 带版本戳，发版即失效），
+  # 否则 1MB 的 echarts 在 ~1Mbps 带宽下每次开页都要重下 8 秒。
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          no-store: true
+
+# ============================================================
+# 账号体系（v1.3 SaaS 基础）
+# ============================================================
+app:
+  admin:
+    # 超管用户名固定 admin；初始密码只在「账号还不存在」时用于初始化，
+    # 之后一律以页面改过的为准（否则每次重启都会把密码打回初始值）。
+    # 用环境变量覆盖，别把口令写进仓库：ADMIN_PASSWORD=xxx java -jar xxx.jar
+    username: admin
+    password: ${ADMIN_PASSWORD:1}
+  auth:
+    # 登录态有效时长（小时），到期重新登录
+    session-hours: 12
+    # 是否开放注册；false 时只能由超管建账号
+    registration-enabled: true
+  # ============================================================
+  # 股票名称跳转：全站股票名称加超链接，点击开新窗口
+  #
+  # 这里只放「URL 怎么拼」——平台换域名/改路径改这段即可；
+  # 「启用哪几个、默认点名称跳到哪」由超管在「系统配置」页维护，
+  # 落在系统级配置行（waizao_sys_config 场景 stock-link），改完即生效不用重启。
+  # 占位符：{code} 6位代码 / {market} 交易所前缀 SH|SZ|BJ / {name} 名称（自带 URL 编码）
+  # ============================================================
+  stock-link:
+    enabled: true
+    default-target: chart
+    targets:
+      - key: chart
+        label: 本系统 K 线查看
+        short-label: 本系统
+        url-template: /pages/chart.html?code={code}
+        external: false
+      # 百度股市通：ab- 后跟 6 位代码，name 只用于展示（名称缺失时后端会补代码）
+      - key: baidu
+        label: 百度股市通
+        short-label: 百度
+        url-template: https://finance.baidu.com/stock/ab-{code}?name={name}
+        external: true
+      # 雪球：路径是「市场前缀 + 代码」，市场由代码前缀推导（6/9 → SH，4/8 → BJ，其余 SZ）
+      - key: xueqiu
+        label: 雪球
+        short-label: 雪球
+        url-template: https://xueqiu.com/S/{market}{code}
+        external: true
+
+waizao:
+  # 是否启用数据库（决定各仓储装配哪种持久化策略）
+  # false（默认）= 无数据库模式：不连库，数据以 JSON 文件落在 waizao.store.data-dir 下，
+  #              启动时全部载入内存；K线不落盘，每次向供应商现取现用
+  # true        = 数据库模式：数据落 MySQL
+  # 两种模式共用同一套模型与业务代码，差别只在策略实现
+  db:
+    enabled: false
+  # v1.3 持久化参数
+  store:
+    # 数据文件根目录（相对路径按进程工作目录解析）。
+    # 无数据库模式下：sys-config.json / stock-list.json / backtest/ 都落在这里
+    data-dir: ./data
+    # 单个文件表的行数上限。会无限增长的日志类数据按设计不落盘，这里只兜底防止文件膨胀
+    max-rows: 10000
+    # 历史回测最多保留多少条，超出淘汰最旧的
+    backtest-keep: 500
+  # 我的账户（v1.5.6 第 ⑥ 条）
+  account:
+    # 每天 00:00（北京时间）把所有账户里每只持仓的可用数量对齐到持仓数量：
+    # 头一天买进来的份额，到了新交易日就全部可卖。改这个表达式就能换时刻，
+    # 本地验证时设成 "0/20 * * * * ?" 不必真等到半夜。
+    available-reset-cron: "0 0 0 * * ?"
+    # 日切总开关：false 时整个任务不装配（不遍历、不落盘）
+    available-reset-enabled: true
+  # 注册埋点（v1.5.6 追加）：新用户注册成功后推一条钉钉，内容是注册时间 + 邮箱。
+  # 走的是系统级「系统通知机器人」（v1.5.9 起在「系统配置」页维护，见下面的 watch.dingtalk.webhook），
+  # 与用户反馈进同一个群，不需要另配机器人。这是平台消息，与用户自己的盯盘告警群无关。
+  # 与其它推送不同的一点：注册是全天候的人触发事件，不受 watch.dingtalk.push-only-in-trade-sessions
+  # 那道时段闸门限制（否则晚上注册一律收不到通知），但 watch.dingtalk.enabled 总开关仍然管着它。
+  auth:
+    notify:
+      # 总开关：false 时注册不再推送（注册本身完全不受影响）
+      enabled: true
+      # 机器人「自定义关键词」模式下必须命中的词（消息首行拼成 [关键词] 新用户注册）。
+      # 复用同一只机器人时保持"智能盯盘"别改；换别的机器人就改成对方后台配的那个词。
+      # v1.5.9 起可在「系统配置」页改，不用重启。
+      keyword: "智能盯盘"
+  api:
+    base-url: http://api.waizaowang.com
+    # ⚠️ token 是频繁变动的凭据。v1.5.9 起由超管在「系统配置」页维护（
+    #    http://<host>/pages/system.html → 第三方对接），存在系统级配置行
+    #    （场景 waizao / 键 token / 归属 0），全局一份、全站共用，保存即生效。
+    # 下面这个值只是出厂兜底：首次启动会把它播种进配置行，之后一律以配置行为准。
+    token: "305c8974672f4bbe953e52a94a1f070c"
+    # 总开关：false 时抓取请求在发出前就被拦住（接口按次计费，停用必须真拦住）
+    enabled: true
+    connect-timeout-ms: 10000
+    read-timeout-ms: 20000
+    # 串行抓取时每只股票之间的间隔（毫秒）
+    batch-interval-ms: 200
+    # 批处理并发度：同时向供应商发起请求的线程数
+    fetch-concurrency: 8
+    # 并发抓取时每个工作线程处理完一只股票后的间隔（毫秒），用于限制 QPS
+    fetch-interval-ms: 100
+  # 无数据库模式下单次查询/回测允许的最大自然日跨度（数据每次都要现取，跨度先卡住再发请求）
+  # v1.1：1200 → 4000，支持近十年回测
+  max-span-days: 4000
+  stock-list-file: resources/stock-list.json
+
+# 实时盯盘提醒（与上面其它功能完全独立：行情取自新浪财经，不连库、不走 waizao、不落盘）
+watch:
+  # 总开关：false 时整个盯盘模块不装配（不查行情、不推送，配置接口仍可用）
+  enabled: true
+  # 盯盘名单：每行一个股票名称（也允许直接写 6 位代码，或「代码 名称」/「代码,名称」）；# 开头为注释
+  # v1.1 起名单改由页面维护并落盘到下面的 config-file；这里只在「首次启动、还没有落盘文件」时
+  # 用来迁移老名单，之后一律以落盘配置为准。
+  watch-list-file: resources/watch-list.txt
+  # 落盘配置文件（开关 / 轮询间隔 / 阈值 / 盯盘股票集合）。
+  # 解析顺序：先工作目录下的 watch-config.json，找不到再用这里的绝对路径。
+  config-file: /home/stock-backtesting/watch-config.json
+  # v1.3：盯盘配置改为按用户隔离，落盘在 ./data/watch/watch-{userId}.json，
+  #      系统默认那份绑定 admin 账号。原来的「盯盘页面密码」已由账号登录取代，不再需要。
+  # 名称 → 代码 的索引来源（与 waizao.stock-list-file 同一份文件）
+  stock-list-file: resources/stock-list.json
+  # 轮询间隔（秒）：每次调度按这个间隔并发查一遍名单里所有标的
+  interval-seconds: 10
+  # 触发阈值（%）：与上一次成功查询的价格相比，涨/跌幅绝对值达到这个值就推钉钉
+  threshold-percent: 0.5
+  # 启动通知：系统起来后推一条钉钉（首行标明「生产发布」+ 版本号）。
+  # 默认 false —— 本地开发反复重启不该往群里刷消息；
+  # 生产发布时在启动命令上显式打开：--watch.startup-notify.enabled=true（见 sh/remote.sh 的 ARGS）
+  startup-notify:
+    enabled: false
+    # 版本号：留空 = 自动取 jar 清单里的 Implementation-Version（即 pom 的 <version>）
+    version: ""
+  # 并发查询的线程池大小
+  thread-pool-size: 8
+  # 涨停 / 跌停股票的"放量"判断（两个条件满足任一即告警；只盯当前封板中的标的）。
+  # v1.2 起这两个阈值改为页面可配并落盘，这里只是「首次启动、还没有落盘配置文件」时的默认值。
+  surge:
+    # 单个轮询间隔的成交额超过多少万元算放量
+    amount-wan: 2000
+    # 单个轮询间隔的成交额大于上一个间隔的多少倍算放量
+    times: 10
+  sina:
+    base-url: http://hq.sinajs.cn
+    connect-timeout-ms: 5000
+    read-timeout-ms: 5000
+  dingtalk:
+    # 钉钉消息推送总开关：false 时一条都不发（盯盘告警 / 启动通知 / 用户反馈全部拦下），只打日志。
+    # 默认 false —— 开发环境反复启停不该往群里刷消息；
+    # 需要推送时显式打开：--watch.dingtalk.enabled=true
+    enabled: false
+    # 机器人 Webhook（含 access_token）；留空则不推送、只打日志。
+    # ⚠️ v1.5.9 起这是<b>系统级「系统通知机器人」</b>，由超管在「系统配置」页维护
+    #    （系统级配置行 dingtalk/webhook，全局一份），平台消息走它：
+    #    发布通知 / 注册通知 / 用户反馈兜底。
+    #    它同时是盯盘的<b>默认群</b> —— 用户没在「盯盘 → 推送」页配自己的机器人时，
+    #    他的告警发到这里；配了自己的就只进他自己的群，不受这里影响。
+    # 下面这个值只是出厂兜底：配置行没填时用它。
+    # v1.4 起钉钉机器人只支持"自定义关键词"模式（消息文本必须含后台配置的关键词），
+    # 不再支持「加签」，所以也不需要 secret 字段。
+    webhook: "https://oapi.dingtalk.com/robot/send?access_token=ebcfa7713cec091fcbabaff738f68e3453365b47bf43d8e65894a9793fc33317"
+    # 只在下面的时段内推送，非交易时段一条都不发（只写日志）。默认 true。
+    # 管的是全部钉钉消息：盯盘告警、关键时点播报、启动通知、用户反馈。
+    # 收盘后行情是当日快照、价格不再变动，这时收到的「涨停」只是重启后第一轮把
+    # 「已经封板」当成「刚封上」的误报，没有信息量。
+    push-only-in-trade-sessions: true
+    # 允许推送的时段（北京时间 HH:mm-HH:mm，逗号分隔，周一至周五；法定节假日不判断）。
+    # 下界取 09:15 含集合竞价 —— 关键时点播报的第一条就排在 09:15:15。
+    # 想只保留连续竞价（会静默掉 09:15 / 09:20 / 09:25 三条）就改成
+    # "09:30-11:30,13:00-15:00"。
+    trade-sessions: "09:15-11:30,13:00-15:00"
+
+# 用户使用反馈：页面提交后推一条钉钉，消息含提交人 IP、提交时间与反馈内容。
+# 反馈不落库（无数据库模式没有表），留痕靠两处：app.log 的 [feedback] 日志 + 钉钉消息。
+feedback:
+  # 总开关：false 时接口直接拒绝，页面提交会提示"反馈入口已关闭"
+  enabled: true
+  # 钉钉机器人 Webhook；留空 = 复用系统级那只钉钉机器人（反馈与盯盘告警进同一个群，不用重复开一只）。
+  # v1.5.9 起在「系统配置」页维护，这里只是出厂兜底。
+  webhook: ""
+  # 机器人「自定义关键词」模式下必须命中的词（消息首行拼成 [关键词] 用户反馈）。
+  # 复用同一只机器人时保持"智能盯盘"别改；换别的机器人就改成对方后台配的那个词。
+  # v1.5.9 起可在「系统配置」页改，不用重启。
+  keyword: "智能盯盘"
+  # 单条反馈的内容上限（字符）
+  max-length: 500
+  # 同一 IP 两次提交的最小间隔（秒）：挡误连点与刷屏
+  cooldown-seconds: 30
+
+logging:
+  level:
+    root: INFO
+    io.github.zhoutaoq.shadowflow.biz: INFO

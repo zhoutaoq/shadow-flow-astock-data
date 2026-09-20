@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.zhoutaoq</groupId>
+        <artifactId>shadow-flow-parent</artifactId>
+        <version>1.6.0</version>
+    </parent>
+
+    <artifactId>shadow-flow-biz</artifactId>
+    <name>shadow-flow-biz</name>
+    <description>影流数据 · Web 服务（行情 / 回测 / 盯盘 / 账户 / 系统配置）</description>
+    <!-- 发布版本号：会写进 jar 清单的 Implementation-Version，钉钉「生产发布」启动消息直接读它 -->
+    <packaging>jar</packaging>
+
+    <dependencies>
+        <!-- 通知能力走 SDK：本模块只负责组装业务文案，投递细节不在这里 -->
+        <dependency>
+            <groupId>io.github.zhoutaoq</groupId>
+            <artifactId>shadow-flow-notify</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <version>8.0.31</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- IDE/Maven 启动 @SpringBootTest 必拉 junit-platform-launcher，本地仓库若缺，
+             显式声明成 test 依赖可走项目自带的版本，避免 surefire 2.22.2 触发「无法解析 1.8.2」 -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.8.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!-- 远端 server.env 的 JAR_NAME 与 sh/remote.sh 的进程匹配都看这个名字 -->
+        <finalName>shadow-flow-biz</finalName>
+        <resources>
+            <!-- 常规资源原样拷贝 -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>build-info.properties</exclude>
+                </excludes>
+            </resource>
+            <!-- 只有这一个文件做变量替换：版本号取 project.version，构建时间取
+                 maven.build.timestamp（UTC）。页面页脚的「版本 + 发布时间」读它。 -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>build-info.properties</include>
+                </includes>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
