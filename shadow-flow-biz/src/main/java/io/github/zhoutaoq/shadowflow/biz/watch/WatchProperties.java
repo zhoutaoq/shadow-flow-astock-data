@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 /**
  * 实时盯盘提醒的配置，绑定前缀 <code>watch</code>。
  *
- * <p>本模块与系统其它功能没有代码耦合：行情取自新浪财经、不连数据库、不走 waizao 供应商、
+ * <p>本模块与系统其它功能没有代码耦合：行情取自新浪财经、不连数据库、不经行情数据服务、
  * 也不落任何表，只依赖下面这一段配置。
  */
 @Component
@@ -207,54 +207,34 @@ public class WatchProperties {
         }
     }
 
-    /** 钉钉机器人 */
+    /**
+     * 群机器人的出厂兜底配置。
+     *
+     * <p><b>v1.6.0 收窄了本类</b>：原先这里还放「推送总开关 / 是否只在交易时段推送 / 时段串」，
+     * 现已全部搬到通知 SDK 的 <code>shadowflow.notify.*</code> 下统一执行 ——
+     * 那三项是「任何通知都要过的闸门」，散在业务模块里就意味着每个通知方都得自己记得判一次，
+     * 漏一处就是线上事故。这里只留<b>业务归属</b>的东西：系统通知机器人是谁。
+     */
     public static class DingTalk {
         /**
-         * <b>钉钉推送总开关</b>：false 时一条消息都发不出去（盯盘告警、启动通知、用户反馈全部拦下），
-         * 只在应用日志里留痕。
+         * 系统通知机器人的 Webhook 兜底值（含 access_token）；为空则不推送。
          *
-         * <p><b>默认 false</b> —— 本地开发反复启停，不该往群里刷消息。
-         * 需要真推送时用 yml 或启动参数显式打开：<code>--watch.dingtalk.enabled=true</code>。
+         * <p>⚠️ 真正生效的值由超管在「系统配置」页维护（系统级配置行 dingtalk/webhook），
+         * 这里只是配置行没填时的出厂值。平台消息走它：发布通知 / 注册通知 / 用户反馈兜底；
+         * 它同时是盯盘的<b>默认群</b> —— 用户没在「盯盘 → 推送」页配自己的机器人时告警发到这里。
          *
-         * <p>它和 {@code watch.startup-notify.enabled} 是两道独立的闸：
-         * 启动通知还要再过一道「只在生产发布时发」的判断。
-         */
-        private boolean enabled = false;
-
-        /**
-         * Webhook 地址（含 access_token）；为空则不推送。
-         *
-         * <p>v1.4 起钉钉机器人只用"自定义关键词"模式（消息必须含特定关键词才会被服务端放行），
-         * 不再支持「加签」，所以本类不再暴露 secret 字段。
+         * <p>机器人只用"自定义关键词"模式（消息必须含后台配置的关键词才会被放行），
+         * 不支持「加签」，所以没有 secret 字段。
          */
         private String webhook = "";
 
         /**
-         * <b>只在交易时段内推送</b>，默认 true。
+         * 盯盘消息的关键词（品牌词）。
          *
-         * <p>非交易时段一条都不发（只写日志）：休市后行情接口返回的是当日收盘快照，
-         * 价格不再变动但盯盘进程还在轮询，重启后第一轮会把「已经是涨停」的标的当成
-         * 「刚封上板」推一遍；18:00 收到涨停通知就是这么来的。
-         *
-         * <p>这道闸管的是<b>所有</b>钉钉消息：盯盘告警、关键时点播报、启动通知、用户反馈。
+         * <p>进群消息会拼成 <code>[关键词-主机] 时间 正文</code>；留空则不加标签。
+         * 换机器人时改成对方后台配的那个词。
          */
-        private boolean pushOnlyInTradeSessions = true;
-
-        /**
-         * 允许推送的时段（北京时间，{@code HH:mm-HH:mm}，逗号分隔，周一至周五）。
-         *
-         * <p>默认 {@link TradeSessions#DEFAULT_SESSIONS}，含 09:15 起的集合竞价 ——
-         * 关键时点播报的第一条就排在 09:15:15，从 09:30 起算会把它静默掉。
-         */
-        private String tradeSessions = TradeSessions.DEFAULT_SESSIONS;
-
-        public boolean isEnabled() {
-            return enabled;
-        }
-
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
+        private String keyword = "智能盯盘";
 
         public String getWebhook() {
             return webhook;
@@ -264,34 +244,16 @@ public class WatchProperties {
             this.webhook = webhook;
         }
 
-        public boolean isPushOnlyInTradeSessions() {
-            return pushOnlyInTradeSessions;
+        public String getKeyword() {
+            return keyword;
         }
 
-        public void setPushOnlyInTradeSessions(boolean pushOnlyInTradeSessions) {
-            this.pushOnlyInTradeSessions = pushOnlyInTradeSessions;
-        }
-
-        public String getTradeSessions() {
-            return tradeSessions;
-        }
-
-        public void setTradeSessions(String tradeSessions) {
-            this.tradeSessions = tradeSessions == null ? TradeSessions.DEFAULT_SESSIONS : tradeSessions;
+        public void setKeyword(String keyword) {
+            this.keyword = keyword == null ? "" : keyword;
         }
 
         public boolean configured() {
             return webhook != null && !webhook.trim().isEmpty();
-        }
-
-        /** 是否真的能发：总开关打开 + webhook 已配置 */
-        public boolean pushEnabled() {
-            return enabled && configured();
-        }
-
-        /** 此刻是否允许推送（北京时间 + 上面的两道开关） */
-        public boolean pushAllowedNow() {
-            return !pushOnlyInTradeSessions || TradeSessions.inNow(tradeSessions);
         }
     }
 }

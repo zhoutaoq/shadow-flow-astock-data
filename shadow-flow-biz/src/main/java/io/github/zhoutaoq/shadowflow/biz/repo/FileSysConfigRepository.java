@@ -1,6 +1,6 @@
 package io.github.zhoutaoq.shadowflow.biz.repo;
 
-import io.github.zhoutaoq.shadowflow.biz.config.WaizaoProperties;
+import io.github.zhoutaoq.shadowflow.biz.config.MarketDataProperties;
 import io.github.zhoutaoq.shadowflow.biz.model.SysConfig;
 import io.github.zhoutaoq.shadowflow.biz.store.DataDir;
 import io.github.zhoutaoq.shadowflow.biz.store.FileTable;
@@ -30,7 +30,7 @@ import java.util.Map;
  * <p>v1.5 起同样按用户隔离，索引键为「归属用户 + 场景 + 键」。
  */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "false", matchIfMissing = true)
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
 public class FileSysConfigRepository implements SysConfigRepository {
 
     private static final Logger log = LoggerFactory.getLogger(FileSysConfigRepository.class);
@@ -39,13 +39,13 @@ public class FileSysConfigRepository implements SysConfigRepository {
     private static final DateTimeFormatter DF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final FileTable<SysConfig> table;
-    private final WaizaoProperties defaults;
+    private final MarketDataProperties defaults;
 
     /** owner|scene|key → 配置行；volatile 整体替换，读侧无锁 */
     private volatile Map<String, SysConfig> rows = new LinkedHashMap<>();
     private volatile long maxId = 0;
 
-    public FileSysConfigRepository(DataDir dataDir, StoreProperties storeProps, WaizaoProperties defaults) {
+    public FileSysConfigRepository(DataDir dataDir, StoreProperties storeProps, MarketDataProperties defaults) {
         this.table = new FileTable<>(dataDir, FILE, SysConfig.class, storeProps.getMaxRows());
         this.defaults = defaults;
     }
@@ -53,9 +53,51 @@ public class FileSysConfigRepository implements SysConfigRepository {
     @PostConstruct
     public synchronized void init() {
         reload();
+        migrateLegacyScene();
         seedToken();
         log.info("[sys-config] 无数据库模式：{} 已载入 {} 条配置，系统级 token={}",
-                table.file(), rows.size(), DbSysConfigRepository.mask(waizaoToken()));
+                table.file(), rows.size(), DbSysConfigRepository.mask(dataApiToken()));
+    }
+
+    /**
+     * 场景值改写（v1.6.0）：文件里 {@code waizao} 场景的行改成 {@code shadowflow}。
+     *
+     * <p>数据库模式那边由 {@code ShadowFlowDbInitializer} 做同一件事；文件模式没有 SQL 可用，
+     * 只能在这里就地改。改完立刻落盘，所以只在升级后第一次启动时生效一次 —— 幂等。
+     *
+     * <p>两趟走：先把非旧场景的行原样铺好，再搬旧行。同一 owner + key 已有新场景行时
+     * 旧行直接丢弃（与读取侧「新值优先」的口径一致）；一趟走会在旧行先出现时把新行盖掉。
+     */
+    private void migrateLegacyScene() {
+        Map<String, SysConfig> fresh = new LinkedHashMap<>();
+        for (SysConfig c : rows.values()) {
+            if (SCENE_DATA_API_LEGACY.equals(c.getConfigScene())) {
+                continue;
+            }
+            fresh.put(key(c.getOwnerId(), c.getConfigScene(), c.getConfigKey()), c);
+        }
+        int moved = 0;
+        int dropped = 0;
+        for (SysConfig c : rows.values()) {
+            if (!SCENE_DATA_API_LEGACY.equals(c.getConfigScene())) {
+                continue;
+            }
+            String neoKey = key(c.getOwnerId(), SCENE_DATA_API, c.getConfigKey());
+            if (fresh.containsKey(neoKey)) {
+                dropped++;
+                continue;
+            }
+            c.setConfigScene(SCENE_DATA_API);
+            fresh.put(neoKey, c);
+            moved++;
+        }
+        if (moved == 0 && dropped == 0) {
+            return;
+        }
+        rows = fresh;
+        persist();
+        log.info("[sys-config] 场景值 {} → {}：改写 {} 行，去重删除 {} 行",
+                SCENE_DATA_API_LEGACY, SCENE_DATA_API, moved, dropped);
     }
 
     @Override
@@ -76,8 +118,10 @@ public class FileSysConfigRepository implements SysConfigRepository {
     }
 
     @Override
-    public String waizaoToken() {
-        return get(SYSTEM_OWNER, SCENE_WAIZAO, KEY_TOKEN, "");
+    public String dataApiToken() {
+        // 新场景值优先，读不到再认旧场景值 —— 升级后既有令牌不能凭空消失
+        String v = get(SYSTEM_OWNER, SCENE_DATA_API, KEY_TOKEN, "");
+        return StringUtils.hasText(v) ? v : get(SYSTEM_OWNER, SCENE_DATA_API_LEGACY, KEY_TOKEN, "");
     }
 
     @Override
@@ -160,9 +204,9 @@ public class FileSysConfigRepository implements SysConfigRepository {
         rows = fresh;
     }
 
-    /** 文件里还没有系统级 waizao/token 时，用 yml 的值播一次种，省得用户重新找令牌 */
+    /** 文件里还没有系统级行情数据服务 token 时，用 yml 的值播一次种，省得用户重新找令牌 */
     private void seedToken() {
-        if (StringUtils.hasText(waizaoToken())) {
+        if (StringUtils.hasText(dataApiToken())) {
             return;
         }
         String seed = defaults.getApi() == null ? null : defaults.getApi().getToken();
@@ -171,12 +215,12 @@ public class FileSysConfigRepository implements SysConfigRepository {
         }
         SysConfig cfg = new SysConfig();
         cfg.setOwnerId(SYSTEM_OWNER);
-        cfg.setConfigScene(SCENE_WAIZAO);
+        cfg.setConfigScene(SCENE_DATA_API);
         cfg.setConfigKey(KEY_TOKEN);
         cfg.setConfigValue(seed.trim());
         cfg.setRemark("首次启动自动初始化，请按需更新");
         save(cfg);
-        log.info("[sys-config] 已初始化系统级 {}/{}", SCENE_WAIZAO, KEY_TOKEN);
+        log.info("[sys-config] 已初始化系统级 {}/{}", SCENE_DATA_API, KEY_TOKEN);
     }
 
     private void persist() {

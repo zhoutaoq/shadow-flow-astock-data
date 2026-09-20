@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
@@ -17,14 +18,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 数据库模式：调用日志落 {@code waizao_api_call_log} */
+/** 数据库模式：调用日志落 {@code shadowflow_api_call_log} */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@DependsOn("shadowFlowDbInitializer")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 public class DbApiCallLogRepository implements ApiCallLogRepository {
 
     private static final Logger log = LoggerFactory.getLogger(DbApiCallLogRepository.class);
 
-    private static final String TABLE = "waizao_api_call_log";
+    private static final String TABLE = "shadowflow_api_call_log";
 
     private final NamedParameterJdbcTemplate named;
 

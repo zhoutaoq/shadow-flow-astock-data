@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-    <title>策略回测 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920d">
-    <link rel="stylesheet" href="/css/backtest.css?v=20260920d">
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>策略回测 - 影流数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260920e">
+    <link rel="stylesheet" href="/css/backtest.css?v=20260920e">
 </head>
 <body>
 <header class="topbar">
-    <a class="brand" href="/">金牛数据</a>
+    <a class="brand" href="/">影流数据</a>
     <nav class="nav" id="nav"></nav>
 </header>
 
@@ -233,9 +233,9 @@
 </main>
 
 <script src="/vendor/echarts.min.js"></script>
-<script src="/js/common.js?v=20260920d"></script>
-<script src="/js/date-picker.js?v=20260920d"></script>
-<script src="/js/stock-picker.js?v=20260920d"></script>
+<script src="/js/common.js?v=20260920e"></script>
+<script src="/js/date-picker.js?v=20260920e"></script>
+<script src="/js/stock-picker.js?v=20260920e"></script>
 <script>
     const UP = '#e5484d';    // 涨/买入：红
     const DOWN = '#2ea043';  // 跌/卖出：绿
@@ -1022,7 +1022,7 @@
 
     /**
      * 均价 = 成交额 / 成交量。
-     * 注意单位：供应商的 volume 是「手」、amount 是「元」，1 手 = 100 股，
+     * 注意单位：行情数据服务的 volume 是「手」、amount 是「元」，1 手 = 100 股，
      * 所以要先把手换成股再除，否则均价会放大 100 倍。
      */
     const LOT = 100;
@@ -1037,7 +1037,7 @@
      * 相对前收盘的当日涨跌幅（需求 v1.5.5 第 ② 条）。
      *
      * <p>口径与「K线分析」页完全一致：用行上的 {@code preClose} 比，红涨绿跌。
-     * 前收盘缺失（供应商没给 pc）时给 {@code -}，不拿开盘价顶替 ——
+     * 前收盘缺失（行情数据服务没给 pc）时给 {@code -}，不拿开盘价顶替 ——
      * 那会把跳空缺口算成当日涨跌，看着就是错的。
      */
     function pctHtml(k) {
@@ -1349,7 +1349,7 @@
 
     (async function init() {
         await loadMode();
-        // 回测要登录：一次回测会连打一批供应商接口（按次计费），匿名放开等于给人白刷
+        // 回测要登录：一次回测会连打一批行情数据服务接口，匿名放开等于给人白刷
         if (!(await requireLogin())) {
             return;
         }

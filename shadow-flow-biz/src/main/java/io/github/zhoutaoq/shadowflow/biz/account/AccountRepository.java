@@ -7,9 +7,9 @@ import java.util.List;
  *
  * <p>沿用项目既有的「一份模型 + 两种落点」约定：
  * <ul>
- *   <li>数据库模式（{@code waizao.db.enabled=true}）：账户落 {@code waizao_account}，
- *       持仓落 {@code waizao_position}（带 {@code account_id}），
- *       操作记录落 {@code waizao_trade_record}（v1.5.6 新增）；</li>
+ *   <li>数据库模式（{@code shadowflow.db.enabled=true}）：账户落 {@code shadowflow_account}，
+ *       持仓落 {@code shadowflow_position}（带 {@code account_id}），
+ *       操作记录落 {@code shadowflow_trade_record}（v1.5.6 新增）；</li>
  *   <li>无数据库模式：落 {@code ./data/account/account-{userId}.json}，
  *       一个用户的<b>所有账户、持仓与操作记录</b>放在同一个文件里 —— 它们天然是一棵树，
  *       拆文件反而要处理跨文件一致性。</li>

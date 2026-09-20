@@ -15,10 +15,10 @@ import java.util.Map;
 /**
  * 抓取 / 调试接口。
  *
- * <p>所有抓取入口都支持 dryRun：true 时只请求供应商并回吐结果，不落盘。
+ * <p>所有抓取入口都支持 dryRun：true 时只请求行情数据服务并回吐结果，不落盘。
  */
 @RestController
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 @RequestMapping("/api/fetch")
 public class KlineFetchController {
 
@@ -47,7 +47,7 @@ public class KlineFetchController {
     }
 
     /**
-     * 原始接口调试：回吐请求 URL + 供应商原始响应体 + 解析结果，调用日志标记为 dev。
+     * 原始接口调试：回吐请求 URL + 行情数据服务原始响应体 + 解析结果，调用日志标记为 dev。
      *
      * @param persist 是否把解析结果落盘，由调试页开关键控制；false 时只渲染不写库
      */

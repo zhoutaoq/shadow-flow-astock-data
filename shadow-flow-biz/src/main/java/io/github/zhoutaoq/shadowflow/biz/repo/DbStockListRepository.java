@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
@@ -18,12 +19,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 数据库模式：股票列表落 {@code waizao_stock_list} */
+/** 数据库模式：股票列表落 {@code shadowflow_stock_list} */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@DependsOn("shadowFlowDbInitializer")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 public class DbStockListRepository implements StockListRepository {
 
-    private static final String TABLE = "waizao_stock_list";
+    private static final String TABLE = "shadowflow_stock_list";
 
     private final JdbcTemplate jdbcTemplate;
     private final NamedParameterJdbcTemplate named;

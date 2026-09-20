@@ -14,7 +14,7 @@ import java.util.List;
  * <ul>
  *   <li><b>URL 模板</b>（本类，application.yml）—— 属于稳定的寻址规则，
  *       平台换域名、改路径只改配置，不改代码；</li>
- *   <li><b>启用哪些 + 默认跳哪个</b>（{@code waizao_sys_config} 场景 {@code stock-link} 的系统级行）——
+ *   <li><b>启用哪些 + 默认跳哪个</b>（{@code shadowflow_sys_config} 场景 {@code stock-link} 的系统级行）——
  *       属于运行期会变的开关，超管在「系统配置」页点一下就生效，不用重启。</li>
  * </ul>
  *

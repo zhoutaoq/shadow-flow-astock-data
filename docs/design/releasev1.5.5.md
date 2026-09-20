@@ -65,11 +65,11 @@ v1.5.4 及以前有两条口径叠在一起，导致当日盈亏在「当天买�
    > v1.5.4 的预填逻辑是反的（有持仓就给成本价），那正好把这次要修的问题盖回去，v1.5.5 掉了个顺序。
 2. **买入按加权平均重算成本价**：`新成本价 = (老成本市值 + 本次成交额) ÷ 新数量`，
    保证「买入那一刻账户总市值不变」，不会凭空多出一段盈亏。
-3. **当日已实现落在账户上**：`waizao_account.day_realized_date` + `day_realized_profit`。
+3. **当日已实现落在账户上**：`shadowflow_account.day_realized_date` + `day_realized_profit`。
    日期不是今天就按 0 参与计算 —— **不需要任何定时任务**，跨天自然作废；
    持仓当天被卖光后，这份已实现仍然留在账户上不会丢。
 
-配套的「当天买入池」（`waizao_position.day_buy_date / day_buy_qty / day_buy_amount`）同样按日期自动作废：
+配套的「当天买入池」（`shadowflow_position.day_buy_date / day_buy_qty / day_buy_amount`）同样按日期自动作废：
 跨天后视为隔夜持仓，基准价自动切回昨收。卖出时按勾选状态优先冲当天买入池或隔夜份额，
 池子按买入均价同比例扣减。
 

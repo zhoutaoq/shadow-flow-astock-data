@@ -45,5 +45,19 @@
             <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
         </dependency>
+
+        <!-- 自测：纯 JUnit 5，不拉 Spring 上下文（SDK 的核心能力与 Spring 无关） -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- 与 biz 同一处理：surefire 2.22.2 缺少 launcher 时会触发「无法解析 1.8.2」 -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.8.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

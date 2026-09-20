@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
@@ -22,19 +23,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 数据库模式：用户落 {@code waizao_user}。
+ * 数据库模式：用户落 {@code shadowflow_user}。
  *
  * <p>表由 schema.sql 建（启动即执行）。用户名上有唯一索引，
  * 注册时的「唯一性」最终由它兜底 —— 并发下两个请求同时查重通过，
  * 也会有一个被唯一索引挡在门外。
  */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@DependsOn("shadowFlowDbInitializer")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 public class DbUserRepository implements UserRepository {
 
     private static final Logger log = LoggerFactory.getLogger(DbUserRepository.class);
 
-    private static final String TABLE = "waizao_user";
+    private static final String TABLE = "shadowflow_user";
     private static final DateTimeFormatter DF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final JdbcTemplate jdbcTemplate;

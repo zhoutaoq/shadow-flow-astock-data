@@ -25,13 +25,13 @@ import java.util.Set;
  * 第三方对接配置的统一出口（v1.5.9）。
  *
  * <p><b>为什么要有这一个类</b>：改造前平台自己的凭据散在两处、归属还不对 ——
- * waizao 令牌挂在每个用户名下（个人一份，谁没配谁取不到数）、
+ * 行情数据服务令牌挂在每个用户名下（个人一份，谁没配谁取不到数）、
  * 反馈与注册的关键词又埋在 application.yml（换个词要登服务器改文件重启）。
  *
  * <p>现在的口径：<b>平台自己对接第三方的凭据归系统，只存一份、只改一处、全站生效</b>。
  * 全部落在系统级配置行（{@code ownerId = 0}），与具体用户无关：
  * <ul>
- *   <li>{@code waizao / token} —— 行情数据接口令牌；</li>
+ *   <li>{@code shadowflow / token} —— 行情数据接口令牌；</li>
  *   <li>{@code dingtalk / webhook} —— <b>系统通知机器人</b>：平台自己发通知的出口
  *       （发布通知 / 注册通知 / 反馈兜底），兼作盯盘的默认群；</li>
  *   <li>{@code feedback / webhook} —— 反馈专用机器人，留空即复用上面那只；</li>
@@ -46,10 +46,9 @@ import java.util.Set;
  * <p><b>取值规则</b>：配置行优先，行里没有（或为空）才回落到 application.yml 里的出厂值。
  * 这样新装环境不配也能跑（yml 里有种子值），而改配置不必再碰文件。
  *
- * <p><b>进程内的传播</b>：钉钉 webhook 真正被读取的地方是
- * {@link WatchProperties#getDingtalk()}（{@code DingTalkNotifier} 与几个通知器都从它取），
- * 所以每次读取本类都会顺手把生效值回写过去（见 {@link #refresh()}），
- * 让「保存完立刻生效」不需要各调用方都改成注入本类。
+ * <p><b>进程内的传播</b>：本类的取值是「每次调用现算」（配置行 → yml 兜底），
+ * 而通知目标由 {@link NotifyWiring} 的解析器在<b>每次发送时</b>调 {@link #dingtalkWebhook()}，
+ * 所以「保存完立刻生效」不需要任何回写或缓存失效。
  *
  * <p>本类同时充当 {@link TokenProvider}：行情客户端只要一个「当前令牌」，
  * 不必知道它存在配置表还是 yml 里。
@@ -59,8 +58,8 @@ public class IntegrationConfigService implements TokenProvider {
 
     private static final Logger log = LoggerFactory.getLogger(IntegrationConfigService.class);
 
-    /** 场景：waizao 供应商（沿用改造前的老场景名，历史数据不用迁） */
-    private static final String SCENE_WAIZAO = "waizao";
+    /** 场景：行情数据服务凭据（v1.6.0 由旧值改名，旧行仍认，见 SCENE_DATA_API_LEGACY） */
+    private static final String SCENE_DATA_API = "shadowflow";
     /** 场景：钉钉机器人 */
     private static final String SCENE_DINGTALK = "dingtalk";
     /** 场景：用户反馈 */
@@ -80,8 +79,8 @@ public class IntegrationConfigService implements TokenProvider {
      * 明文回显等于把它贴到任何一个打开配置页的人眼前。
      */
     private static final List<Field> FIELDS = Collections.unmodifiableList(Arrays.asList(
-            new Field("waizaoToken", SCENE_WAIZAO, KEY_TOKEN, "数据接口令牌", true,
-                    "抓行情用的供应商令牌。令牌按次计费，泄露等于替别人付钱，页面只回显前后各 4 位。"),
+            new Field("dataApiToken", SCENE_DATA_API, KEY_TOKEN, "数据接口令牌", true,
+                    "行情数据服务的访问凭据，页面只回显前后各 4 位。"),
             new Field("dingtalkWebhook", SCENE_DINGTALK, KEY_WEBHOOK, "系统通知机器人", true,
                     "平台自己发通知的出口：发布通知、注册通知、用户反馈兜底。"
                             + "另外也兼作盯盘的默认群 —— 用户没在盯盘页配自己的机器人时，他的告警发到这里。"
@@ -95,18 +94,18 @@ public class IntegrationConfigService implements TokenProvider {
     ));
 
     private final SysConfigRepository repo;
-    private final WaizaoProperties waizaoProps;
+    private final MarketDataProperties dataProps;
     private final WatchProperties watchProps;
     private final FeedbackProperties feedbackProps;
     private final RegistrationNotifyProperties notifyProps;
 
     public IntegrationConfigService(SysConfigRepository repo,
-                                    WaizaoProperties waizaoProps,
+                                    MarketDataProperties dataProps,
                                     WatchProperties watchProps,
                                     FeedbackProperties feedbackProps,
                                     RegistrationNotifyProperties notifyProps) {
         this.repo = repo;
-        this.waizaoProps = waizaoProps;
+        this.dataProps = dataProps;
         this.watchProps = watchProps;
         this.feedbackProps = feedbackProps;
         this.notifyProps = notifyProps;
@@ -122,10 +121,10 @@ public class IntegrationConfigService implements TokenProvider {
 
     /* ---------------- 运行期取值 ---------------- */
 
-    /** 当前生效的 waizao 令牌；未配置时回落到 yml 的种子值 */
+    /** 当前生效的 行情数据服务令牌；未配置时回落到 yml 的种子值 */
     @Override
     public String token() {
-        return effective("waizaoToken");
+        return effective("dataApiToken");
     }
 
     /** 当前生效的钉钉机器人 webhook；空串表示没配（推送只留日志） */
@@ -150,15 +149,20 @@ public class IntegrationConfigService implements TokenProvider {
     }
 
     /**
-     * 把生效值回写到运行时持有者身上。
+     * 配置变更后的即时生效钩子。
      *
-     * <p>{@code DingTalkNotifier} 与几个通知器读的是 {@code watch.dingtalk.webhook} 这个对象，
-     * 不回写的话页面上改了配置也要等重启才生效。
+     * <p><b>v1.6.0 起本方法不再回写任何 bean 字段</b>：改造前必须把生效的 webhook 回写进
+     * {@code watch.dingtalk.webhook}，因为通知器是启动时读一次、之后不再取；
+     * 现在通知目标由 {@link NotifyWiring#notifyTargetResolver} 在<b>每次发送时现取</b>，
+     * 所以「保存完立刻生效」是天然的，不需要回写这一层间接。
+     *
+     * <p>保留方法本身是为了让调用方（保存/恢复出厂）有一个统一的「变更已落库」出口，
+     * 将来若要加缓存失效，加在这里。
      */
     public void refresh() {
-        if (watchProps != null && watchProps.getDingtalk() != null) {
-            watchProps.getDingtalk().setWebhook(dingtalkWebhook());
-        }
+        log.info("[integration] 对接配置变更已生效：钉钉机器人={}，反馈机器人={}",
+                mask(dingtalkWebhook()),
+                mask(feedbackWebhook().isEmpty() ? dingtalkWebhook() : feedbackWebhook()));
     }
 
     /* ---------------- 页面读写 ---------------- */
@@ -265,9 +269,9 @@ public class IntegrationConfigService implements TokenProvider {
 
     private String ymlDefault(String name) {
         switch (name) {
-            case "waizaoToken":
-                return waizaoProps == null || waizaoProps.getApi() == null
-                        ? "" : nz(waizaoProps.getApi().getToken());
+            case "dataApiToken":
+                return dataProps == null || dataProps.getApi() == null
+                        ? "" : nz(dataProps.getApi().getToken());
             case "dingtalkWebhook":
                 return watchProps == null || watchProps.getDingtalk() == null
                         ? "" : nz(watchProps.getDingtalk().getWebhook());
@@ -282,17 +286,31 @@ public class IntegrationConfigService implements TokenProvider {
         }
     }
 
-    /** 该项在系统级配置里的行；没配过返回 null */
+    /**
+     * 该项在系统级配置里的行；没配过返回 null。
+     *
+     * <p>v1.6.0 的场景值由 {@code waizao} 改为 {@code shadowflow}，这里对新旧两个场景值都认：
+     * 新值优先，找不到再回退到 {@link SysConfigRepository#SCENE_DATA_API_LEGACY}。
+     * 少了这一步，升级后既有的令牌行会被判成「没配过」，
+     * 系统悄悄换用 yml 里的出厂值 —— 表现为行情突然取不到数，且日志上看不出原因。
+     */
     private SysConfig stored(Field f) {
         if (repo == null) {
             return null;
         }
+        SysConfig legacy = null;
         for (SysConfig c : repo.list(SysConfigRepository.SYSTEM_OWNER)) {
-            if (f.scene.equals(c.getConfigScene()) && f.key.equals(c.getConfigKey())) {
+            if (!f.key.equals(c.getConfigKey())) {
+                continue;
+            }
+            if (f.scene.equals(c.getConfigScene())) {
                 return c;
             }
+            if (SysConfigRepository.SCENE_DATA_API_LEGACY.equals(c.getConfigScene())) {
+                legacy = c;
+            }
         }
-        return null;
+        return legacy;
     }
 
     private void put(Field f, String value) {

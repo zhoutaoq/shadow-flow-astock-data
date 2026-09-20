@@ -14,7 +14,7 @@ import java.util.List;
  * 股票名录查询：给页面的股票选择器提供候选。
  *
  * <p>与 /api/stocks 的区别：这个接口两种运行模式下都在 ——
- * 数据库模式查 waizao_stock_list，无数据库模式读本地 stock-list.json。
+ * 数据库模式查 shadowflow_stock_list，无数据库模式读本地 stock-list.json。
  */
 @RestController
 @RequestMapping("/api/dir")

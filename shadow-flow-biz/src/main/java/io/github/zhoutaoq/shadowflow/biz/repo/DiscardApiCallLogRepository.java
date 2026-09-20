@@ -20,7 +20,7 @@ import java.util.Map;
  * 为它维护一份越来越大的文件表不划算 —— 真要统计请求次数，{@code app.log} 里都有。
  */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "false", matchIfMissing = true)
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
 public class DiscardApiCallLogRepository implements ApiCallLogRepository {
 
     private static final Logger log = LoggerFactory.getLogger(DiscardApiCallLogRepository.class);
@@ -36,7 +36,7 @@ public class DiscardApiCallLogRepository implements ApiCallLogRepository {
             return;
         }
         if (log.isInfoEnabled()) {
-            log.info("[waizao] call scene={} code={} market={} range=[{}~{}] status={} rows={} cost={}ms err={}",
+            log.info("[market-data] call scene={} code={} market={} range=[{}~{}] status={} rows={} cost={}ms err={}",
                     item.getScene(), item.getStockCode(), item.getMarket(), item.getReqStartDate(),
                     item.getReqEndDate(), item.getHttpStatus(), item.getRowCount(), item.getCostMs(),
                     item.getErrorMsg());

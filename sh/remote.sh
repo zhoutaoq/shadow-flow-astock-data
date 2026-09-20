@@ -52,7 +52,7 @@ OPTS="${OPTS:-}"
 LOG="${LOG:-app.log}"
 
 # 进程匹配: 直接按 jar 名匹配, 兼容命令行中带 JVM 参数的情况
-# (如 ".../java -Xms.. -Xmx.. -jar stock-kline-data-crawler.jar")。
+# (如 ".../java -Xms.. -Xmx.. -jar shadow-flow-biz.jar")。
 # 本脚本(bash remote.sh)自身命令行不含 jar 名, 故 pkill/pgrep 不会误伤自己。
 P="${JAR_NAME}.jar"
 

@@ -4,12 +4,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * 持久化相关的运行参数（{@code waizao.store.*}）。
+ * 持久化相关的运行参数（{@code shadowflow.store.*}）。
  *
  * <p>与模式无关：数据库模式下这些参数只是不生效，无数据库模式下才真正用到。
  */
 @Component
-@ConfigurationProperties(prefix = "waizao.store")
+@ConfigurationProperties(prefix = "shadowflow.store")
 public class StoreProperties {
 
     /**

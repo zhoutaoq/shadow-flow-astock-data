@@ -11,7 +11,7 @@ import java.util.List;
 /**
  * 股票名录：两种模式下都从 {@link StockListRepository} 取候选。
  *
- * <p>v1.3 之前这里有两套实现（数据库查 waizao_stock_list、无数据库读本地 json），
+ * <p>v1.3 之前这里有两套实现（数据库查 shadowflow_stock_list、无数据库读本地 json），
  * 现在仓储层已经把两种落点统一了，名录只剩这一份代码：
  * 数据库模式查库，无数据库模式查 {@code ./data/stock-list.json}。
  *

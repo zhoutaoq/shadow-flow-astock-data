@@ -11,7 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 极简 GET 取文本：给「免费公开行情接口」这类既不带认证、又各家编码不一的场景用。
+ * 极简 GET 取文本：给「公开行情接口」这类既不带认证、又各家编码不一的场景用。
  *
  * <p>存在的意义只有一条：<b>把字符集猜对</b>。几家的编码实测是乱的 ——
  * 新浪 <code>hq.sinajs.cn</code> 是 GBK，新浪 <code>vip.stock…</code> 那几个 json 接口是 UTF-8，

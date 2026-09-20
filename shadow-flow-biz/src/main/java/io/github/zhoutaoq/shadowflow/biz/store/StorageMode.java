@@ -5,7 +5,7 @@ package io.github.zhoutaoq.shadowflow.biz.store;
  *
  * <p>v1.3 重构后，每个业务实体只有一个 Repository 接口，按运行模式装配不同策略：
  * <ul>
- *   <li>{@link #DB} —— 数据库模式（{@code waizao.db.enabled=true}）：落 MySQL；</li>
+ *   <li>{@link #DB} —— 数据库模式（{@code shadowflow.db.enabled=true}）：落 MySQL；</li>
  *   <li>{@link #FILE} —— 无数据库模式：以 {@code ./data} 为根目录落 JSON 文件，
  *       启动时全量载入内存，运行期读写内存 + 写穿到文件。</li>
  * </ul>

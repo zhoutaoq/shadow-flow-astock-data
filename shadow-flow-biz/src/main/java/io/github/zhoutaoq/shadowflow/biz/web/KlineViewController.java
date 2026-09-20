@@ -1,6 +1,6 @@
 package io.github.zhoutaoq.shadowflow.biz.web;
 
-import io.github.zhoutaoq.shadowflow.biz.config.WaizaoProperties;
+import io.github.zhoutaoq.shadowflow.biz.config.MarketDataProperties;
 import io.github.zhoutaoq.shadowflow.biz.model.ApiResponse;
 import io.github.zhoutaoq.shadowflow.biz.model.StockKlineDaily;
 import io.github.zhoutaoq.shadowflow.biz.repo.KlineRepository;
@@ -22,7 +22,7 @@ import java.util.Map;
  * K线查看：两种运行模式下都能用。
  *
  * <p>与 /api/klines 的区别：后者是日K表的增删改查，只在数据库模式下注册；
- * 这里只做只读的看图取数，数据库模式读表，无数据库模式向供应商现取。
+ * 这里只做只读的看图取数，数据库模式读表，无数据库模式向行情数据服务现取。
  */
 @RestController
 @RequestMapping("/api/kline")
@@ -30,13 +30,13 @@ public class KlineViewController {
 
     private static final DateTimeFormatter DF = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    /** 系统只做沪深A股，供应商的 symbol 参数恒定是这个值 */
+    /** 系统只做沪深A股，行情数据服务的 symbol 参数恒定是这个值 */
     private static final String MARKET = "stock";
 
     private final KlineRepository klineRepository;
-    private final WaizaoProperties props;
+    private final MarketDataProperties props;
 
-    public KlineViewController(KlineRepository klineRepository, WaizaoProperties props) {
+    public KlineViewController(KlineRepository klineRepository, MarketDataProperties props) {
         this.klineRepository = klineRepository;
         this.props = props;
     }

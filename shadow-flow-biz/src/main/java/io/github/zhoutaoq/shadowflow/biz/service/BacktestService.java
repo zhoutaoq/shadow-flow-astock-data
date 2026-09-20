@@ -1,7 +1,7 @@
 package io.github.zhoutaoq.shadowflow.biz.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.zhoutaoq.shadowflow.biz.config.WaizaoProperties;
+import io.github.zhoutaoq.shadowflow.biz.config.MarketDataProperties;
 import io.github.zhoutaoq.shadowflow.biz.model.Backtest;
 import io.github.zhoutaoq.shadowflow.biz.model.BacktestCondition;
 import io.github.zhoutaoq.shadowflow.biz.model.BacktestDaily;
@@ -35,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 回测引擎。
  *
  * <p>数据源由 KlineRepository 决定：数据库模式读日K表（缺的日期先同步再读），
- * 无数据库模式向供应商现取；结果落点由 BacktestRepository 决定：数据库模式落三张表，
+ * 无数据库模式向行情数据服务现取；结果落点由 BacktestRepository 决定：数据库模式落三张表，
  * 无数据库模式落 {@code ./data/backtest/}。两种模式都留存，回测是主流程。
  *
  * <p>执行约定（与需求一致）：
@@ -66,7 +66,7 @@ public class BacktestService {
 
     private final KlineRepository klineRepository;
     private final BacktestRepository backtestRepository;
-    private final WaizaoProperties props;
+    private final MarketDataProperties props;
     /** 只用来把股票代码翻译成名称：结果里的「标的」要能直接看出是哪只票 */
     private final StockDirectory directory;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -79,7 +79,7 @@ public class BacktestService {
     private final Map<String, BacktestProgress> progressMap = new ConcurrentHashMap<>();
 
     public BacktestService(KlineRepository klineRepository, BacktestRepository backtestRepository,
-                           WaizaoProperties props, StockDirectory directory) {
+                           MarketDataProperties props, StockDirectory directory) {
         this.klineRepository = klineRepository;
         this.backtestRepository = backtestRepository;
         this.props = props;
@@ -253,7 +253,7 @@ public class BacktestService {
     /**
      * 代码 → 名称：结果里的「标的」要能直接看出是哪只票，而不是一串代码。
      *
-     * <p>数据库模式查 waizao_stock_list，无数据库模式查内存里的 stock-list.json；
+     * <p>数据库模式查 shadowflow_stock_list，无数据库模式查内存里的 stock-list.json；
      * 查不到就返回 null，页面只显示代码。
      */
     private String resolveName(String code) {
@@ -268,7 +268,7 @@ public class BacktestService {
     /**
      * 无数据库模式下的跨度上限。
      *
-     * <p>数据每次都要向供应商现取，跨度越大一次返回越多、越慢；这里卡在发请求之前，
+     * <p>数据每次都要向行情数据服务现取，跨度越大一次返回越多、越慢；这里卡在发请求之前，
      * 免得填了个十年区间把请求发出去才发现要等半天。
      */
     private void checkSpan(String start, String end) {
@@ -571,7 +571,7 @@ public class BacktestService {
     /**
      * 起止两天的数据必须齐全：缺哪天就让数据源补哪天，补完再判一次，仍缺才报错。
      *
-     * <p>无数据库模式不走这里 —— 数据现取，取不到就是供应商没有，补也没用。
+     * <p>无数据库模式不走这里 —— 数据现取，取不到就是行情数据服务没有，补也没用。
      */
     private void ensureBoundaryData(String taskId, String code, String market, String start, String end) {
         List<String> miss = klineRepository.missing(market, code, start, end);
@@ -579,7 +579,7 @@ public class BacktestService {
             return;
         }
         updateProgress(taskId, BacktestProgress.STAGE_FETCH, 0, miss.size(),
-                "正在从供应商同步缺失的日K数据: " + String.join("、", miss));
+                "正在从行情数据服务同步缺失的日K数据: " + String.join("、", miss));
         int done = 0;
         for (String d : miss) {
             klineRepository.prepareOne(market, code, d);
@@ -587,11 +587,11 @@ public class BacktestService {
             updateProgress(taskId, BacktestProgress.STAGE_FETCH, done, miss.size(),
                     "已同步 " + d + "（" + done + "/" + miss.size() + "）");
         }
-        // 补完再判一次：仍缺说明供应商那边也没有（非交易日 / 停牌 / 超出数据范围）
+        // 补完再判一次：仍缺说明行情数据服务那边也没有（非交易日 / 停牌 / 超出数据范围）
         List<String> still = klineRepository.missing(market, code, start, end);
         if (!still.isEmpty()) {
-            throw new IllegalStateException("已从供应商同步，但仍缺少 " + String.join("、", still)
-                    + " 的日K数据（可能是非交易日或供应商无该日数据），无法回测");
+            throw new IllegalStateException("已从行情数据服务同步，但仍缺少 " + String.join("、", still)
+                    + " 的日K数据（可能是非交易日或行情数据服务无该日数据），无法回测");
         }
     }
 

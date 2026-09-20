@@ -12,9 +12,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
-/** 接口调用日志 waizao_api_call_log 查询 */
+/** 接口调用日志 shadowflow_api_call_log 查询 */
 @RestController
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 @RequestMapping("/api/call-logs")
 public class ApiCallLogController {
 

@@ -1,26 +1,30 @@
 -- ============================================================
--- 数据源：waizao（歪枣网 行情供应商）
--- 表命名规范：waizao_xxx
+-- 数据源：行情数据服务（公开行情接口）
+-- 表命名规范：shadowflow_xxx
+--
+-- v1.6.0：表前缀由 waizao_ 改为 shadowflow_。老库的旧表由启动钩子
+--         ShadowFlowDataMigration 幂等 RENAME 过来（见该类注释），
+--         本文件里的 CREATE TABLE IF NOT EXISTS 只负责新库建表。
 -- ============================================================
 
--- 通用配置表：按「归属用户 + 场景 + 键」存放运行期可变的变量（目前是 waizao 的 token）
+-- 通用配置表：按「归属用户 + 场景 + 键」存放运行期可变的变量（目前是行情数据服务凭据）
 -- 接口地址、超时、并发度、启用开关等稳定参数仍写在 application.yml，不进这张表
 -- owner_id = 0 表示系统级：未登录请求、以及该用户没单独配过时的兜底
-CREATE TABLE IF NOT EXISTS waizao_sys_config (
+CREATE TABLE IF NOT EXISTS shadowflow_sys_config (
     id           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
     owner_id     BIGINT       NOT NULL DEFAULT 0      COMMENT '归属用户 id；0 = 系统级兜底',
-    config_scene VARCHAR(64)  NOT NULL                COMMENT '场景/分组，如 waizao',
+    config_scene VARCHAR(64)  NOT NULL                COMMENT '场景/分组，如 shadowflow（行情数据服务凭据）',
     config_key   VARCHAR(64)  NOT NULL                COMMENT '配置键，如 token',
     config_value TEXT         NULL                    COMMENT '配置值（令牌类会频繁更换，页面保存后即时生效）',
     remark       VARCHAR(255) NULL                    COMMENT '备注',
     create_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
-    UNIQUE KEY uk_waizao_sys_config_owner_scene_key (owner_id, config_scene, config_key)
+    UNIQUE KEY uk_shadowflow_sys_config_owner_scene_key (owner_id, config_scene, config_key)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '通用配置表（各场景可变参数）';
 
 -- 股票列表（来源 resources/stock-list.json）
-CREATE TABLE IF NOT EXISTS waizao_stock_list (
+CREATE TABLE IF NOT EXISTS shadowflow_stock_list (
     id           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
     stock_code   VARCHAR(16)  NOT NULL                COMMENT '股票代码',
     stock_name   VARCHAR(128) NOT NULL                COMMENT '股票名称',
@@ -29,12 +33,12 @@ CREATE TABLE IF NOT EXISTS waizao_stock_list (
     create_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
-    UNIQUE KEY uk_waizao_stock_list_code_market (stock_code, market),
-    KEY idx_waizao_stock_list_name (stock_name)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-股票列表';
+    UNIQUE KEY uk_shadowflow_stock_list_code_market (stock_code, market),
+    KEY idx_shadowflow_stock_list_name (stock_name)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '股票列表';
 
 -- 接口调用日志（只记录状态码，不记录响应体）
-CREATE TABLE IF NOT EXISTS waizao_api_call_log (
+CREATE TABLE IF NOT EXISTS shadowflow_api_call_log (
     id             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
     scene          VARCHAR(16)  NOT NULL DEFAULT 'batch' COMMENT '调用场景: dev-调试页 batch-批处理抓取',
     stock_code     VARCHAR(16)  NOT NULL DEFAULT ''     COMMENT '股票代码（接口 code 参数）',
@@ -48,14 +52,14 @@ CREATE TABLE IF NOT EXISTS waizao_api_call_log (
     success        TINYINT      NOT NULL DEFAULT 0      COMMENT '是否成功: 1-成功 0-失败',
     error_msg      VARCHAR(512) NULL                    COMMENT '失败原因（响应体不入表）',
     PRIMARY KEY (id),
-    KEY idx_waizao_api_log_time (request_time),
-    KEY idx_waizao_api_log_scene_time (scene, request_time),
-    KEY idx_waizao_api_log_code_time (stock_code, request_time)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-接口调用日志';
+    KEY idx_shadowflow_api_log_time (request_time),
+    KEY idx_shadowflow_api_log_scene_time (scene, request_time),
+    KEY idx_shadowflow_api_log_code_time (stock_code, request_time)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '接口调用日志';
 
 -- 股票日K线数据
 -- 主键即业务唯一键：stock_code + trade_date（同一代码同一交易日只有一条，重复抓取覆盖更新）
-CREATE TABLE IF NOT EXISTS waizao_stock_kline_daily (
+CREATE TABLE IF NOT EXISTS shadowflow_stock_kline_daily (
     stock_code  VARCHAR(16)     NOT NULL                COMMENT '股票代码',
     market      VARCHAR(16)     NOT NULL DEFAULT 'stock' COMMENT '市场/品种（对应接口 symbol 参数）',
     trade_date  DATE            NOT NULL                COMMENT '交易日',
@@ -69,13 +73,13 @@ CREATE TABLE IF NOT EXISTS waizao_stock_kline_daily (
     create_time DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (stock_code, trade_date),
-    KEY idx_waizao_kline_trade_date (trade_date),
-    KEY idx_waizao_kline_market (market)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-股票日K线数据';
+    KEY idx_shadowflow_kline_trade_date (trade_date),
+    KEY idx_shadowflow_kline_market (market)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '股票日K线数据';
 
 -- 系统用户（v1.3 SaaS 基础）
 -- 用户名固定为邮箱；口令只存 salt + SHA-256 哈希，任何接口都不回传这两个字段
-CREATE TABLE IF NOT EXISTS waizao_user (
+CREATE TABLE IF NOT EXISTS shadowflow_user (
     id               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
     username         VARCHAR(128) NOT NULL                COMMENT '用户名（邮箱），唯一',
     password_hash    VARCHAR(128) NOT NULL                COMMENT '口令哈希 SHA-256(salt:明文) hex',
@@ -86,7 +90,7 @@ CREATE TABLE IF NOT EXISTS waizao_user (
     update_time      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     last_login_time  DATETIME     NULL                    COMMENT '最近一次登录时间',
     PRIMARY KEY (id),
-    UNIQUE KEY uk_waizao_user_username (username)
+    UNIQUE KEY uk_shadowflow_user_username (username)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '系统用户（SaaS 账号）';
 
 -- ============================================================
@@ -98,7 +102,7 @@ CREATE TABLE IF NOT EXISTS waizao_user (
 
 -- 账户：名称 + 期初市值 + 可用金额
 -- v1.5.5 补：当日已实现盈亏（当天卖出部分落袋的收益，随账户当日收益一起展示；日期不是今天就作废）
-CREATE TABLE IF NOT EXISTS waizao_account (
+CREATE TABLE IF NOT EXISTS shadowflow_account (
     id                  BIGINT         NOT NULL AUTO_INCREMENT COMMENT '账户 id（主键）',
     user_id             BIGINT         NOT NULL                COMMENT '归属用户 id',
     account_name        VARCHAR(64)    NOT NULL DEFAULT '默认账户' COMMENT '账户名称，同一用户下不重名',
@@ -110,14 +114,14 @@ CREATE TABLE IF NOT EXISTS waizao_account (
     create_time         DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time         DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
-    KEY idx_waizao_account_user (user_id)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-我的账户';
+    KEY idx_shadowflow_account_user (user_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '我的账户';
 
 -- 持仓：账户 + 标的 + 成本价 + 持仓数量 + 可用数量
 -- v1.5.5 补：建仓日（非必填）+ 当天买入池（当天买入且仍在持仓中的数量与金额，
 -- 它是「当天买入」那部分当日盈亏的比较基准，池子日期不是今天就作废）
 -- v1.5.6 补：可用数量（能卖出的部分；NULL = 没单独设过，等价于持仓数量全部可用）
-CREATE TABLE IF NOT EXISTS waizao_position (
+CREATE TABLE IF NOT EXISTS shadowflow_position (
     id             BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
     user_id        BIGINT         NOT NULL                COMMENT '归属用户 id',
     account_id     BIGINT         NOT NULL DEFAULT 0      COMMENT '归属账户 id',
@@ -133,15 +137,15 @@ CREATE TABLE IF NOT EXISTS waizao_position (
     create_time    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
-    UNIQUE KEY uk_waizao_position_account_code (account_id, stock_code),
-    KEY idx_waizao_position_user (user_id),
-    KEY idx_waizao_position_account (account_id)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-持仓配置';
+    UNIQUE KEY uk_shadowflow_position_account_code (account_id, stock_code),
+    KEY idx_shadowflow_position_user (user_id),
+    KEY idx_shadowflow_position_account (account_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '持仓配置';
 
 -- 操作记录：账户下的一次买入 / 卖出（v1.5.6 建立，从内存改为落盘）
 -- 每次「记一笔」立即作用到持仓与可用金额上，这里留一份流水用于回看与导出
 -- 只增不改：账户被删时连同记录一起删；单账户保留条数上限由 AccountService 控制
-CREATE TABLE IF NOT EXISTS waizao_trade_record (
+CREATE TABLE IF NOT EXISTS shadowflow_trade_record (
     id              BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
     user_id         BIGINT         NOT NULL                COMMENT '归属用户 id',
     account_id      BIGINT         NOT NULL DEFAULT 0      COMMENT '归属账户 id',
@@ -158,16 +162,16 @@ CREATE TABLE IF NOT EXISTS waizao_trade_record (
     record_time     DATETIME       NULL                    COMMENT '录入时刻',
     create_time     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
-    KEY idx_waizao_trade_record_account (user_id, account_id, id)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-操作记录（买卖流水）';
+    KEY idx_shadowflow_trade_record_account (user_id, account_id, id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '操作记录（买卖流水）';
 
 -- ============================================================
--- 回测（数据源固定：供应商 waizao + 日K表 waizao_stock_kline_daily）
+-- 回测（数据源固定：行情数据服务 + 日K表 shadowflow_stock_kline_daily）
 -- 费率一律以小数存储：页面按 % 录入，0.01% 存 0.0001
 -- ============================================================
 
 -- 回测主表：一次回测一条，策略以 JSON 存（策略种类扩展不动表结构）
-CREATE TABLE IF NOT EXISTS waizao_backtest (
+CREATE TABLE IF NOT EXISTS shadowflow_backtest (
     id           BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
     stock_code   VARCHAR(16)    NOT NULL                COMMENT '股票代码',
     market       VARCHAR(16)    NOT NULL DEFAULT 'stock' COMMENT '市场/品种',
@@ -184,11 +188,11 @@ CREATE TABLE IF NOT EXISTS waizao_backtest (
     trade_days   INT            NOT NULL DEFAULT 0      COMMENT '回测区间内交易日天数',
     create_time  DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
-    KEY idx_waizao_backtest_code_time (stock_code, create_time)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-回测主表';
+    KEY idx_shadowflow_backtest_code_time (stock_code, create_time)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '回测主表';
 
 -- 回测每日账户快照（回测区间内每个交易日一条）
-CREATE TABLE IF NOT EXISTS waizao_backtest_daily (
+CREATE TABLE IF NOT EXISTS shadowflow_backtest_daily (
     id              BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
     backtest_id     BIGINT         NOT NULL                COMMENT '回测 id',
     trade_date      DATE           NOT NULL                COMMENT '交易日',
@@ -200,12 +204,12 @@ CREATE TABLE IF NOT EXISTS waizao_backtest_daily (
     profit_amount   DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '盈亏金额 = 账户总额 - 起始金额',
     profit_ratio    DECIMAL(12, 8) NOT NULL DEFAULT 0      COMMENT '盈亏比例(小数)',
     PRIMARY KEY (id),
-    UNIQUE KEY uk_waizao_bt_daily (backtest_id, trade_date),
-    KEY idx_waizao_bt_daily_bt (backtest_id)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-回测每日账户快照';
+    UNIQUE KEY uk_shadowflow_bt_daily (backtest_id, trade_date),
+    KEY idx_shadowflow_bt_daily_bt (backtest_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '回测每日账户快照';
 
 -- 回测交易明细（每次成交一条）
-CREATE TABLE IF NOT EXISTS waizao_backtest_trade (
+CREATE TABLE IF NOT EXISTS shadowflow_backtest_trade (
     id          BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
     backtest_id BIGINT         NOT NULL                COMMENT '回测 id',
     trade_date  DATE           NOT NULL                COMMENT '成交日（信号确认日，按收盘价成交）',
@@ -216,5 +220,5 @@ CREATE TABLE IF NOT EXISTS waizao_backtest_trade (
     fee         DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '摩擦成本 = 成交额 × 费率',
     cash_after  DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '成交后现金余额',
     PRIMARY KEY (id),
-    KEY idx_waizao_bt_trade_bt (backtest_id, trade_date)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-回测交易明细';
+    KEY idx_shadowflow_bt_trade_bt (backtest_id, trade_date)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '回测交易明细';

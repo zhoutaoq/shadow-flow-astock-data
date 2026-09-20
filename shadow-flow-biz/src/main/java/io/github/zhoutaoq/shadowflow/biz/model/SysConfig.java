@@ -1,10 +1,10 @@
 package io.github.zhoutaoq.shadowflow.biz.model;
 
 /**
- * 通用配置项（waizao_sys_config）。
+ * 通用配置项（shadowflow_sys_config）。
  *
- * <p>这张表按「归属用户 + 场景 + 键」存运行期可变的变量，不绑定任何供应商：
- * 目前只有 waizao 的 token 会频繁更换，所以存在这里；接口地址、超时、
+ * <p>这张表按「归属用户 + 场景 + 键」存运行期可变的变量，不绑定任何行情数据服务：
+ * 目前只有行情数据服务的 token 会频繁更换，所以存在这里；接口地址、超时、
  * 并发度这些稳定的参数一律走 application.yml。
  *
  * <p>v1.5 起配置按用户隔离：{@link #ownerId} 是用户名下的行，

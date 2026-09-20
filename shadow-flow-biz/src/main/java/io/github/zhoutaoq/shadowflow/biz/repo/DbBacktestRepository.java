@@ -12,18 +12,20 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-/** 数据库模式：回测落 waizao_backtest / _daily / _trade 三张表 */
+/** 数据库模式：回测落 shadowflow_backtest / _daily / _trade 三张表 */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@DependsOn("shadowFlowDbInitializer")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 public class DbBacktestRepository implements BacktestRepository {
 
-    private static final String BT = "waizao_backtest";
-    private static final String BT_DAILY = "waizao_backtest_daily";
-    private static final String BT_TRADE = "waizao_backtest_trade";
+    private static final String BT = "shadowflow_backtest";
+    private static final String BT_DAILY = "shadowflow_backtest_daily";
+    private static final String BT_TRADE = "shadowflow_backtest_trade";
 
     private static final String BT_COLUMNS = "id, stock_code, market,"
             + " DATE_FORMAT(start_date, '%Y-%m-%d') AS start_date,"

@@ -1,6 +1,6 @@
 package io.github.zhoutaoq.shadowflow.biz.web;
 
-import io.github.zhoutaoq.shadowflow.biz.config.WaizaoProperties;
+import io.github.zhoutaoq.shadowflow.biz.config.MarketDataProperties;
 import io.github.zhoutaoq.shadowflow.biz.model.ApiResponse;
 import io.github.zhoutaoq.shadowflow.biz.repo.ApiCallLogRepository;
 import io.github.zhoutaoq.shadowflow.biz.repo.BacktestRepository;
@@ -26,12 +26,12 @@ import java.util.Map;
 @RequestMapping("/api/mode")
 public class ModeController {
 
-    private final WaizaoProperties props;
+    private final MarketDataProperties props;
     private final BacktestRepository backtestRepository;
     private final ApiCallLogRepository callLogRepository;
     private final DataDir dataDir;
 
-    public ModeController(WaizaoProperties props, BacktestRepository backtestRepository,
+    public ModeController(MarketDataProperties props, BacktestRepository backtestRepository,
                           ApiCallLogRepository callLogRepository, DataDir dataDir) {
         this.props = props;
         this.backtestRepository = backtestRepository;

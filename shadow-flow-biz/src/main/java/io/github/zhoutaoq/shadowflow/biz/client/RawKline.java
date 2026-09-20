@@ -2,7 +2,7 @@ package io.github.zhoutaoq.shadowflow.biz.client;
 
 import java.math.BigDecimal;
 
-/** 供应商日K线原始返回行（与落库前保持一致，未做任何加工） */
+/** 行情数据服务日K线原始返回行（与落库前保持一致，未做任何加工） */
 public class RawKline {
 
     private String symbol;

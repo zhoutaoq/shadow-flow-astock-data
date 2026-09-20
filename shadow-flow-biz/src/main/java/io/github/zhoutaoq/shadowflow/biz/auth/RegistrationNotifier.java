@@ -2,8 +2,8 @@ package io.github.zhoutaoq.shadowflow.biz.auth;
 
 import io.github.zhoutaoq.shadowflow.biz.auth.model.User;
 import io.github.zhoutaoq.shadowflow.biz.config.IntegrationConfigService;
-import io.github.zhoutaoq.shadowflow.biz.watch.DingTalkNotifier;
 import io.github.zhoutaoq.shadowflow.biz.watch.TradeSessions;
+import io.github.zhoutaoq.shadowflow.notify.api.NotifyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -25,8 +25,8 @@ import java.util.concurrent.Executors;
  *
  * <p>三条刻意的设计，都是踩过坑才这么定的：
  * <ol>
- *   <li><b>不看交易时段</b>（走 {@link DingTalkNotifier#postAlways}）。注册是全天候的人触发事件，
- *       而钉钉那边平时挂着「非交易时段一律静默」的闸门（治盯盘轮询误报的）。
+ *   <li><b>不看允许发送时段</b>（走 {@code NotifyService#sendUrgent}）。注册是全天候的人触发事件，
+ *       而平时挂着「非时段内一律静默」的闸门（治盯盘轮询误报的）。
  *       注册高峰常在晚上，走普通出口会被静默掉、埋点等于没做。</li>
  *   <li><b>异步发送</b>。注册必须秒回：钉钉超时上限是连接 5s + 读 10s，同步发就等于把
  *       这十几秒挂在用户的注册请求上。这里用一个单线程 daemon 池发，
@@ -51,16 +51,16 @@ public class RegistrationNotifier {
 
     private final RegistrationNotifyProperties props;
     private final IntegrationConfigService integration;
-    private final DingTalkNotifier notifier;
+    private final NotifyService notify;
 
     private final ExecutorService executor;
 
     public RegistrationNotifier(RegistrationNotifyProperties props,
                                 IntegrationConfigService integration,
-                                DingTalkNotifier notifier) {
+                                NotifyService notify) {
         this.props = props;
         this.integration = integration;
-        this.notifier = notifier;
+        this.notify = notify;
         this.executor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "register-notify");
             // daemon：不拦着 JVM 退出。注册通知没发完就停机，丢掉一条是可以接受的
@@ -79,7 +79,7 @@ public class RegistrationNotifier {
             return;
         }
         if (!props.isEnabled()) {
-            log.info("[register] 注册埋点已关闭（waizao.auth.notify.enabled=false），不推送：{}", u.getUsername());
+            log.info("[register] 注册埋点已关闭（shadowflow.auth.notify.enabled=false），不推送：{}", u.getUsername());
             return;
         }
         // 时间在「注册这一刻」取，不在后台线程里取 ——
@@ -99,10 +99,13 @@ public class RegistrationNotifier {
                 log.warn("[register] 钉钉未配置 webhook（系统配置页未填、yml 兜底也为空），注册埋点只留在日志里：{}", email);
                 return;
             }
-            if (notifier.postAlways(webhook, buildText(email, when))) {
+            // 正文自己带关键词首行，所以不再额外加前缀；
+            // 走 sendUrgent = 不受允许发送时段限制 —— 注册是全天候的人触发事件，
+            // 注册高峰常在晚上，被静默掉就等于埋点白做
+            if (notify.sendUrgent(webhook, null, buildText(email, when))) {
                 log.info("[register] 注册埋点已推送：{} {}", when, email);
             } else {
-                // postAlways 返回 false 只有两种可能：总开关关着，或 webhook 为空（上面已排除），
+                // 返回 false 只有两种可能：总开关关着，或 webhook 为空（上面已排除），
                 // 两种原因它自己都打了日志，这里只补一句「这条没送出去」
                 log.warn("[register] 注册埋点未能送出：{}", email);
             }

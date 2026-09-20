@@ -2,7 +2,7 @@ package io.github.zhoutaoq.shadowflow.biz.model;
 
 import java.math.BigDecimal;
 
-/** waizao_stock_kline_daily 股票日K线（主键 stock_code + trade_date，无自增 id） */
+/** shadowflow_stock_kline_daily 股票日K线（主键 stock_code + trade_date，无自增 id） */
 public class StockKlineDaily {
 
     private String stockCode;

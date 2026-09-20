@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * 注册埋点的配置，绑定前缀 <code>waizao.auth.notify</code>。
+ * 注册埋点的配置，绑定前缀 <code>shadowflow.auth.notify</code>。
  *
  * <p>新用户注册成功时推一条钉钉（<b>注册时间 + 邮箱</b>），用的是<b>系统钉钉配置</b>
  * （{@code watch.dingtalk.webhook}，也就是盯盘页面「实时通知配置」里那个），
@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
  * 这个只管「注册完要不要吱一声」。
  */
 @Component
-@ConfigurationProperties(prefix = "waizao.auth.notify")
+@ConfigurationProperties(prefix = "shadowflow.auth.notify")
 public class RegistrationNotifyProperties {
 
     /** 埋点总开关：false 时注册不再推送（注册本身完全不受影响，只是不通知） */

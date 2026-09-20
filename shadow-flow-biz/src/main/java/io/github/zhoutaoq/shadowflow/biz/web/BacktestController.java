@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** 回测接口（数据源固定 waizao 日K） */
+/** 回测接口（数据源固定为行情数据服务的日K） */
 @RestController
 @RequestMapping("/api/backtest")
 public class BacktestController {

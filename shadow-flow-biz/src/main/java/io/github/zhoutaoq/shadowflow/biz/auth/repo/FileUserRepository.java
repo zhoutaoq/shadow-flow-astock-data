@@ -27,7 +27,7 @@ import java.util.Map;
  * 与数据库模式一致（MySQL 默认校对规则也不区分大小写）。
  */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "false", matchIfMissing = true)
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
 public class FileUserRepository implements UserRepository {
 
     private static final Logger log = LoggerFactory.getLogger(FileUserRepository.class);

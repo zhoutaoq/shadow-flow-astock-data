@@ -1,8 +1,8 @@
 package io.github.zhoutaoq.shadowflow.biz.repo;
 
 import io.github.zhoutaoq.shadowflow.biz.client.RawKline;
-import io.github.zhoutaoq.shadowflow.biz.client.WaizaoKlineClient;
-import io.github.zhoutaoq.shadowflow.biz.config.WaizaoProperties;
+import io.github.zhoutaoq.shadowflow.biz.client.MarketDataClient;
+import io.github.zhoutaoq.shadowflow.biz.config.MarketDataProperties;
 import io.github.zhoutaoq.shadowflow.biz.model.ApiCallLog;
 import io.github.zhoutaoq.shadowflow.biz.model.StockKlineDaily;
 import io.github.zhoutaoq.shadowflow.biz.support.KlineWindow;
@@ -24,17 +24,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 无数据库模式：日K直接向供应商取，<b>现取现用、不落盘</b>。
+ * 无数据库模式：日K直接向行情数据服务取，<b>现取现用、不落盘</b>。
  *
  * <p>K线是设计里明确点名「不持久化」的数据：按设计约定，无数据库模式下它不进 {@code ./data}，
- * 而是每次需要时向供应商现取。代价是回看历史回测会再调一次接口（按次计费），
+ * 而是每次需要时向行情数据服务现取。代价是回看历史回测会再向行情数据服务取一次，
  * 换来的是不用维护一份随股票数和时间无限膨胀的本地数据。
  *
- * <p>预热段和回测区间合成一次请求 —— 供应商单次请求支持任意长日期区间，
- * 按次计费，拆成两次只会多花钱。
+ * <p>预热段和回测区间合成一次请求 —— 行情数据服务单次请求支持任意长日期区间，
+ * 拆成两次只会多一次不必要的调用。
  */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "false", matchIfMissing = true)
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
 public class LiveKlineRepository implements KlineRepository {
 
     private static final Logger log = LoggerFactory.getLogger(LiveKlineRepository.class);
@@ -45,10 +45,10 @@ public class LiveKlineRepository implements KlineRepository {
     private static final int WARMUP_CALENDAR_FACTOR = 2;
     private static final int WARMUP_CALENDAR_BUFFER = 40;
 
-    private final WaizaoKlineClient client;
-    private final WaizaoProperties props;
+    private final MarketDataClient client;
+    private final MarketDataProperties props;
 
-    public LiveKlineRepository(WaizaoKlineClient client, WaizaoProperties props) {
+    public LiveKlineRepository(MarketDataClient client, MarketDataProperties props) {
         this.client = client;
         this.props = props;
     }
@@ -82,7 +82,7 @@ public class LiveKlineRepository implements KlineRepository {
 
     @Override
     public List<String> missing(String market, String code, String start, String end) {
-        // 数据现取，取不到就是供应商没有，补也没用
+        // 数据现取，取不到就是行情数据服务没有，补也没用
         return Collections.emptyList();
     }
 
@@ -120,7 +120,7 @@ public class LiveKlineRepository implements KlineRepository {
         try {
             raw = client.fetch(market, code, start, end, ApiCallLog.SCENE_BATCH);
         } catch (IOException ex) {
-            throw new IllegalStateException("从供应商取日K失败: " + ex.getMessage());
+            throw new IllegalStateException("从行情数据服务取日K失败: " + ex.getMessage());
         }
         List<StockKlineDaily> rows = new ArrayList<>(raw.size());
         for (RawKline r : raw) {

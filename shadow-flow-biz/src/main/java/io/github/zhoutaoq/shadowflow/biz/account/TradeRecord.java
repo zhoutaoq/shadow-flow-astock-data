@@ -6,7 +6,7 @@ import java.math.BigDecimal;
  * 操作记录：一次买入 / 卖出，记在<b>某个账户</b>下（需求 v1.5.2 第 ④ 条）。
  *
  * <p><b>v1.5.6 起落盘</b>：与账户、持仓一起持久化（无数据库模式落同一个
- * {@code account-{userId}.json}，数据库模式落 {@code waizao_trade_record}），
+ * {@code account-{userId}.json}，数据库模式落 {@code shadowflow_trade_record}），
  * 进程重启不再清空；每次操作仍然<b>立即</b>作用到该账户的持仓与可用金额上，页面马上能看到结果。
  *
  * <p>作用规则（价格取<b>实际成交价</b>，v1.5.5 起）：

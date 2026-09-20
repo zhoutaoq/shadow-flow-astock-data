@@ -18,9 +18,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 日K线 waizao_stock_kline_daily 管理接口 */
+/** 日K线 shadowflow_stock_kline_daily 管理接口 */
 @RestController
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 @RequestMapping("/api/klines")
 public class StockKlineController {
 

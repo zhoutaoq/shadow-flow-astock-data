@@ -13,7 +13,7 @@ import java.util.Map;
  * <p>v1.3 后两种模式共用这一个接口，差别只在策略：
  * <ul>
  *   <li><b>数据库模式</b>（{@link DbKlineRepository}）：读日K表，缺的日期先同步补上再读，抓到的行落库；</li>
- *   <li><b>无数据库模式</b>（{@link LiveKlineRepository}）：直接向供应商取，现取现用，
+ *   <li><b>无数据库模式</b>（{@link LiveKlineRepository}）：直接向行情数据服务取，现取现用，
  *       <b>不落盘</b> —— K线是设计里点名「不持久化」的数据。</li>
  * </ul>
  *
@@ -31,7 +31,7 @@ public interface KlineRepository {
     /**
      * 起止两天里拿不到数据的日期。
      *
-     * <p>无数据库模式永远是空 —— 数据现取，取不到就是供应商没有，补也没用。
+     * <p>无数据库模式永远是空 —— 数据现取，取不到就是行情数据服务没有，补也没用。
      */
     List<String> missing(String market, String code, String start, String end);
 

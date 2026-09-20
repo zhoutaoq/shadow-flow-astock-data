@@ -1,5 +1,5 @@
 /* =========================================================================
- * 金牛数据 · 设计令牌与基础组件
+ * 影流数据 · 设计令牌与基础组件
  *
  * 面向 A 股日K / 回测 / 盯盘的内部数据工具：信息密度优先，排版为数字服务。
  * 层次靠字号与间距建立，不靠边框和阴影；红绿只表达涨跌，不做装饰。
@@ -1586,20 +1586,99 @@ button:disabled { box-shadow: none; }
 .ig-src.is-cfg { color: var(--primary); border-color: var(--primary); }
 .ig-src.is-none { color: var(--warn); border-color: var(--warn); }
 
-.ig-hint {
-    margin-top: 3px;
-    font-size: var(--fs-12);
-    line-height: 1.55;
-    color: var(--text-dim);
-}
+/* v1.6.0：原来这里是一条常驻的 .ig-hint 说明行（每项一两句），
+   已按提示文案规范收进 .hint-box 气泡 —— 默认不展开，`?` 悬浮/聚焦/点按才看。 */
 
 .ig-in { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
 .ig-in .ig-val { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); }
 .ig-clear { flex: 0 0 auto; white-space: nowrap; }
 
-/* 盯盘页「推送」卡：机器人是用户级的，输入框下面附一句「留空 = 用平台默认群」的说明 */
-.push-hint { margin-top: var(--sp-2); font-size: var(--fs-12); line-height: 1.6; color: var(--text-dim); }
-.push-hint b { color: var(--text-strong); font-weight: 600; }
+/* v1.6.0：原来这里有一条常驻的 .push-hint 说明（盯盘页「推送」卡输入框下方两三行），
+   已收进 <label> 里的 .hint-box 气泡；关键限制「留空 = 平台默认群」仍在 placeholder 上。 */
+
+/* =========================================================================
+ * 说明气泡（v1.6.0）
+ *
+ * 规范：界面上不铺成段的说明文字 —— 需要解释的地方只放一个 `?`，
+ * 默认收起，鼠标悬浮 / 键盘 Tab 聚焦 / 移动端点按才展开。
+ *
+ * 纯 CSS，不依赖 JS：靠 :hover + :focus + :focus-within 三态。
+ * 移动端没有 hover，让 span 带 tabindex="0" 就能被点按聚焦 —— 点一下展开，
+ * 点别处失焦收起；再点自己一次会先失焦（收起）再重新聚焦，视觉上就是开关。
+ *
+ * 用法：
+ *   <span class="hint-q" tabindex="0" role="button" aria-label="说明">?
+ *     <span class="hint-box">说明正文，可写 <b>加粗</b></span>
+ *   </span>
+ * 贴右边缘的元素加 .hint-right，气泡改成右对齐，免得被视口切掉。
+ *
+ * .hint-box 用 absolute 定位，父链上不能有 overflow:hidden
+ * （.panel / .card / .container 都没有，安全）。
+ * ========================================================================= */
+.hint-q {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    margin-left: var(--sp-1);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    font-size: var(--fs-11);
+    font-weight: 400;
+    line-height: 1;
+    color: var(--text-dim);
+    cursor: help;
+    vertical-align: 1px;
+    -webkit-tap-highlight-color: transparent;
+}
+.hint-q:hover,
+.hint-q:focus {
+    outline: none;
+    color: var(--primary);
+    border-color: var(--primary);
+}
+.hint-box {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%) translateY(-2px);
+    z-index: 40;
+    width: max-content;
+    max-width: min(360px, 76vw);
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--bg-elev);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .28);
+    font-size: var(--fs-12);
+    font-weight: 400;
+    line-height: 1.6;
+    color: var(--text);
+    text-align: left;
+    white-space: normal;
+    letter-spacing: 0;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .12s ease, transform .12s ease;
+}
+.hint-q:hover .hint-box,
+.hint-q:focus .hint-box,
+.hint-q:focus-within .hint-box {
+    visibility: visible;
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+/* 右对齐变体：靠页面右边缘时不至于被切掉半截 */
+.hint-q.hint-right .hint-box { left: auto; right: -4px; transform: translateX(0) translateY(-2px); }
+.hint-q.hint-right:hover .hint-box,
+.hint-q.hint-right:focus .hint-box,
+.hint-q.hint-right:focus-within .hint-box { transform: translateX(0) translateY(0); }
+.hint-box b { color: var(--text-strong); font-weight: 600; }
+.hint-box .hint-li { display: block; margin-top: 3px; }
+.hint-box .hint-li:first-child { margin-top: 0; }
 
 /* =========================================================================
  * 移动端适配（v1.5.9 第 1 条）

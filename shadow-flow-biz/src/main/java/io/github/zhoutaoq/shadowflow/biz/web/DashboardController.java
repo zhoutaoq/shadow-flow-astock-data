@@ -13,7 +13,7 @@ import java.util.Map;
 
 /** 首页概览统计 */
 @RestController
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 @RequestMapping("/api/dashboard")
 public class DashboardController {
 

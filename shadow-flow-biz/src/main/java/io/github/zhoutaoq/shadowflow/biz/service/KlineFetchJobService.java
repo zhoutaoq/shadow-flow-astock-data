@@ -1,6 +1,6 @@
 package io.github.zhoutaoq.shadowflow.biz.service;
 
-import io.github.zhoutaoq.shadowflow.biz.config.WaizaoProperties;
+import io.github.zhoutaoq.shadowflow.biz.config.MarketDataProperties;
 import io.github.zhoutaoq.shadowflow.biz.model.ApiCallLog;
 import io.github.zhoutaoq.shadowflow.biz.model.FetchJob;
 import io.github.zhoutaoq.shadowflow.biz.repo.StockListRepository;
@@ -25,14 +25,14 @@ import java.util.stream.Collectors;
  * 每只股票在整个日期区间内只发一次请求。
  */
 @Service
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 public class KlineFetchJobService {
 
     private static final Logger log = LoggerFactory.getLogger(KlineFetchJobService.class);
 
     private final KlineFetchService fetchService;
     private final StockListRepository stockListRepository;
-    private final WaizaoProperties props;
+    private final MarketDataProperties props;
     private final ThreadPoolTaskExecutor executor;
     private final Map<String, FetchJob> jobs = new ConcurrentHashMap<>();
     /** 内存中最多保留的作业数，超出后淘汰最早的，避免长时间运行导致内存无限增长 */
@@ -40,7 +40,7 @@ public class KlineFetchJobService {
 
     public KlineFetchJobService(KlineFetchService fetchService,
                                 StockListRepository stockListRepository,
-                                WaizaoProperties props) {
+                                MarketDataProperties props) {
         this.fetchService = fetchService;
         this.stockListRepository = stockListRepository;
         this.props = props;

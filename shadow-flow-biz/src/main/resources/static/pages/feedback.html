@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>用户反馈</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920d">
+    <link rel="stylesheet" href="/css/common.css?v=20260920e">
 </head>
 <body>
 <header class="topbar">
-    <a class="brand" href="/">金牛数据</a>
+    <a class="brand" href="/">影流数据</a>
     <nav class="nav" id="nav"></nav>
 </header>
 
@@ -41,7 +41,7 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260920d"></script>
+<script src="/js/common.js?v=20260920e"></script>
 <script>
     /* 服务端没取到限制参数时的兜底值，与 application.yml 的默认值一致 */
     var FB = {enabled: true, maxLength: 500, cooldownSeconds: 30};

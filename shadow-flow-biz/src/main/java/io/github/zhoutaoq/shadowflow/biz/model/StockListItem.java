@@ -2,7 +2,7 @@ package io.github.zhoutaoq.shadowflow.biz.model;
 
 import java.math.BigDecimal;
 
-/** waizao_stock_list 股票列表 */
+/** shadowflow_stock_list 股票列表 */
 public class StockListItem {
 
     private Long id;

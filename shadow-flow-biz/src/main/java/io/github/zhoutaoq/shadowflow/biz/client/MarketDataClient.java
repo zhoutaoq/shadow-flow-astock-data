@@ -2,7 +2,7 @@ package io.github.zhoutaoq.shadowflow.biz.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.zhoutaoq.shadowflow.biz.config.WaizaoProperties;
+import io.github.zhoutaoq.shadowflow.biz.config.MarketDataProperties;
 import io.github.zhoutaoq.shadowflow.biz.model.ApiCallLog;
 import io.github.zhoutaoq.shadowflow.biz.repo.ApiCallLogRepository;
 import io.github.zhoutaoq.shadowflow.biz.support.TokenProvider;
@@ -25,23 +25,23 @@ import java.util.List;
 import java.util.zip.GZIPInputStream;
 
 /**
- * waizao 行情接口客户端（日K线）。
+ * 行情数据服务接口客户端（日K线）。
  *
  * <p>接口：GET {baseUrl}/market/c/daykline
  * 参数：symbol / code / period / dividend / startDate / endDate / token
  * 说明：响应体为 gzip 压缩的 JSON 数组，需要按 Content-Encoding 解压后解析。
  */
 @Component
-public class WaizaoKlineClient {
+public class MarketDataClient {
 
-    private static final Logger log = LoggerFactory.getLogger(WaizaoKlineClient.class);
+    private static final Logger log = LoggerFactory.getLogger(MarketDataClient.class);
 
-    private final WaizaoProperties props;
+    private final MarketDataProperties props;
     private final TokenProvider tokenProvider;
     private final ApiCallLogRepository callLogRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public WaizaoKlineClient(WaizaoProperties props, TokenProvider tokenProvider,
+    public MarketDataClient(MarketDataProperties props, TokenProvider tokenProvider,
                              ApiCallLogRepository callLogRepository) {
         this.props = props;
         this.tokenProvider = tokenProvider;
@@ -49,7 +49,7 @@ public class WaizaoKlineClient {
     }
 
     /**
-     * 单只股票、单段日期区间的日K线查询，返回供应商原始行（未落盘）
+     * 单只股票、单段日期区间的日K线查询，返回行情数据服务原始行（未落盘）
      *
      * @param scene 调用场景，见 ApiCallLog.SCENE_DEV / SCENE_BATCH
      */
@@ -69,7 +69,7 @@ public class WaizaoKlineClient {
             }
             List<RawKline> list = parse(r.getBody(), symbol, code);
             rows = list.size();
-            log.info("[waizao] fetch scene={} symbol={} code={} range=[{} ~ {}] status={} rows={} cost={}ms",
+            log.info("[market-data] fetch scene={} symbol={} code={} range=[{} ~ {}] status={} rows={} cost={}ms",
                     scene, symbol, code, startDate, endDate, status, rows, System.currentTimeMillis() - begin);
             return list;
         } catch (IOException | RuntimeException e) {
@@ -82,7 +82,7 @@ public class WaizaoKlineClient {
 
     /**
      * 原始请求：一次HTTP调用同时拿到 URL、状态码、响应原文与解析结果，并记录调用日志。
-     * 调试页用它，避免为同一份数据发两次请求（接口按次计费）。
+     * 调试页用它，避免为同一份数据发两次请求。
      *
      * @param scene 调用场景，调试页传 ApiCallLog.SCENE_DEV
      */
@@ -112,13 +112,13 @@ public class WaizaoKlineClient {
     }
 
     /**
-     * 供应商接口被停用（application.yml 的 waizao.api.enabled=false）时拒绝发请求。
+     * 行情数据服务接口被停用（application.yml 的 shadowflow.api.enabled=false）时拒绝发请求。
      *
-     * <p>接口按次计费，这一步必须在发出 HTTP 之前拦住，否则"停用"只是摆设。
+     * <p>这一步必须在发出 HTTP 之前拦住，否则"停用"只是摆设。
      */
     private void checkEnabled() throws IOException {
         if (!props.getApi().isEnabled()) {
-            throw new IOException("供应商接口已停用（waizao.api.enabled=false），未发起请求；"
+            throw new IOException("行情数据服务接口已停用（shadowflow.api.enabled=false），未发起请求；"
                     + "如需恢复请改配置文件后重启");
         }
     }
@@ -171,7 +171,7 @@ public class WaizaoKlineClient {
      * 注意：4xx/5xx 不抛异常，由调用方根据 status 决定（响应体需要回吐给调试页）。
      */
     public HttpResult doGet(String urlStr) throws IOException {
-        WaizaoProperties.Api api = props.getApi();
+        MarketDataProperties.Api api = props.getApi();
         HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(api.getConnectTimeoutMs());
@@ -253,7 +253,7 @@ public class WaizaoKlineClient {
         }
         String trimmed = body.trim();
         JsonNode root = objectMapper.readTree(trimmed);
-        // 供应商异常时可能返回对象而非数组
+        // 行情数据服务异常时可能返回对象而非数组
         if (root != null && root.isObject()) {
             if (root.has("data") && root.get("data").isArray()) {
                 root = root.get("data");

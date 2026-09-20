@@ -18,7 +18,7 @@ import java.util.Map;
  * 批处理抓取作业：对股票列表筛选后的结果，按指定日期范围多线程抓取落库。
  */
 @RestController
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 @RequestMapping("/api/fetch/jobs")
 public class KlineFetchJobController {
 

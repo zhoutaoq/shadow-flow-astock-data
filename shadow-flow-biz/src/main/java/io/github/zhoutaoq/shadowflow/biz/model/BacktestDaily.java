@@ -2,7 +2,7 @@ package io.github.zhoutaoq.shadowflow.biz.model;
 
 import java.math.BigDecimal;
 
-/** waizao_backtest_daily 回测每日账户快照（区间内每个交易日一条） */
+/** shadowflow_backtest_daily 回测每日账户快照（区间内每个交易日一条） */
 public class BacktestDaily {
 
     private Long id;

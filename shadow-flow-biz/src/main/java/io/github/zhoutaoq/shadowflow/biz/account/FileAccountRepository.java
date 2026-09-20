@@ -58,7 +58,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 用户升级后看到的就是原来的那份数据，只是多了一层账户外壳。
  */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "false", matchIfMissing = true)
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
 public class FileAccountRepository implements AccountRepository {
 
     private static final Logger log = LoggerFactory.getLogger(FileAccountRepository.class);

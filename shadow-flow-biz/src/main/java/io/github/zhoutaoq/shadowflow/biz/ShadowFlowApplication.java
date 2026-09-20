@@ -6,9 +6,9 @@ import org.springframework.scheduling.annotation.EnableAsync;
 
 @EnableAsync
 @SpringBootApplication
-public class StockKlineApplication {
+public class ShadowFlowApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(StockKlineApplication.class, args);
+        SpringApplication.run(ShadowFlowApplication.class, args);
     }
 }

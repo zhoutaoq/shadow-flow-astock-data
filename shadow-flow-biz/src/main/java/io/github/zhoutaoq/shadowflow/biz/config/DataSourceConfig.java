@@ -12,7 +12,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import javax.sql.DataSource;
 
 /**
- * 数据源按 waizao.db.enabled 条件装配。
+ * 数据源按 shadowflow.db.enabled 条件装配。
  *
  * <p>无数据库模式（默认）下这里不创建任何数据源，应用就是一个不依赖外部存储的单机服务；
  * 只有显式开启数据库时，才按 spring.datasource.* 建 HikariDataSource。
@@ -25,7 +25,7 @@ public class DataSourceConfig {
 
     /** spring.datasource 下的 url / username / password / driver-class-name */
     @Bean
-    @ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+    @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
     @ConfigurationProperties("spring.datasource")
     public DataSourceProperties dataSourceProperties() {
         return new DataSourceProperties();
@@ -39,7 +39,7 @@ public class DataSourceConfig {
      * 池参数（maximum-pool-size 等）会静默丢失。
      */
     @Bean
-    @ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+    @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
     @ConfigurationProperties("spring.datasource.hikari")
     public DataSource dataSource(DataSourceProperties properties) {
         HikariDataSource ds = properties.initializeDataSourceBuilder()
@@ -50,13 +50,13 @@ public class DataSourceConfig {
 
     /** JdbcTemplateAutoConfiguration 也在排除列表里，JdbcTemplate 得自己建 */
     @Bean
-    @ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+    @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
     public JdbcTemplate jdbcTemplate(DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }
 
     @Bean
-    @ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+    @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
     public NamedParameterJdbcTemplate namedParameterJdbcTemplate(DataSource dataSource) {
         return new NamedParameterJdbcTemplate(dataSource);
     }

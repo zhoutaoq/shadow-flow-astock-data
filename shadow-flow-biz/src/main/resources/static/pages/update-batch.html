@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-    <title>批量更新 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920d">
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>批量更新 - 影流数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260920e">
 </head>
 <body>
 <header class="topbar">
-    <a class="brand" href="/">金牛数据</a>
+    <a class="brand" href="/">影流数据</a>
     <nav class="nav" id="nav"></nav>
 </header>
 
@@ -68,7 +68,7 @@
         <div class="form-row">
             <button class="btn-warn" onclick="run(true)" id="btnDry">预览</button>
             <button onclick="run(false)" id="btnRun">批量更新</button>
-            <span class="dim">⚠️ 接口按次计费，超过 <b>20 只</b>会先弹二次确认</span>
+            <span class="dim">⚠️ 超过 <b>20 只</b>会先弹二次确认（每只股票整个区间只发一次请求）</span>
         </div>
         <div id="progress" style="display:none;margin-top:10px">
             <div style="height:6px;background:#1b2233;border-radius:3px;overflow:hidden">
@@ -124,9 +124,9 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260920d"></script>
-<script src="/js/date-picker.js?v=20260920d"></script>
-<script src="/js/stock-picker.js?v=20260920d"></script>
+<script src="/js/common.js?v=20260920e"></script>
+<script src="/js/date-picker.js?v=20260920e"></script>
+<script src="/js/stock-picker.js?v=20260920e"></script>
 <script>
     const state = {page: 1, size: 20, total: 0, rows: [], selected: new Set(), coverage: {}, nameOf: {}};
 
@@ -240,7 +240,7 @@
             toast('请填写开始日期和结束日期', 'err');
             return;
         }
-        if (!confirmApiCost(codes.length)) return;
+        if (!confirmBulkFetch(codes.length)) return;
 
         document.getElementById('btnDry').disabled = true;
         document.getElementById('btnRun').disabled = true;

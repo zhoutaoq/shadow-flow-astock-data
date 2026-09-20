@@ -2,7 +2,7 @@ package io.github.zhoutaoq.shadowflow.biz.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.zhoutaoq.shadowflow.biz.config.WaizaoProperties;
+import io.github.zhoutaoq.shadowflow.biz.config.MarketDataProperties;
 import io.github.zhoutaoq.shadowflow.biz.model.StockListItem;
 import io.github.zhoutaoq.shadowflow.biz.repo.StockListRepository;
 import io.github.zhoutaoq.shadowflow.biz.support.AShareCodes;
@@ -21,7 +21,7 @@ import java.util.List;
 /**
  * 从 resources/stock-list.json 导入股票列表。
  *
- * <p>v1.3：两种运行模式下都可用 —— 数据库模式写 waizao_stock_list，
+ * <p>v1.3：两种运行模式下都可用 —— 数据库模式写 shadowflow_stock_list，
  * 无数据库模式写 {@code ./data/stock-list.json}。
  */
 @Service
@@ -30,10 +30,10 @@ public class StockListImportService {
     private static final Logger log = LoggerFactory.getLogger(StockListImportService.class);
 
     private final StockListRepository stockListRepository;
-    private final WaizaoProperties properties;
+    private final MarketDataProperties properties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public StockListImportService(StockListRepository stockListRepository, WaizaoProperties properties) {
+    public StockListImportService(StockListRepository stockListRepository, MarketDataProperties properties) {
         this.stockListRepository = stockListRepository;
         this.properties = properties;
     }
@@ -41,7 +41,7 @@ public class StockListImportService {
     /**
      * 导入股票列表，只收沪深A股（其余代码整条丢掉）。
      *
-     * @param filePath 文件路径，为空则用配置里的 waizao.stock-list-file
+     * @param filePath 文件路径，为空则用配置里的 shadowflow.stock-list-file
      * @return 解析出并写入的条数
      */
     public int importFromFile(String filePath) {

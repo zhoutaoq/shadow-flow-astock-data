@@ -12,7 +12,7 @@ import java.util.Map;
 public class IntegrationSaveRequest {
 
     /**
-     * 字段名 → 新值，例如 <code>{"waizaoToken": "305c..."}</code>。
+     * 字段名 → 新值，例如 <code>{"dataApiToken": "305c..."}</code>。
      *
      * <p>值为空串或整个字段缺席都表示「这一项保持原样」。
      */

@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-    <title>接口调试 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920d">
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>接口调试 - 影流数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260920e">
 </head>
 <body>
 <header class="topbar">
-    <a class="brand" href="/">金牛数据</a>
+    <a class="brand" href="/">影流数据</a>
     <nav class="nav" id="nav"></nav>
 </header>
 
@@ -17,7 +17,7 @@
     <div id="msgBox" class="msg"></div>
 
     <section class="panel">
-        <h2>供应商日K线接口调试</h2>
+        <h2>行情数据服务日K线接口调试</h2>
         <div class="form-row">
             <div class="field grow">
                 <label>股票 *</label>
@@ -79,14 +79,14 @@
     </section>
 </main>
 
-<script src="/js/common.js?v=20260920d"></script>
-<script src="/js/date-picker.js?v=20260920d"></script>
-<script src="/js/stock-picker.js?v=20260920d"></script>
+<script src="/js/common.js?v=20260920e"></script>
+<script src="/js/date-picker.js?v=20260920e"></script>
+<script src="/js/stock-picker.js?v=20260920e"></script>
 <script>
     document.getElementById('fStart').value = daysAgo(30);
     document.getElementById('fEnd').value = today();
 
-    // 写入开关：默认关闭（只请求、只渲染，接口按次计费，避免误写库）
+    // 写入开关：默认关闭（只请求、只渲染，避免误写库）
     let persist = false;
 
     const codePicker = createStockPicker(document.getElementById('codePick'), {});
@@ -104,7 +104,7 @@
         return {
             code: codePicker.getCodes()[0] || '',
             name: picked ? picked.name : '',
-            // 系统只关注沪深A股，供应商的 symbol 固定 stock
+            // 系统只关注沪深A股，行情数据服务的 symbol 固定 stock
             market: 'stock',
             startDate: document.getElementById('fStart').value,
             endDate: document.getElementById('fEnd').value

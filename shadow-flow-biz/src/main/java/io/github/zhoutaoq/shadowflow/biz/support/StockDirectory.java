@@ -7,12 +7,12 @@ import java.util.List;
 /**
  * 股票名录：给页面的股票选择器与股票列表提供候选。
  *
- * <p>系统只做沪深A股，所以名录没有市场维度 —— 数据库模式查 waizao_stock_list 的 stock 分类，
+ * <p>系统只做沪深A股，所以名录没有市场维度 —— 数据库模式查 shadowflow_stock_list 的 stock 分类，
  * 无数据库模式读本地 resources/stock-list.json 里的沪深A股代码。
  *
  * <p>两种实现：
  * <ul>
- *   <li>数据库模式：查 waizao_stock_list</li>
+ *   <li>数据库模式：查 shadowflow_stock_list</li>
  *   <li>无数据库模式：读本地 resources/stock-list.json</li>
  * </ul>
  */

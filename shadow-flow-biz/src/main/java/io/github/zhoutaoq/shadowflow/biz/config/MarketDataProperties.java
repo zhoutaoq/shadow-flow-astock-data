@@ -3,10 +3,10 @@ package io.github.zhoutaoq.shadowflow.biz.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-/** 供应商 waizao 接口配置 */
+/** 行情数据服务接口的配置，绑定前缀 shadowflow */
 @Component
-@ConfigurationProperties(prefix = "waizao")
-public class WaizaoProperties {
+@ConfigurationProperties(prefix = "shadowflow")
+public class MarketDataProperties {
 
     private Api api = new Api();
     /** 数据库开关：false = 无数据库单机模式（数据现取现用、不落盘） */
@@ -16,7 +16,7 @@ public class WaizaoProperties {
     /**
      * 单次查询允许的最大自然日跨度。
      *
-     * <p>无数据库模式下每次查询都要真的向供应商发一次请求，跨度越大响应越慢、
+     * <p>无数据库模式下每次查询都要真的向行情数据服务发一次请求，跨度越大响应越慢、
      * 一次性返回的数据越多，这里设一个硬上限避免误填一个二十年区间。
      * v1.1 起放宽到 4000 天（近十年）。
      */
@@ -70,15 +70,15 @@ public class WaizaoProperties {
 
     public static class Api {
         private String baseUrl = "http://api.waizaowang.com";
-        /** 仅作新环境首次启动的种子值；日常维护在配置表（场景 waizao / 键 token） */
+        /** 仅作新环境首次启动的种子值；日常维护在配置表（场景 shadowflow / 键 token） */
         private String token = "";
-        /** 总开关：false 时抓取请求在发出前就被拦住（接口按次计费） */
+        /** 总开关：false 时抓取请求在发出前就被拦住 */
         private boolean enabled = true;
         private int connectTimeoutMs = 10000;
         private int readTimeoutMs = 20000;
         /** 串行抓取时每只股票之间的间隔（毫秒） */
         private long batchIntervalMs = 200;
-        /** 批处理并发度：同时向供应商发起请求的线程数 */
+        /** 批处理并发度：同时向行情数据服务发起请求的线程数 */
         private int fetchConcurrency = 8;
         /** 并发抓取时，每个工作线程处理完一只股票后的间隔（毫秒），用于限制 QPS */
         private long fetchIntervalMs = 100;

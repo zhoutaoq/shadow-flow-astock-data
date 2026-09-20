@@ -2,7 +2,7 @@ package io.github.zhoutaoq.shadowflow.biz.repo;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.zhoutaoq.shadowflow.biz.config.WaizaoProperties;
+import io.github.zhoutaoq.shadowflow.biz.config.MarketDataProperties;
 import io.github.zhoutaoq.shadowflow.biz.model.PageResult;
 import io.github.zhoutaoq.shadowflow.biz.model.StockListItem;
 import io.github.zhoutaoq.shadowflow.biz.store.DataDir;
@@ -41,7 +41,7 @@ import java.util.Set;
  * <p>只收沪深A股（判断口径见 {@link AShareCodes}），非A股代码在播种阶段就丢掉。
  */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "false", matchIfMissing = true)
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
 public class FileStockListRepository implements StockListRepository {
 
     private static final Logger log = LoggerFactory.getLogger(FileStockListRepository.class);
@@ -50,13 +50,13 @@ public class FileStockListRepository implements StockListRepository {
     private static final DateTimeFormatter DF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final FileTable<StockListItem> table;
-    private final WaizaoProperties props;
+    private final MarketDataProperties props;
 
     /** 内存全量名录，按代码升序；volatile 整体替换，读侧无锁 */
     private volatile List<StockListItem> rows = new ArrayList<>();
     private volatile long maxId = 0;
 
-    public FileStockListRepository(DataDir dataDir, StoreProperties storeProps, WaizaoProperties props) {
+    public FileStockListRepository(DataDir dataDir, StoreProperties storeProps, MarketDataProperties props) {
         this.table = new FileTable<>(dataDir, FILE, StockListItem.class, storeProps.getMaxRows());
         this.props = props;
     }

@@ -1,6 +1,7 @@
 @echo off
 REM ============================================================
-REM  stock-kline-data-crawler  Windows one-click deploy
+REM  shadow-flow-biz (影流数据 Shadow Flow Data)  Windows one-click deploy
+REM  v1.6.0：jar 名由 stock-kline-data-crawler 改为 shadow-flow-biz（见 server.env 的 JAR_NAME）
 REM
 REM  Usage:
 REM    Double-click  = full publish (build -> upload -> restart)

@@ -1,5 +1,7 @@
 package io.github.zhoutaoq.shadowflow.biz.watch;
 
+import io.github.zhoutaoq.shadowflow.biz.support.PushEnvelope;
+import io.github.zhoutaoq.shadowflow.notify.api.NotifyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -62,17 +64,17 @@ public class WatchKeyTimePusher implements Runnable {
     private final WatchProperties props;
     private final WatchConfigStore store;
     private final SinaQuoteClient quoteClient;
-    private final DingTalkNotifier notifier;
+    private final NotifyService notify;
     private final ExecutorService quotePool;
     private final ScheduledExecutorService scheduler;
 
     public WatchKeyTimePusher(WatchProperties props, WatchConfigStore store,
-                              SinaQuoteClient quoteClient, DingTalkNotifier notifier,
+                              SinaQuoteClient quoteClient, NotifyService notify,
                               @Qualifier("watchExecutor") ExecutorService watchExecutor) {
         this.props = props;
         this.store = store;
         this.quoteClient = quoteClient;
-        this.notifier = notifier;
+        this.notify = notify;
         this.quotePool = watchExecutor;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
             private final AtomicInteger seq = new AtomicInteger();
@@ -168,10 +170,10 @@ public class WatchKeyTimePusher implements Runnable {
                 .append(" ｜ 下跌 ").append(down)
                 .append(" ｜ 平盘 ").append(flat);
         String content = sb.toString();
-        if (notifier.sendTo(store.webhookOf(userId), content)) {
+        if (notify.send(store.webhookOf(userId), PushEnvelope.of(props.getDingtalk().getKeyword()), content)) {
             log.info("[watch] 用户 {} 关键时点已推送 {} 只涨跌幅快报", userId, validLines.size());
         } else {
-            log.warn("[watch] 钉钉未推送（未配置机器人或调用失败），用户 {}，关键时点内容：{}", userId, content);
+            log.warn("[watch] 未推送（没有可用机器人或被闸门拦下），用户 {}，关键时点内容：{}", userId, content);
         }
     }
 

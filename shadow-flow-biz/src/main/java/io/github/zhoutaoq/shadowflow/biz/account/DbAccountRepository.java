@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Repository;
 
 import javax.annotation.PostConstruct;
@@ -15,22 +16,23 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * 数据库模式：账户落 {@code waizao_account}，持仓落 {@code waizao_position}，
- * 操作记录落 {@code waizao_trade_record}（v1.5.6 新增）。
+ * 数据库模式：账户落 {@code shadowflow_account}，持仓落 {@code shadowflow_position}，
+ * 操作记录落 {@code shadowflow_trade_record}（v1.5.6 新增）。
  *
  * <p>与 {@link FileAccountRepository} 暴露完全相同的行为，页面无需关心当前是哪种模式。
  * 所有语句都带 {@code user_id} 条件，杜绝越权读写别人的账户与持仓；
  * 账户级操作再带 {@code id} / {@code account_id} 落到具体一本账。
  */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@DependsOn("shadowFlowDbInitializer")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 public class DbAccountRepository implements AccountRepository {
 
     private static final Logger log = LoggerFactory.getLogger(DbAccountRepository.class);
 
-    private static final String T_ACCOUNT = "waizao_account";
-    private static final String T_POSITION = "waizao_position";
-    private static final String T_RECORD = "waizao_trade_record";
+    private static final String T_ACCOUNT = "shadowflow_account";
+    private static final String T_POSITION = "shadowflow_position";
+    private static final String T_RECORD = "shadowflow_trade_record";
 
     private static final String ACCOUNT_COLUMNS = "id, user_id, account_name AS name, init_value, cash, remark,"
             + " day_realized_date, day_realized_profit,"
@@ -59,7 +61,7 @@ public class DbAccountRepository implements AccountRepository {
      * <p>幂等 —— 每一步失败都只记 debug 日志继续走：新库由 {@code schema.sql} 建表时
      * 就已经是目标结构，这里的 ALTER 必然报「列/键已存在」，属于正常情况。
      *
-     * <p>老数据的归宿：{@code waizao_account} 每行变成一本账（自动补个自增 id），
+     * <p>老数据的归宿：{@code shadowflow_account} 每行变成一本账（自动补个自增 id），
      * 老持仓的 {@code account_id} 先落 0，再由最后一条 UPDATE 按 user_id 认领到该用户那本账上 ——
      * 升级完用户看到的还是原来那份数据。
      */
@@ -73,16 +75,16 @@ public class DbAccountRepository implements AccountRepository {
                 + " DEFAULT '默认账户' COMMENT '账户名称' AFTER user_id");
         // AUTO_INCREMENT 列必须同时是键，所以先补一个唯一键，再摘掉 user_id 上的主键
         exec("ALTER TABLE " + T_ACCOUNT + " ADD COLUMN id BIGINT NOT NULL AUTO_INCREMENT FIRST,"
-                + " ADD UNIQUE KEY uk_waizao_account_id (id)");
+                + " ADD UNIQUE KEY uk_shadowflow_account_id (id)");
         exec("ALTER TABLE " + T_ACCOUNT + " DROP PRIMARY KEY, ADD PRIMARY KEY (id)");
-        exec("ALTER TABLE " + T_ACCOUNT + " DROP INDEX uk_waizao_account_id,"
-                + " ADD KEY idx_waizao_account_user (user_id)");
+        exec("ALTER TABLE " + T_ACCOUNT + " DROP INDEX uk_shadowflow_account_id,"
+                + " ADD KEY idx_shadowflow_account_user (user_id)");
 
         exec("ALTER TABLE " + T_POSITION + " ADD COLUMN account_id BIGINT NOT NULL DEFAULT 0"
                 + " COMMENT '归属账户 id' AFTER user_id");
-        exec("ALTER TABLE " + T_POSITION + " DROP INDEX uk_waizao_position_user_code,"
-                + " ADD UNIQUE KEY uk_waizao_position_account_code (account_id, stock_code),"
-                + " ADD KEY idx_waizao_position_account (account_id)");
+        exec("ALTER TABLE " + T_POSITION + " DROP INDEX uk_shadowflow_position_user_code,"
+                + " ADD UNIQUE KEY uk_shadowflow_position_account_code (account_id, stock_code),"
+                + " ADD KEY idx_shadowflow_position_account (account_id)");
 
         // v1.5.5：建仓日（非必填）+ 当天买入池 + 账户当日已实现盈亏
         exec("ALTER TABLE " + T_POSITION + " ADD COLUMN open_date VARCHAR(10) NULL"
@@ -102,7 +104,7 @@ public class DbAccountRepository implements AccountRepository {
         exec("ALTER TABLE " + T_POSITION + " ADD COLUMN available_qty INT NULL"
                 + " COMMENT '可用数量（股）：能卖出的部分；NULL = 全部可用' AFTER quantity");
         // 操作记录表由 schema.sql 建（CREATE TABLE IF NOT EXISTS），这里只兜底建一次；
-        // 表结构见 schema.sql 的 waizao_trade_record
+        // 表结构见 schema.sql 的 shadowflow_trade_record
         exec("CREATE TABLE IF NOT EXISTS " + T_RECORD + " ("
                 + " id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',"
                 + " user_id BIGINT NOT NULL COMMENT '归属用户 id',"
@@ -120,8 +122,8 @@ public class DbAccountRepository implements AccountRepository {
                 + " record_time DATETIME NULL COMMENT '录入时刻',"
                 + " create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',"
                 + " PRIMARY KEY (id),"
-                + " KEY idx_waizao_trade_record_account (user_id, account_id, id)"
-                + ") ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'waizao-操作记录（买卖流水）'");
+                + " KEY idx_shadowflow_trade_record_account (user_id, account_id, id)"
+                + ") ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '操作记录（买卖流水）'");
 
         // v1.5.1 允许「只加持仓、没保存过账户设置」，这种用户没有账户行可挂 ——
         // 先给有持仓的用户补一本默认账，再统一认领，数据一条都不会丢

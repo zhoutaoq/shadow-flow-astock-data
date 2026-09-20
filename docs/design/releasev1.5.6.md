@@ -31,8 +31,8 @@ tips:
 |---|---|
 | `account/Position.java:51` | 新增 `private Integer availableQty;` —— **可空**是刻意的：`null` 表示「全部可用」，v1.5.5 及以前的老数据不带这个字段，读出来就是 `null`，等价于旧行为，不需要数据迁移 |
 | `account/TradeRecord.java` | 新增 `tradeDate`（成交日期，`yyyy-MM-dd`），与录入时刻 `time` 分开：**成交日期是业务语义**（补记昨天的交易要按昨天算），录入时刻只是审计 |
-| `resources/schema.sql:128` | `waizao_position` 加 `available_qty INT NULL` |
-| `resources/schema.sql:144` | 新增表 `waizao_trade_record`（`user_id + account_id` 索引，第 161 行） |
+| `resources/schema.sql:128` | `shadowflow_position` 加 `available_qty INT NULL` |
+| `resources/schema.sql:144` | 新增表 `shadowflow_trade_record`（`user_id + account_id` 索引，第 161 行） |
 
 ## 二、仓储层：一个接口，两种落点
 
@@ -44,7 +44,7 @@ tips:
 | `listRecords` / `saveRecord` / `trimRecords` / `clearRecords` | 操作记录的读写 | 第 ② 条要求落盘，之前记录只在 `AccountService` 的内存 map 里 |
 
 - **文件模式** `FileAccountRepository`：账户 / 持仓 / 操作记录**在同一个 `account-{userId}.json` 里**（新增 `records` 段）—— 它们本来就是一棵树，拆文件反而要处理跨文件一致性。`listUserIds()` 取「内存已载入」∪「磁盘上已有 `account-*.json`」的并集：定时任务可能在进程起来后、还没有任何请求碰过账户时就触发，只看内存会把整个文件漏掉。
-- **数据库模式** `DbAccountRepository`：`listUserIds()` 用 `SELECT DISTINCT user_id FROM waizao_account`；`trimRecords()` 用「按 id 子查询」删旧行（MySQL 不允许在 `DELETE` 的子查询里直接引用目标表）。
+- **数据库模式** `DbAccountRepository`：`listUserIds()` 用 `SELECT DISTINCT user_id FROM shadowflow_account`；`trimRecords()` 用「按 id 子查询」删旧行（MySQL 不允许在 `DELETE` 的子查询里直接引用目标表）。
 
 ## 三、业务层 `AccountService`
 
@@ -71,7 +71,7 @@ tips:
 
 | 文件 | 说明 |
 |---|---|
-| `account/AvailableQtyResetTask.java:42` | `@Scheduled(cron = "${waizao.account.available-reset-cron:0 0 0 * * ?}", zone = "Asia/Shanghai")`。**时区写死东八区**：服务器时区不是 UTC+8 时按默认时区算会落到别的时刻，口径与 `TradeSessions` 保持一致。任务里 `catch` 所有异常：抛出去会把调度线程整个弄停、以后再也不触发 |
+| `account/AvailableQtyResetTask.java:42` | `@Scheduled(cron = "${shadowflow.account.available-reset-cron:0 0 0 * * ?}", zone = "Asia/Shanghai")`。**时区写死东八区**：服务器时区不是 UTC+8 时按默认时区算会落到别的时刻，口径与 `TradeSessions` 保持一致。任务里 `catch` 所有异常：抛出去会把调度线程整个弄停、以后再也不触发 |
 | `account/AccountScheduleConfig.java` | 账户模块自己的 `@EnableScheduling`。**不蹭盯盘那边的** —— `WatchConfig` 挂在 `watch.enabled` 开关下，关掉盯盘会把日切一起带走，这两件事没有依赖关系。两边同时开着也无害（同一个基础设施 bean 名，重复注册被忽略），已实测 |
 | `application.yml:89 / :91` | `available-reset-cron` / `available-reset-enabled`。本地验证时把 cron 改成 `"0/15 * * * * ?"`，不用真等到半夜 |
 
@@ -136,12 +136,12 @@ tips:
 
 | 项 | 默认 | 说明 |
 |---|---|---|
-| `waizao.auth.notify.enabled` | `true` | 埋点开关。false 时注册不再推送，**注册本身完全不受影响** |
-| `waizao.auth.notify.keyword` | `智能盯盘` | 机器人「自定义关键词」模式下必须命中的词；复用盯盘机器人时别改 |
+| `shadowflow.auth.notify.enabled` | `true` | 埋点开关。false 时注册不再推送，**注册本身完全不受影响** |
+| `shadowflow.auth.notify.keyword` | `智能盯盘` | 机器人「自定义关键词」模式下必须命中的词；复用盯盘机器人时别改 |
 
 **没有 webhook 配置项** —— 按需求「用系统钉钉配置推送」，直接用 `watch.dingtalk.webhook`，与盯盘告警、用户反馈进同一个群，不另拉群、不重复配机器人。
 
-绑定类 `auth/RegistrationNotifyProperties.java:18`（前缀 `waizao.auth.notify`），与管登录态时长 / 注册开关的 `app.auth`（`AuthProperties`）分开：那个管「能不能注册」，这个管「注册完要不要吱一声」。
+绑定类 `auth/RegistrationNotifyProperties.java:18`（前缀 `shadowflow.auth.notify`），与管登录态时长 / 注册开关的 `app.auth`（`AuthProperties`）分开：那个管「能不能注册」，这个管「注册完要不要吱一声」。
 
 ## 五、消息形态
 
@@ -171,7 +171,7 @@ tips:
 | 控制组 | `POST /api/feedback` → 返回「反馈没能送出」且机器人收到 0 条 | 反馈走的是**受闸门约束**的 `post()`；它被拦下 ⇒ 证明闸门确实关着、假机器人在线但没收到东西 |
 | 主用例 | `POST /api/auth/register` → 机器人收到 1 条，正文含邮箱与时间 | 注册走 `postAlways`，**跨时段发出来了** |
 | 反向 | 重复邮箱 / 密码不合规 → 都失败，且消息数不变 | 只有真注册成功才推 |
-| 开关组 | 另起实例 `--waizao.auth.notify.enabled=false` → 注册 200 但机器人 0 条 | 反证断言是有效的（若代码无视开关照推，这一条会 FAIL） |
+| 开关组 | 另起实例 `--shadowflow.auth.notify.enabled=false` → 注册 200 但机器人 0 条 | 反证断言是有效的（若代码无视开关照推，这一条会 FAIL） |
 
 另有一条铁律：**验证时绝不能打开真实 webhook** —— `application.yml` 里 `watch.dingtalk.webhook` 指向真实钉钉群，一注册就会发到群里。所以起验证实例时统一覆盖成假机器人：
 

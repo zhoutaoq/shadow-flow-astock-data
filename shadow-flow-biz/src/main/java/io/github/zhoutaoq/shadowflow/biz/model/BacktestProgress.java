@@ -5,7 +5,7 @@ public class BacktestProgress {
 
     /** 校验数据是否齐全 */
     public static final String STAGE_CHECK = "check";
-    /** 正在从供应商同步缺失数据 */
+    /** 正在从行情数据服务同步缺失数据 */
     public static final String STAGE_FETCH = "fetch";
     /** 正在逐日计算 */
     public static final String STAGE_RUN = "run";

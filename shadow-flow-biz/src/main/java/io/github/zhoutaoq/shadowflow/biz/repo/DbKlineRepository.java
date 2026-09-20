@@ -1,7 +1,7 @@
 package io.github.zhoutaoq.shadowflow.biz.repo;
 
 import io.github.zhoutaoq.shadowflow.biz.client.RawKline;
-import io.github.zhoutaoq.shadowflow.biz.client.WaizaoKlineClient;
+import io.github.zhoutaoq.shadowflow.biz.client.MarketDataClient;
 import io.github.zhoutaoq.shadowflow.biz.model.ApiCallLog;
 import io.github.zhoutaoq.shadowflow.biz.model.StockKlineDaily;
 import io.github.zhoutaoq.shadowflow.biz.support.KlineWindow;
@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
@@ -20,24 +21,25 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 数据库模式：日K落 {@code waizao_stock_kline_daily}，读不到就先同步再读（查时更新）。
+ * 数据库模式：日K落 {@code shadowflow_stock_kline_daily}，读不到就先同步再读（查时更新）。
  *
- * <p>补数据只补缺失那一天而不是重拉整个区间 —— 供应商接口按调用次数计费。
+ * <p>补数据只补缺失那一天而不是重拉整个区间 —— 行情数据服务每调一次就是一次真实请求。
  */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@DependsOn("shadowFlowDbInitializer")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 public class DbKlineRepository implements KlineRepository {
 
-    private static final String KLINE = "waizao_stock_kline_daily";
+    private static final String KLINE = "shadowflow_stock_kline_daily";
     private static final String COLUMNS = "trade_date, open_price, close_price, high_price, low_price,"
             + " volume, amount, pre_close";
 
     private final NamedParameterJdbcTemplate named;
     private final JdbcTemplate jdbcTemplate;
-    private final WaizaoKlineClient client;
+    private final MarketDataClient client;
 
     public DbKlineRepository(NamedParameterJdbcTemplate named, JdbcTemplate jdbcTemplate,
-                             WaizaoKlineClient client) {
+                             MarketDataClient client) {
         this.named = named;
         this.jdbcTemplate = jdbcTemplate;
         this.client = client;
@@ -75,7 +77,7 @@ public class DbKlineRepository implements KlineRepository {
             throw new IllegalStateException("同步 " + date + " 的日K数据失败: " + e.getMessage());
         }
         if (raw == null || raw.isEmpty()) {
-            throw new IllegalStateException("同步 " + date + " 的日K数据失败: 供应商未返回数据");
+            throw new IllegalStateException("同步 " + date + " 的日K数据失败: 行情数据服务未返回数据");
         }
         save(raw);
     }

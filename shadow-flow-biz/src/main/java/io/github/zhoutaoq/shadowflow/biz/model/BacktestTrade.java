@@ -2,7 +2,7 @@ package io.github.zhoutaoq.shadowflow.biz.model;
 
 import java.math.BigDecimal;
 
-/** waizao_backtest_trade 回测交易明细（每次成交一条） */
+/** shadowflow_backtest_trade 回测交易明细（每次成交一条） */
 public class BacktestTrade {
 
     /** 买入 */

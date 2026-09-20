@@ -1,8 +1,8 @@
 package io.github.zhoutaoq.shadowflow.biz.service;
 
 import io.github.zhoutaoq.shadowflow.biz.client.RawKline;
-import io.github.zhoutaoq.shadowflow.biz.client.WaizaoKlineClient;
-import io.github.zhoutaoq.shadowflow.biz.config.WaizaoProperties;
+import io.github.zhoutaoq.shadowflow.biz.client.MarketDataClient;
+import io.github.zhoutaoq.shadowflow.biz.config.MarketDataProperties;
 import io.github.zhoutaoq.shadowflow.biz.model.ApiCallLog;
 import io.github.zhoutaoq.shadowflow.biz.repo.KlineRepository;
 import org.slf4j.Logger;
@@ -24,23 +24,23 @@ import java.util.Map;
  *
  * <p>两类模式：
  * <ul>
- *   <li>dryRun = true ：只调用供应商接口并渲染结果，不做落盘（调试页）</li>
- *   <li>dryRun = false：调用接口 + 落盘 waizao_stock_kline_daily</li>
+ *   <li>dryRun = true ：只调用行情数据服务接口并渲染结果，不做落盘（调试页）</li>
+ *   <li>dryRun = false：调用接口 + 落盘 shadowflow_stock_kline_daily</li>
  * </ul>
  */
 @Service
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 public class KlineFetchService {
 
     private static final Logger log = LoggerFactory.getLogger(KlineFetchService.class);
     private static final DateTimeFormatter DF = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    private final WaizaoKlineClient client;
+    private final MarketDataClient client;
     private final KlineRepository klineRepository;
-    private final WaizaoProperties props;
+    private final MarketDataProperties props;
 
-    public KlineFetchService(WaizaoKlineClient client, KlineRepository klineRepository,
-                             WaizaoProperties props) {
+    public KlineFetchService(MarketDataClient client, KlineRepository klineRepository,
+                             MarketDataProperties props) {
         this.client = client;
         this.klineRepository = klineRepository;
         this.props = props;
@@ -265,7 +265,7 @@ public class KlineFetchService {
             } catch (Exception e) {
                 cr.setSuccess(false);
                 cr.setMessage(e.getMessage());
-                log.warn("[waizao] fetch failed, code={}, market={}, msg={}", code, market, e.getMessage());
+                log.warn("[market-data] fetch failed, code={}, market={}, msg={}", code, market, e.getMessage());
             }
 
             result.setFetchedTotal(result.getFetchedTotal() + cr.getFetched());
@@ -318,7 +318,7 @@ public class KlineFetchService {
         } catch (Exception e) {
             cr.setSuccess(false);
             cr.setMessage(e.getMessage());
-            log.warn("[waizao] fetch failed, code={}, market={}, msg={}", code, market, e.getMessage());
+            log.warn("[market-data] fetch failed, code={}, market={}, msg={}", code, market, e.getMessage());
         }
         return cr;
     }
@@ -355,13 +355,13 @@ public class KlineFetchService {
     }
 
     /**
-     * 原始请求：一次HTTP调用回吐请求 URL、供应商原始响应体与解析结果，调用日志标记为 dev（调试）。
+     * 原始请求：一次HTTP调用回吐请求 URL、行情数据服务原始响应体与解析结果，调用日志标记为 dev（调试）。
      *
-     * @param persist 是否把解析结果落盘到 waizao_stock_kline_daily，由调试页开关控制
+     * @param persist 是否把解析结果落盘到 shadowflow_stock_kline_daily，由调试页开关控制
      */
     public Map<String, Object> rawQuery(String market, String code, String startDate, String endDate,
                                         boolean persist) throws Exception {
-        WaizaoKlineClient.RawResult r = client.fetchRaw(market, code, startDate, endDate, ApiCallLog.SCENE_DEV);
+        MarketDataClient.RawResult r = client.fetchRaw(market, code, startDate, endDate, ApiCallLog.SCENE_DEV);
         int persisted = 0;
         if (persist && r.getRows() != null && !r.getRows().isEmpty()) {
             persisted = klineRepository.save(r.getRows());

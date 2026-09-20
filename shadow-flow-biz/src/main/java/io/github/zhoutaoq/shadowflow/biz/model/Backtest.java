@@ -2,7 +2,7 @@ package io.github.zhoutaoq.shadowflow.biz.model;
 
 import java.math.BigDecimal;
 
-/** waizao_backtest 回测主表（一次回测一条，买卖策略以 JSON 存放） */
+/** shadowflow_backtest 回测主表（一次回测一条，买卖策略以 JSON 存放） */
 public class Backtest {
 
     private Long id;

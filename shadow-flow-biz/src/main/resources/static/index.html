@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-    <title>金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920d">
-    <link rel="stylesheet" href="/css/home.css?v=20260920d">
-    <link rel="stylesheet" href="/css/account.css?v=20260920d">
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>影流数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260920e">
+    <link rel="stylesheet" href="/css/home.css?v=20260920e">
+    <link rel="stylesheet" href="/css/account.css?v=20260920e">
 </head>
 <body>
 <header class="topbar">
-    <a class="brand" href="/">金牛数据</a>
+    <a class="brand" href="/">影流数据</a>
     <nav class="nav" id="nav"></nav>
 </header>
 
@@ -23,7 +23,7 @@
         <canvas class="hero-canvas" id="heroCanvas" aria-hidden="true"></canvas>
         <div class="hero-main">
             <div>
-                <h1>金牛数据</h1>
+                <h1>影流数据</h1>
                 <div class="hero-sub">A 股日K 行情 · 策略回测 · 实时盯盘　一站式数据工作台</div>
                 <div class="hero-tags">
                     <span class="hero-tag">日K线</span>
@@ -243,9 +243,9 @@
 
 </main>
 
-<script src="/js/common.js?v=20260920d"></script>
-<script src="/js/date-picker.js?v=20260920d"></script>
-<script src="/js/home.js?v=20260920d"></script>
+<script src="/js/common.js?v=20260920e"></script>
+<script src="/js/date-picker.js?v=20260920e"></script>
+<script src="/js/home.js?v=20260920e"></script>
 <script>
     /* 全站功能入口：与顶部导航同一套，两种运行模式共用（第 4 项是内联图标，不转义） */
     var QUICK = [

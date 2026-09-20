@@ -10,12 +10,12 @@ import java.util.Map;
  *
  * <p>这是典型的「只增不减、行数很容易过万」的数据。按 v1.3 的设计约定：
  * <ul>
- *   <li>数据库模式：落 {@code waizao_api_call_log}，可分页查询与统计；</li>
+ *   <li>数据库模式：落 {@code shadowflow_api_call_log}，可分页查询与统计；</li>
  *   <li>无数据库模式：<b>直接丢弃</b>，只把调用情况打到应用日志。</li>
  * </ul>
  *
  * <p>它不属于主流程（K线回测、盯盘告警都不依赖它），所以丢掉不影响功能。
- * 接口按次计费，请求次数仍能从 {@code app.log} 里事后统计。
+ * 请求次数仍能从 {@code app.log} 里事后统计。
  */
 public interface ApiCallLogRepository {
 

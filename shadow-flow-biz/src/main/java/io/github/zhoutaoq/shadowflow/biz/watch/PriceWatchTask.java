@@ -1,5 +1,7 @@
 package io.github.zhoutaoq.shadowflow.biz.watch;
 
+import io.github.zhoutaoq.shadowflow.biz.support.PushEnvelope;
+import io.github.zhoutaoq.shadowflow.notify.api.NotifyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -63,9 +65,10 @@ public class PriceWatchTask {
     /** 1 万元 = 10000 元：把配置里的"万元"阈值换算成行情接口给的"元" */
     private static final BigDecimal YUAN_PER_WAN = BigDecimal.valueOf(10000L);
 
+    private final WatchProperties props;
     private final WatchConfigStore store;
     private final SinaQuoteClient quoteClient;
-    private final DingTalkNotifier notifier;
+    private final NotifyService notify;
     private final ExecutorService executor;
 
     /** "用户id|代码" → 历史价格采样（按时间升序）：同一个人盯同一只才有共同基线 */
@@ -74,14 +77,25 @@ public class PriceWatchTask {
     /** userId → 上一轮开跑时刻（毫秒）：调度器给基础节拍，这里判断某个用户是否到点 */
     private final Map<Long, Long> lastRunMs = new ConcurrentHashMap<>();
 
-    public PriceWatchTask(WatchConfigStore store,
+    public PriceWatchTask(WatchProperties props,
+                          WatchConfigStore store,
                           SinaQuoteClient quoteClient,
-                          DingTalkNotifier notifier,
+                          NotifyService notify,
                           @Qualifier("watchExecutor") ExecutorService watchExecutor) {
+        this.props = props;
         this.store = store;
         this.quoteClient = quoteClient;
-        this.notifier = notifier;
+        this.notify = notify;
         this.executor = watchExecutor;
+    }
+
+    /**
+     * 消息前缀：<code>[关键词-主机] 发送时刻</code>，由业务侧拼好后交给通知 SDK。
+     *
+     * <p>每次发送都现拼（而不是启动时算一次）：主机标识与时刻都是「这一刻」的值。
+     */
+    private String pushPrefix() {
+        return PushEnvelope.of(props.getDingtalk().getKeyword());
     }
 
     /** 某个用户这一轮的配置快照：一轮之内不再反复回读 store，免得中途改配置跑出半新半旧的判断 */
@@ -338,10 +352,10 @@ public class PriceWatchTask {
 
         if (!hits.isEmpty()) {
             String msg = buildAlert(ctx, q, hits);
-            if (notifier.sendTo(ctx.webhook, msg)) {
+            if (notify.send(ctx.webhook, pushPrefix(), msg)) {
                 log.info("[watch] 已推送（用户 {}）：{}", ctx.userId, msg);
             } else {
-                log.warn("[watch] 钉钉未推送（未配置机器人或调用失败），用户 {}，内容：{}", ctx.userId, msg);
+                log.warn("[watch] 未推送（没有可用机器人或被闸门拦下），用户 {}，内容：{}", ctx.userId, msg);
             }
             pushed = true;
         }
@@ -629,10 +643,10 @@ public class PriceWatchTask {
                 + "，本窗口成交量 " + formatVolume(windowVol)
                 + "，本窗口成交额 " + formatAmount(windowAmt)
                 + "，总成交额 " + formatAmount(q.getAmount()) + "。";
-        if (notifier.sendTo(ctx.webhook, msg)) {
+        if (notify.send(ctx.webhook, pushPrefix(), msg)) {
             log.info("[watch] 已推送（用户 {}）：{}", ctx.userId, msg);
         } else {
-            log.warn("[watch] 钉钉未推送（未配置机器人或调用失败），用户 {}，内容：{}", ctx.userId, msg);
+            log.warn("[watch] 未推送（没有可用机器人或被闸门拦下），用户 {}，内容：{}", ctx.userId, msg);
         }
     }
 
@@ -662,11 +676,11 @@ public class PriceWatchTask {
         }
         sb.append("，本区间成交量 ").append(formatVolume(volumeDelta(ctx, q))).append('。');
         String msg = sb.toString();
-        if (notifier.sendTo(ctx.webhook, msg)) {
+        if (notify.send(ctx.webhook, pushPrefix(), msg)) {
             log.info("[watch] 已推送（用户 {}）：{}", ctx.userId, msg);
             return true;
         }
-        log.warn("[watch] 钉钉未推送（未配置机器人或调用失败），用户 {}，内容：{}", ctx.userId, msg);
+        log.warn("[watch] 未推送（没有可用机器人或被闸门拦下），用户 {}，内容：{}", ctx.userId, msg);
         return false;
     }
 }

@@ -1,7 +1,7 @@
 package io.github.zhoutaoq.shadowflow.biz.feedback;
 
 import io.github.zhoutaoq.shadowflow.biz.config.IntegrationConfigService;
-import io.github.zhoutaoq.shadowflow.biz.watch.DingTalkNotifier;
+import io.github.zhoutaoq.shadowflow.notify.api.NotifyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -46,16 +46,16 @@ public class FeedbackService {
 
     private final FeedbackProperties props;
     private final IntegrationConfigService integration;
-    private final DingTalkNotifier notifier;
+    private final NotifyService notify;
 
     /** IP → 最近一次提交时间戳（毫秒） */
     private final Map<String, Long> lastSubmitAt = new ConcurrentHashMap<>();
 
     public FeedbackService(FeedbackProperties props, IntegrationConfigService integration,
-                           DingTalkNotifier notifier) {
+                           NotifyService notify) {
         this.props = props;
         this.integration = integration;
-        this.notifier = notifier;
+        this.notify = notify;
     }
 
     /**
@@ -93,7 +93,8 @@ public class FeedbackService {
             throw new IllegalArgumentException("反馈暂不能送达，请稍后再试");
         }
 
-        if (!notifier.post(webhook, buildText(content, who, when))) {
+        // 正文自己带关键词首行与 IP / 时间，所以不再额外加前缀
+        if (!notify.send(webhook, null, buildText(content, who, when))) {
             throw new IllegalArgumentException("反馈没能送出（钉钉推送失败），请稍后再试");
         }
         lastSubmitAt.put(who, System.currentTimeMillis());

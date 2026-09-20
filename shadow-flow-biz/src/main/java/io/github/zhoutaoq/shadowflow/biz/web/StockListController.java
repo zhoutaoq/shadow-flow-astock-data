@@ -19,7 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 股票列表 waizao_stock_list 管理接口 */
+/** 股票列表 shadowflow_stock_list 管理接口 */
 @RestController
 @RequestMapping("/api/stocks")
 public class StockListController {

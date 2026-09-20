@@ -28,7 +28,7 @@ com.stock.kline.auth
 ├── model/UserView.java   # 外发视图，不含任何口令字段
 └── repo/
     ├── UserRepository.java
-    ├── DbUserRepository.java      # waizao.db.enabled=true  → waizao_user 表
+    ├── DbUserRepository.java      # shadowflow.db.enabled=true  → shadowflow_user 表
     └── FileUserRepository.java    # 默认                    → ./data/users.json
 ```
 
@@ -81,15 +81,15 @@ java -jar stock-kline-data-crawler.jar --ADMIN_PASSWORD=你的口令
 
 | 路径 | 理由 |
 | --- | --- |
-| `/api/backtest/**` | 需求 6 点名；一次回测连打一批按次计费的供应商接口 |
+| `/api/backtest/**` | 需求 6 点名；一次回测连打一批行情数据服务接口 |
 | `/api/watch/**` | 需求 6 点名；配置跟账号走，没登录就不知道读谁的 |
-| `/api/fetch/**` | 同样按次计费，且「数据更新」那几个页面 v1.3 起已从菜单摘掉 |
+| `/api/fetch/**` | 同样会连打一批行情请求，且「数据更新」那几个页面 v1.3 起已从菜单摘掉 |
 | `/api/admin/**` | 用户管理 |
 | `/api/auth/logout`、`/api/auth/password` | 只对自己有意义 |
 
 其余全部匿名可用：概览、股票列表、K线查看（`GET /api/kline/**`、`/api/dir`、`/api/stocks`）、token 配置、用户反馈、行情、`/api/mode`。
 
-> **`/api/fetch/**` 是我额外加的**，需求里只点名了回测与盯盘。理由是它同样花钱且入口已从菜单移除。如果你仍要匿名调用（比如有脚本在跑），把这一行从 `PROTECTED` 里删掉即可。
+> **`/api/fetch/**` 是我额外加的**，需求里只点名了回测与盯盘。理由是它同样会连打一批行情请求且入口已从菜单移除。如果你仍要匿名调用（比如有脚本在跑），把这一行从 `PROTECTED` 里删掉即可。
 
 ---
 
@@ -143,7 +143,7 @@ app:
     registration-enabled: true      # 关掉后只能由超管建账号
 ```
 
-数据库模式新增表 `waizao_user`（见 `schema.sql`），username 上有唯一索引。
+数据库模式新增表 `shadowflow_user`（见 `schema.sql`），username 上有唯一索引。
 
 ---
 
@@ -159,7 +159,7 @@ app:
 - 超管重置他人密码后，对方旧令牌立刻 401，新密码可登录；弱密码重置被拒；本人改密校验原密码；
 - 盯盘隔离：`lisi` 保存后落 `./data/watch/watch-3.json`（1 只标的，间隔 30s），超管那份仍是 31 只、间隔 10s，互不影响。
 
-**未验证**：数据库模式（`waizao.db.enabled=true`）下的 `DbUserRepository` 与 `waizao_user` 表 —— 本机没起 MySQL，只保证编译通过。
+**未验证**：数据库模式（`shadowflow.db.enabled=true`）下的 `DbUserRepository` 与 `shadowflow_user` 表 —— 本机没起 MySQL，只保证编译通过。
 
 ---
 

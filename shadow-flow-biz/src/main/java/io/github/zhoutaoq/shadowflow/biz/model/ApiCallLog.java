@@ -1,6 +1,6 @@
 package io.github.zhoutaoq.shadowflow.biz.model;
 
-/** waizao_api_call_log 接口调用日志（只记状态码，不记响应体） */
+/** shadowflow_api_call_log 接口调用日志（只记状态码，不记响应体） */
 public class ApiCallLog {
 
     /** 调用场景-调试：调试页发起 */

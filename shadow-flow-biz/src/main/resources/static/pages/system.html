@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-    <title>系统配置 - 金牛数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920d">
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>系统配置 - 影流数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20260920e">
 </head>
 <body>
 <header class="topbar">
-    <a class="brand" href="/">金牛数据</a>
+    <a class="brand" href="/">影流数据</a>
     <nav class="nav" id="nav"></nav>
 </header>
 
@@ -74,11 +74,7 @@
         </section>
 
         <section class="panel">
-            <h2>股票名称跳转</h2>
-            <div class="sp-hint">
-                全站的股票名称都会带上跳转链接，点击开新窗口。勾选的平台会出现在名称旁边
-                （点名称本身直接开「默认」那个）；一个都不勾选时名称退回纯文本。
-            </div>
+            <h2>股票名称跳转<span class="hint-q" tabindex="0" role="button" aria-label="股票名称跳转说明">?<span class="hint-box">全站的股票名称都会带上跳转链接，点击开新窗口。勾选的平台会出现在名称旁边（点名称本身直接开「默认」那个）；一个都不勾选时名称退回纯文本。<span class="hint-li">URL 模板写在 application.yml 的 <b>app.stock-link</b>，这里只维护「开关」那一层。</span></span></span></h2>
             <div class="form-row" style="margin-top:12px">
                 <label class="chk-inline">
                     <input type="checkbox" id="slEnabled"> 启用股票名称跳转
@@ -94,16 +90,7 @@
         </section>
 
         <section class="panel">
-            <h2>第三方对接</h2>
-            <div class="sp-hint">
-                <b>平台自己</b>对接第三方用的凭据，全局一份、全站生效 —— 行情抓取与系统通知
-                （发布通知 / 注册通知 / 用户反馈）都从这里取值，改完即生效不用重启。
-                令牌与 Webhook 只回显前后各 4 位；输入框留空表示这一项不动，
-                要让它回落到配置文件的出厂值请点旁边的「清除」。
-                <br>
-                注意：盯盘告警的机器人<b>不在这里</b> —— 那是每个用户自己的推送通道，
-                在「盯盘 → 推送」页各人配自己的；用户没配才落到这里的系统通知机器人。
-            </div>
+            <h2>第三方对接<span class="hint-q" tabindex="0" role="button" aria-label="第三方对接说明">?<span class="hint-box"><b>平台自己</b>对接第三方用的凭据，全局一份、全站生效 —— 行情抓取与系统通知（发布通知 / 注册通知 / 用户反馈）都从这里取值，改完即生效不用重启。<span class="hint-li">令牌与 Webhook 只回显前后各 4 位；输入框留空表示这一项不动，要让它回落到配置文件的出厂值请点旁边的「清除」。</span><span class="hint-li">注意：盯盘告警的机器人<b>不在这里</b> —— 那是每个用户自己的推送通道，在「盯盘 → 推送」页各人配自己的；用户没配才落到这里的系统通知机器人。</span></span></span></h2>
             <div class="ig-rows" id="igList"></div>
             <div class="modal-actions" style="margin-top:14px">
                 <button id="igSave" onclick="saveIntegration()">保存对接配置</button>
@@ -116,9 +103,9 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260920d"></script>
-<script src="/js/date-picker.js?v=20260920d"></script>
-<script src="/js/stock-picker.js?v=20260920d"></script>
+<script src="/js/common.js?v=20260920e"></script>
+<script src="/js/date-picker.js?v=20260920e"></script>
+<script src="/js/stock-picker.js?v=20260920e"></script>
 <script>
     /** 与后端口径一致：背景区间最长一年 */
     const MAX_SPAN_DAYS = 365;
@@ -386,7 +373,7 @@
     /* =====================================================================
      * 第三方对接（v1.5.9）
      *
-     * 这一块维护的是<b>平台级</b>凭据：waizao 令牌、系统通知机器人、反馈与注册的关键词。
+     * 这一块维护的是<b>平台级</b>凭据：行情数据服务令牌、系统通知机器人、反馈与注册的关键词。
      * 改造前令牌按用户各存一份（谁没配谁取不到数）、关键词埋在 application.yml
      * （换个词要登服务器改文件重启），现在统一在这里。
      *
@@ -431,8 +418,13 @@
                     ? (it.configured ? '已配置 ' + it.display + '，留空表示不修改' : '未配置，粘贴后保存即生效')
                     : '';
                 return '<div class="ig-row" data-name="' + esc(it.name) + '">'
-                    + '<div class="ig-hd"><span class="ig-label">' + esc(it.label) + '</span>' + src + '</div>'
-                    + '<div class="ig-hint">' + esc(it.hint || '') + '</div>'
+                    + '<div class="ig-hd"><span class="ig-label">' + esc(it.label) + '</span>'
+                    // 说明收进 `?` 气泡：默认不展示，悬浮 / 聚焦 / 点按才展开（v1.6.0 提示文案规范）
+                    + (it.hint
+                        ? '<span class="hint-q" tabindex="0" role="button" aria-label="说明">?'
+                          + '<span class="hint-box">' + esc(it.hint) + '</span></span>'
+                        : '')
+                    + src + '</div>'
                     + '<div class="ig-in">'
                     + '<input class="ig-val" type="' + (it.secret ? 'password' : 'text') + '"'
                     + ' autocomplete="off" spellcheck="false"'

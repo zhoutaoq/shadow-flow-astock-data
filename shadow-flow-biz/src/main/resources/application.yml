@@ -15,7 +15,7 @@ spring:
   application:
     name: shadow-flow-biz
   autoconfigure:
-    # 数据源改由 DataSourceConfig 按 waizao.db.enabled 条件装配。
+    # 数据源改由 DataSourceConfig 按 shadowflow.db.enabled 条件装配。
     # 无数据库模式下这里必须排除，否则启动阶段就会去连库并失败。
     exclude:
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
@@ -31,9 +31,13 @@ spring:
     hikari:
       maximum-pool-size: 20
       minimum-idle: 2
+  # 建表不再交给 spring.sql.init：v1.6.0 表前缀改名要求「先改老表、再建新表」，
+  # 而自动初始化会在 RENAME 之前就把新表建出来，导致改名失败、老数据搁浅在旧表里。
+  # 顺序改由 ShadowFlowDbInitializer 显式控制（改名 → schema.sql → 场景值改写），
+  # 所以这里必须关掉，否则两条路径会同时建表。
   sql:
     init:
-      mode: always
+      mode: never
       encoding: UTF-8
   jackson:
     default-property-inclusion: non_null
@@ -68,7 +72,7 @@ app:
   #
   # 这里只放「URL 怎么拼」——平台换域名/改路径改这段即可；
   # 「启用哪几个、默认点名称跳到哪」由超管在「系统配置」页维护，
-  # 落在系统级配置行（waizao_sys_config 场景 stock-link），改完即生效不用重启。
+  # 落在系统级配置行（shadowflow_sys_config 场景 stock-link），改完即生效不用重启。
   # 占位符：{code} 6位代码 / {market} 交易所前缀 SH|SZ|BJ / {name} 名称（自带 URL 编码）
   # ============================================================
   stock-link:
@@ -93,10 +97,15 @@ app:
         url-template: https://xueqiu.com/S/{market}{code}
         external: true
 
-waizao:
+# ============================================================
+# 影流数据自有配置根（v1.6.0 起由 waizao.* 改名而来）。
+# 注意：行情数据服务的对外域名（api.base-url 指向的第三方站点）不属于本系统，
+#      它只是一个外部地址常量，不随本系统的命名走。
+# ============================================================
+shadowflow:
   # 是否启用数据库（决定各仓储装配哪种持久化策略）
-  # false（默认）= 无数据库模式：不连库，数据以 JSON 文件落在 waizao.store.data-dir 下，
-  #              启动时全部载入内存；K线不落盘，每次向供应商现取现用
+  # false（默认）= 无数据库模式：不连库，数据以 JSON 文件落在 store.data-dir 下，
+  #              启动时全部载入内存；K线不落盘，每次按需向行情服务现取现用
   # true        = 数据库模式：数据落 MySQL
   # 两种模式共用同一套模型与业务代码，差别只在策略实现
   db:
@@ -118,33 +127,34 @@ waizao:
     available-reset-cron: "0 0 0 * * ?"
     # 日切总开关：false 时整个任务不装配（不遍历、不落盘）
     available-reset-enabled: true
-  # 注册埋点（v1.5.6 追加）：新用户注册成功后推一条钉钉，内容是注册时间 + 邮箱。
+  # 注册埋点（v1.5.6 追加）：新用户注册成功后推一条通知，内容是注册时间 + 邮箱。
   # 走的是系统级「系统通知机器人」（v1.5.9 起在「系统配置」页维护，见下面的 watch.dingtalk.webhook），
   # 与用户反馈进同一个群，不需要另配机器人。这是平台消息，与用户自己的盯盘告警群无关。
-  # 与其它推送不同的一点：注册是全天候的人触发事件，不受 watch.dingtalk.push-only-in-trade-sessions
-  # 那道时段闸门限制（否则晚上注册一律收不到通知），但 watch.dingtalk.enabled 总开关仍然管着它。
+  # 与其它推送不同的一点：注册是全天候的人触发事件，不受 shadowflow.notify.allowed-windows
+  # 那道时段闸门限制（否则晚上注册一律收不到通知），但 shadowflow.notify.enabled 总开关仍然管着它。
   auth:
     notify:
       # 总开关：false 时注册不再推送（注册本身完全不受影响）
       enabled: true
       # 机器人「自定义关键词」模式下必须命中的词（消息首行拼成 [关键词] 新用户注册）。
-      # 复用同一只机器人时保持"智能盯盘"别改；换别的机器人就改成对方后台配的那个词。
+      # 复用同一只机器人时保持与其它消息一致；换别的机器人就改成对方后台配的那个词。
       # v1.5.9 起可在「系统配置」页改，不用重启。
       keyword: "智能盯盘"
   api:
+    # 行情数据服务地址（外部站点常量，不随本系统命名走）
     base-url: http://api.waizaowang.com
     # ⚠️ token 是频繁变动的凭据。v1.5.9 起由超管在「系统配置」页维护（
     #    http://<host>/pages/system.html → 第三方对接），存在系统级配置行
-    #    （场景 waizao / 键 token / 归属 0），全局一份、全站共用，保存即生效。
+    #    （场景 shadowflow / 键 token / 归属 0），全局一份、全站共用，保存即生效。
     # 下面这个值只是出厂兜底：首次启动会把它播种进配置行，之后一律以配置行为准。
     token: "305c8974672f4bbe953e52a94a1f070c"
-    # 总开关：false 时抓取请求在发出前就被拦住（接口按次计费，停用必须真拦住）
+    # 总开关：false 时抓取请求在发出前就被拦住
     enabled: true
     connect-timeout-ms: 10000
     read-timeout-ms: 20000
     # 串行抓取时每只股票之间的间隔（毫秒）
     batch-interval-ms: 200
-    # 批处理并发度：同时向供应商发起请求的线程数
+    # 批处理并发度：同时发起请求的线程数
     fetch-concurrency: 8
     # 并发抓取时每个工作线程处理完一只股票后的间隔（毫秒），用于限制 QPS
     fetch-interval-ms: 100
@@ -152,8 +162,36 @@ waizao:
   # v1.1：1200 → 4000，支持近十年回测
   max-span-days: 4000
   stock-list-file: resources/stock-list.json
+  # ============================================================
+  # 通知 SDK 的通用闸门（shadow-flow-notify）。
+  # 业务侧只管「发什么、发给谁」，「能不能发、什么时段能发」统一在这里配、由 SDK 执行 ——
+  # 散在业务代码里就意味着每个通知方都得自己记得判一次，漏一处就是线上事故。
+  # ============================================================
+  notify:
+    # 通知总开关：false 时一条都发不出去（盯盘告警 / 关键时点快报 / 启动通知 / 用户反馈全部拦下），只写日志。
+    # 本地默认 false —— 开发环境反复启停不该往群里刷消息；
+    # 需要推送时用启动参数显式打开：--shadowflow.notify.enabled=true（见 sh/server.env 的 ARGS）
+    enabled: false
+    # 默认通道标识
+    default-channel: dingtalk
+    # 允许发送的时段（HH:mm-HH:mm，逗号分隔，闭区间）；空白 = 不限时段。
+    # 下界取 09:15 含集合竞价 —— 关键时点播报的第一条就排在 09:15:15，
+    # 从 09:30 起算会把集合竞价那三条静默掉。
+    allowed-windows: "09:15-11:30,13:00-15:00"
+    # 是否启用上面的时段闸门。true 时非时段内一条都不发（只写日志）：
+    # 收盘后行情是当日快照、价格不再变动，这时收到的「涨停」只是重启后第一轮把
+    # 「已经封板」当成「刚封上」的误报，没有信息量。
+    # 标记为「不受时段限制」的消息（用户注册埋点）不受本闸门影响。
+    enforce-allowed-windows: true
+    # 允许发送的星期；空白 = 不限
+    days-of-week: "MO,TU,WE,TH,FR"
+    # 时段判断所用时区。建议显式配置：留空取服务器时区，
+    # 服务器时区不是 +08 时时段判断会整体偏移（表现为「明明在窗口内却收不到」）。
+    zone: Asia/Shanghai
+    connect-timeout-ms: 5000
+    read-timeout-ms: 10000
 
-# 实时盯盘提醒（与上面其它功能完全独立：行情取自新浪财经，不连库、不走 waizao、不落盘）
+# 实时盯盘提醒（与上面其它功能完全独立：行情取自公开行情接口，不连库、不落盘）
 watch:
   # 总开关：false 时整个盯盘模块不装配（不查行情、不推送，配置接口仍可用）
   enabled: true
@@ -166,13 +204,13 @@ watch:
   config-file: /home/stock-backtesting/watch-config.json
   # v1.3：盯盘配置改为按用户隔离，落盘在 ./data/watch/watch-{userId}.json，
   #      系统默认那份绑定 admin 账号。原来的「盯盘页面密码」已由账号登录取代，不再需要。
-  # 名称 → 代码 的索引来源（与 waizao.stock-list-file 同一份文件）
+  # 名称 → 代码 的索引来源（与 shadowflow.stock-list-file 同一份文件）
   stock-list-file: resources/stock-list.json
   # 轮询间隔（秒）：每次调度按这个间隔并发查一遍名单里所有标的
   interval-seconds: 10
-  # 触发阈值（%）：与上一次成功查询的价格相比，涨/跌幅绝对值达到这个值就推钉钉
+  # 触发阈值（%）：与上一次成功查询的价格相比，涨/跌幅绝对值达到这个值就推通知
   threshold-percent: 0.5
-  # 启动通知：系统起来后推一条钉钉（首行标明「生产发布」+ 版本号）。
+  # 启动通知：系统起来后推一条消息（首行标明「生产发布」+ 版本号）。
   # 默认 false —— 本地开发反复重启不该往群里刷消息；
   # 生产发布时在启动命令上显式打开：--watch.startup-notify.enabled=true（见 sh/remote.sh 的 ARGS）
   startup-notify:
@@ -192,11 +230,11 @@ watch:
     base-url: http://hq.sinajs.cn
     connect-timeout-ms: 5000
     read-timeout-ms: 5000
+  # ============================================================
+  # 系统通知机器人：平台自己发通知的出口（发布通知 / 注册通知 / 用户反馈兜底）。
+  # 「能不能发、什么时段能发」由 shadowflow.notify.* 统一执行，这里只管「发给谁」。
+  # ============================================================
   dingtalk:
-    # 钉钉消息推送总开关：false 时一条都不发（盯盘告警 / 启动通知 / 用户反馈全部拦下），只打日志。
-    # 默认 false —— 开发环境反复启停不该往群里刷消息；
-    # 需要推送时显式打开：--watch.dingtalk.enabled=true
-    enabled: false
     # 机器人 Webhook（含 access_token）；留空则不推送、只打日志。
     # ⚠️ v1.5.9 起这是<b>系统级「系统通知机器人」</b>，由超管在「系统配置」页维护
     #    （系统级配置行 dingtalk/webhook，全局一份），平台消息走它：
@@ -204,30 +242,23 @@ watch:
     #    它同时是盯盘的<b>默认群</b> —— 用户没在「盯盘 → 推送」页配自己的机器人时，
     #    他的告警发到这里；配了自己的就只进他自己的群，不受这里影响。
     # 下面这个值只是出厂兜底：配置行没填时用它。
-    # v1.4 起钉钉机器人只支持"自定义关键词"模式（消息文本必须含后台配置的关键词），
-    # 不再支持「加签」，所以也不需要 secret 字段。
+    # 机器人只支持"自定义关键词"模式（消息文本必须含后台配置的关键词），不支持「加签」，
+    # 所以也不需要 secret 字段。
     webhook: "https://oapi.dingtalk.com/robot/send?access_token=ebcfa7713cec091fcbabaff738f68e3453365b47bf43d8e65894a9793fc33317"
-    # 只在下面的时段内推送，非交易时段一条都不发（只写日志）。默认 true。
-    # 管的是全部钉钉消息：盯盘告警、关键时点播报、启动通知、用户反馈。
-    # 收盘后行情是当日快照、价格不再变动，这时收到的「涨停」只是重启后第一轮把
-    # 「已经封板」当成「刚封上」的误报，没有信息量。
-    push-only-in-trade-sessions: true
-    # 允许推送的时段（北京时间 HH:mm-HH:mm，逗号分隔，周一至周五；法定节假日不判断）。
-    # 下界取 09:15 含集合竞价 —— 关键时点播报的第一条就排在 09:15:15。
-    # 想只保留连续竞价（会静默掉 09:15 / 09:20 / 09:25 三条）就改成
-    # "09:30-11:30,13:00-15:00"。
-    trade-sessions: "09:15-11:30,13:00-15:00"
+    # 盯盘消息的关键词（品牌词）：进群消息拼成 [关键词-主机] 时间 正文。
+    # 留空则不加标签；换机器人时改成对方后台配的那个词。
+    keyword: "智能盯盘"
 
-# 用户使用反馈：页面提交后推一条钉钉，消息含提交人 IP、提交时间与反馈内容。
-# 反馈不落库（无数据库模式没有表），留痕靠两处：app.log 的 [feedback] 日志 + 钉钉消息。
+# 用户使用反馈：页面提交后推一条通知，消息含提交人 IP、提交时间与反馈内容。
+# 反馈不落库（无数据库模式没有表），留痕靠两处：app.log 的 [feedback] 日志 + 通知消息。
 feedback:
   # 总开关：false 时接口直接拒绝，页面提交会提示"反馈入口已关闭"
   enabled: true
-  # 钉钉机器人 Webhook；留空 = 复用系统级那只钉钉机器人（反馈与盯盘告警进同一个群，不用重复开一只）。
+  # 机器人 Webhook；留空 = 复用系统级那只机器人（反馈与平台通知进同一个群，不用重复开一只）。
   # v1.5.9 起在「系统配置」页维护，这里只是出厂兜底。
   webhook: ""
   # 机器人「自定义关键词」模式下必须命中的词（消息首行拼成 [关键词] 用户反馈）。
-  # 复用同一只机器人时保持"智能盯盘"别改；换别的机器人就改成对方后台配的那个词。
+  # 复用同一只机器人时保持与其它消息一致；换别的机器人就改成对方后台配的那个词。
   # v1.5.9 起可在「系统配置」页改，不用重启。
   keyword: "智能盯盘"
   # 单条反馈的内容上限（字符）
@@ -238,4 +269,4 @@ feedback:
 logging:
   level:
     root: INFO
-    io.github.zhoutaoq.shadowflow.biz: INFO
+    io.github.zhoutaoq.shadowflow: INFO

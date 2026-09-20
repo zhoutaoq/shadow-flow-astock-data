@@ -22,7 +22,7 @@ import java.time.format.DateTimeFormatter;
  * 口径与 {@code TradeSessions} 保持一致。
  */
 @Component
-@ConditionalOnProperty(name = "waizao.account.available-reset-enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "shadowflow.account.available-reset-enabled", havingValue = "true", matchIfMissing = true)
 public class AvailableQtyResetTask {
 
     private static final Logger log = LoggerFactory.getLogger(AvailableQtyResetTask.class);
@@ -36,10 +36,10 @@ public class AvailableQtyResetTask {
     }
 
     /**
-     * 每天 00:00 触发；表达式可用 {@code waizao.account.available-reset-cron} 覆盖
+     * 每天 00:00 触发；表达式可用 {@code shadowflow.account.available-reset-cron} 覆盖
      * （本地验证时改成每分钟一次，不用真等到半夜）。
      */
-    @Scheduled(cron = "${waizao.account.available-reset-cron:0 0 0 * * ?}", zone = "Asia/Shanghai")
+    @Scheduled(cron = "${shadowflow.account.available-reset-cron:0 0 0 * * ?}", zone = "Asia/Shanghai")
     public void resetDaily() {
         long start = System.currentTimeMillis();
         try {

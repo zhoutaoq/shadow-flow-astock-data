@@ -16,7 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 股票名称 → 代码 的索引，数据来自 stock-list.json（与 waizao 用同一份文件，但这里是独立解析，
+ * 股票名称 → 代码 的索引，数据来自 stock-list.json（与行情数据服务用同一份文件，但这里是独立解析，
  * 不复用其它包的代码）。
  *
  * <p>只收沪深A股（6 位数字 + 60/68/00/30 前缀）。文件改了会按修改时间自动重建，

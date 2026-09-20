@@ -9,7 +9,7 @@ import java.util.List;
  * 股票名录的统一仓储。
  *
  * <p>v1.3：两种模式下一套接口、一套模型 ——
- * 数据库模式写 {@code waizao_stock_list}，无数据库模式写 {@code ./data/stock-list.json}
+ * 数据库模式写 {@code shadowflow_stock_list}，无数据库模式写 {@code ./data/stock-list.json}
  * （首次启动用 {@code resources/stock-list.json} 播种，之后以落盘文件为准）。
  *
  * <p>系统只做沪深A股，{@code market} 默认固定为 {@code stock}。

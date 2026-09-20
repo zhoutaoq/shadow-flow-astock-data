@@ -7,7 +7,7 @@ import io.github.zhoutaoq.shadowflow.biz.model.PageResult;
  * 系统用户的统一仓储。
  *
  * <p>与其它仓储一样只有一份接口、两种落点：
- * 数据库模式写 {@code waizao_user}，无数据库模式写 {@code ./data/users.json}，
+ * 数据库模式写 {@code shadowflow_user}，无数据库模式写 {@code ./data/users.json}，
  * 业务代码（{@code AuthService}）不感知差别。
  */
 public interface UserRepository {

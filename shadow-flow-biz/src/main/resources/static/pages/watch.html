@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script>try{var t=localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>盯盘</title>
-    <link rel="stylesheet" href="/css/common.css?v=20260920d">
-    <link rel="stylesheet" href="/css/watch.css?v=20260920d">
+    <link rel="stylesheet" href="/css/common.css?v=20260920e">
+    <link rel="stylesheet" href="/css/watch.css?v=20260920e">
 </head>
 <body>
 <header class="topbar">
-    <a class="brand" href="/">金牛数据</a>
+    <a class="brand" href="/">影流数据</a>
     <nav class="nav" id="nav"></nav>
 </header>
 
@@ -95,14 +95,9 @@
                 </header>
                 <div class="wcard-bd">
                     <div class="field">
-                        <label for="fWebhook">我的钉钉机器人</label>
+                        <label for="fWebhook">我的钉钉机器人<span class="hint-q" tabindex="0" role="button" aria-label="推送机器人说明">?<span class="hint-box">这里填的是<b>你自己的群</b>，只影响你自己的盯盘告警。<span class="hint-li">留空表示用平台默认群：平台级的<b>系统通知机器人</b>，在「系统配置 → 第三方对接」由超管维护。</span></span></span></label>
                         <input type="text" id="fWebhook" autocomplete="off" spellcheck="false"
                                placeholder="留空则推送到平台默认群">
-                    </div>
-                    <div class="push-hint">
-                        这里填的是<b>你自己的群</b>，只影响你自己的盯盘告警。
-                        留空表示用平台默认群 —— 平台默认群在
-                        <a href="/pages/system.html">系统配置 → 第三方对接</a>，由超管维护。
                     </div>
                 </div>
             </section>
@@ -145,8 +140,8 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20260920d"></script>
-<script src="/js/stock-picker.js?v=20260920d"></script>
+<script src="/js/common.js?v=20260920e"></script>
+<script src="/js/stock-picker.js?v=20260920e"></script>
 <script>
     let picker = null;
     let cfg = null;

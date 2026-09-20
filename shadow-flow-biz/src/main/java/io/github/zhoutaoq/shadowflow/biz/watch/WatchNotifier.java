@@ -1,5 +1,10 @@
 package io.github.zhoutaoq.shadowflow.biz.watch;
 
+import io.github.zhoutaoq.shadowflow.biz.config.IntegrationConfigService;
+import io.github.zhoutaoq.shadowflow.biz.config.NotifyWiring;
+import io.github.zhoutaoq.shadowflow.biz.support.PublicIp;
+import io.github.zhoutaoq.shadowflow.biz.support.PushEnvelope;
+import io.github.zhoutaoq.shadowflow.notify.api.NotifyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -24,12 +29,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * feat3 推送（一）：项目启动后的「系统信息 + 盯盘名单 + 告警规则」一条钉钉消息，
  * 以及每次盯盘股票 / 告警规则变更后的差异推送。
  *
- * <p>只在配置了 webhook（<code>watch.dingtalk.webhook</code> 非空）时真正发送；
- * 未配置则整块静默，不打扰日志。
+ * <p>只在系统通知机器人有可用地址时才真正发送；未配置则整块静默，不打扰日志。
  *
  * <p>启动通知再叠一层环境开关：<code>watch.startup-notify.enabled</code>
  * <b>默认 false</b>（本地开发反复重启不发消息），生产发布时用
  * <code>--watch.startup-notify.enabled=true</code> 打开，消息首行标明「生产发布」与版本号。
+ *
+ * <p>能不能发的闸门（总开关、允许发送时段）不在这里判断 —— 它们由通知 SDK 统一执行，
+ * 本类只负责<b>拼业务文案</b>并把消息交给 SDK。
  *
  * <p>实现要点：
  * <ul>
@@ -47,7 +54,8 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
 
     private final WatchProperties props;
     private final WatchConfigStore store;
-    private final DingTalkNotifier notifier;
+    private final NotifyService notify;
+    private final IntegrationConfigService integration;
     private final Environment env;
     private final ExecutorService sendPool;
 
@@ -55,10 +63,11 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
     private final Map<Long, Baseline> baselines = new ConcurrentHashMap<>();
 
     public WatchNotifier(WatchProperties props, WatchConfigStore store,
-                         DingTalkNotifier notifier, Environment env) {
+                         NotifyService notify, IntegrationConfigService integration, Environment env) {
         this.props = props;
         this.store = store;
-        this.notifier = notifier;
+        this.notify = notify;
+        this.integration = integration;
         this.env = env;
         this.sendPool = Executors.newSingleThreadExecutor(new ThreadFactory() {
             private final AtomicInteger seq = new AtomicInteger();
@@ -110,18 +119,19 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
                     + "--watch.startup-notify.enabled=true 打开），本轮跳过");
             return;
         }
-        if (!props.getDingtalk().pushEnabled()) {
-            log.warn("[watch] 启动通知已开启，但钉钉推送总开关未打开或没有配置 webhook，跳过"
-                    + "（--watch.dingtalk.enabled=true 打开总开关）");
+        // 启动通知是给运维看的平台消息，固定走系统级「系统通知机器人」，
+        // 不能取超管个人的盯盘机器人 —— 那是他私人的群，不该收平台发布通知。
+        // 地址在「发的那一刻」现取：运维在系统配置页换了机器人，发布通知跟着走，不用重启。
+        String target = integration.dingtalkWebhook();
+        if (target == null || target.trim().isEmpty()) {
+            log.warn("[watch] 启动通知已开启，但系统通知机器人未配置（系统配置页未填、yml 兜底也为空），跳过");
             return;
         }
         WatchSettings snap = store.snapshot();
         String version = resolveVersion();
         log.info("[watch] 生产发布启动通知：版本 {}，标的 {} 只", version,
                 snap.getStocks() == null ? 0 : snap.getStocks().size());
-        // 启动通知是给运维看的平台消息，固定走系统级「系统通知机器人」，
-        // 不能取超管个人的盯盘机器人 —— 那是他私人的群，不该收平台发布通知
-        dispatch(buildStartup(snap, version), "启动通知", props.getDingtalk().getWebhook());
+        dispatch(buildStartup(snap, version), "启动通知", NotifyWiring.TARGET_SYSTEM);
     }
 
     /** store 变更回调：只在与该用户上次基线不同的名单/规则变化时，往他自己的群推差异 */
@@ -175,7 +185,7 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
     private String buildStartup(WatchSettings snap, String version) {
         List<WatchSettings.StockRef> stocks = snap.getStocks() == null
                 ? new ArrayList<>() : snap.getStocks();
-        String ip = WatchText.localIp();
+        String ip = PublicIp.localIp();
         String port = env.getProperty("server.port", "80");
         StringBuilder sb = new StringBuilder("【生产发布】盯盘系统 ").append(version).append(" 已启动\n");
         sb.append("IP：").append(ip).append('\n');
@@ -200,12 +210,15 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         return fromJar == null || fromJar.trim().isEmpty() ? "dev" : fromJar.trim();
     }
 
-    private void dispatch(String content, String kind, String webhook) {
+    private void dispatch(String content, String kind, String target) {
+        // 前缀（关键词 + 主机 + 发送时刻）由业务侧拼好后交给 SDK；
+        // SDK 不认识关键词是什么，只把它当作逐字前缀拼在正文之前
+        final String prefix = PushEnvelope.of(props.getDingtalk().getKeyword());
         sendPool.execute(() -> {
-            if (notifier.sendTo(webhook, content)) {
+            if (notify.send(target, prefix, content)) {
                 log.info("[watch] 已推送{}：{}", kind, content);
             } else {
-                log.warn("[watch] 钉钉未推送（未配置机器人或调用失败），{}内容：{}", kind, content);
+                log.warn("[watch] 未推送（没有可用机器人或发送被拦下），{}内容：{}", kind, content);
             }
         });
     }

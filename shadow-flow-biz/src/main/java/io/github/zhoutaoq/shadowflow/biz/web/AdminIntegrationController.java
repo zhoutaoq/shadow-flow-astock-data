@@ -13,9 +13,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 第三方对接配置（v1.5.9）：waizao 令牌、钉钉机器人、反馈与注册的关键词。
+ * 第三方对接配置（v1.5.9）：行情数据服务令牌、钉钉机器人、反馈与注册的关键词。
  *
- * <p>改造前这些凭据分三处维护 —— waizao 令牌按用户各存一份、钉钉机器人存在盯盘的个人落盘文件里、
+ * <p>改造前这些凭据分三处维护 —— 行情数据服务令牌按用户各存一份、钉钉机器人存在盯盘的个人落盘文件里、
  * 反馈与注册的关键词只能改 application.yml 重启。现在统一收在这一个接口下，
  * 存系统级配置行（{@code ownerId = 0}），<b>全局一份、全站生效</b>。
  *

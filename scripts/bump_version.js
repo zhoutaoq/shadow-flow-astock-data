@@ -10,7 +10,7 @@ const path = require('path');
 
 const FROM = process.argv[2] || '20260907f';
 const TO = process.argv[3] || '20260908a';
-const root = 'src/main/resources/static';
+const root = 'shadow-flow-biz/src/main/resources/static';
 let n = 0;
 
 function walk(d) {

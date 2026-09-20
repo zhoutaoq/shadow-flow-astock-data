@@ -13,7 +13,7 @@ import java.nio.file.Paths;
 /**
  * 无数据库模式的数据文件根目录。
  *
- * <p>所有落盘数据都以 {@code waizao.store.data-dir}（默认 {@code ./data}）为根，
+ * <p>所有落盘数据都以 {@code shadowflow.store.data-dir}（默认 {@code ./data}）为根，
  * 子路径由各 Repository 自己命名。相对路径按进程工作目录解析，启动时确保目录存在。
  *
  * <p>目录建不出来时只告警不抛异常：数据落不了盘最多丢历史，不该把整个应用拖起不来。

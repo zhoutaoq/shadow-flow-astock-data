@@ -62,7 +62,7 @@ function delCookie(name) {
 
 /* ============ 令牌 ============ */
 /**
- * v1.5 起供应商令牌完全由服务端按用户维护，浏览器不再持有令牌。
+ * v1.5 起行情数据服务令牌完全由服务端按用户维护，浏览器不再持有令牌。
  *
  * <p>「实时通知配置」页保存的令牌记在当前登录用户名下，抓数时后端取「发起这一请求的人」
  * 自己的令牌；该用户没配过时回落到系统级默认令牌。所以前端既不存 cookie 令牌、
@@ -77,7 +77,14 @@ function delCookie(name) {
  * <p>令牌本身在服务端内存里，进程重启即失效；这时接口会回 401，
  * 由 {@link onUnauthorized} 统一清掉本地令牌并跳登录页。
  */
-const AUTH_COOKIE = 'jn_token';
+const AUTH_COOKIE = 'shadowflow_token';
+/**
+ * v1.6.0 之前的 cookie 名（品牌改名前的 {@code jn_} 前缀）。
+ *
+ * <p>只用于<b>读取兜底</b>：老用户浏览器里还留着旧名的令牌，认下来就地迁到新名，
+ * 不至于因为一次改名把所有人踢下线。迁移完旧 cookie 立即删掉。
+ */
+const AUTH_COOKIE_LEGACY = 'jn_token';
 const AUTH_COOKIE_DAYS = 7;
 
 /** 当前登录态。各页面只读它，不自己发 /api/auth/me */
@@ -95,7 +102,18 @@ let _authMode = 'login';
 let _authCb = {};
 
 function authToken() {
-    return getCookie(AUTH_COOKIE);
+    const t = getCookie(AUTH_COOKIE);
+    if (t) {
+        return t;
+    }
+    // 改名平滑过渡：旧 cookie 里的令牌仍然有效，读到就搬成新名
+    const legacy = getCookie(AUTH_COOKIE_LEGACY);
+    if (legacy) {
+        setCookie(AUTH_COOKIE, legacy, AUTH_COOKIE_DAYS);
+        delCookie(AUTH_COOKIE_LEGACY);
+        return legacy;
+    }
+    return '';
 }
 
 function setAuthToken(token) {
@@ -213,7 +231,7 @@ function openAuthModal(opt) {
         mask.id = 'authMask';
         mask.innerHTML = '<div class="modal modal-auth" role="dialog" aria-modal="true" aria-label="登录或注册">'
             + '<div class="auth-head">'
-            + '<span class="auth-brand"><span class="mark">' + ICON.spade + '</span>金牛数据</span>'
+            + '<span class="auth-brand"><span class="mark">' + ICON.spade + '</span>影流数据</span>'
             + '</div>'
             + '<div class="auth-tabs">'
             + '<button class="auth-tab" id="amTabLogin" type="button">登录</button>'
@@ -795,28 +813,28 @@ function toast(message, type) {
     }, type === 'err' ? 8000 : 4000);
 }
 
-/* ============ 计费保护 ============ */
-/** 预计调用次数超过这个值就弹二次确认（供应商接口按次计费，误点一次就是一批钱） */
-const CONFIRM_CALLS_OVER = 20;
+/* ============ 批量调用确认 ============ */
+/** 预计调用次数超过这个值就弹二次确认（每一次请求都会真实触发行情数据服务调用，误点一次就是一批请求） */
+const BULK_CONFIRM_OVER = 20;
 
 /**
  * 批量更新行情前的二次确认。
  *
- * <p>供应商日K接口单次请求支持任意长日期区间，所以<b>预计调用次数 = 股票只数</b>；
- * 预览模式同样消耗调用次数，因此两种模式都要确认。
+ * <p>行情数据服务日K接口单次请求支持任意长日期区间，所以<b>预计调用次数 = 股票只数</b>；
+ * 预览模式同样会发出请求，因此两种模式都要确认。
  *
  * @param stockCount 本次要更新的股票只数，即预计接口调用次数
  * @param extra      追加提示（如筛选条件）
  * @returns {boolean} true 继续，false 放弃
  */
-function confirmApiCost(stockCount, extra) {
-    if (!stockCount || stockCount <= CONFIRM_CALLS_OVER) {
+function confirmBulkFetch(stockCount, extra) {
+    if (!stockCount || stockCount <= BULK_CONFIRM_OVER) {
         return true;
     }
     const lines = [
         '本次将更新 ' + stockCount + ' 只股票的行情',
-        '预计消耗 ' + stockCount + ' 次接口调用（每只股票整个日期区间只发一次请求）',
-        '供应商接口按次计费，请求一旦发出即计费（预览模式同样计费）'
+        '预计发起 ' + stockCount + ' 次接口请求（每只股票整个日期区间只发一次请求）',
+        '请求一旦发出就会真实触发行情数据服务调用（预览模式同样会发出请求）'
     ];
     if (extra) {
         lines.push(extra);
@@ -940,7 +958,32 @@ function padYmd(y, mo, d) {
 }
 
 /* ============ 主题：暗色 / 亮色 ============ */
-const THEME_KEY = 'jn_theme';
+const THEME_KEY = 'shadowflow_theme';
+/** v1.6.0 之前的键名（品牌改名前的 {@code jn_} 前缀）；读到就迁到新键，别让用户手动选过的主题失效 */
+const THEME_KEY_LEGACY = 'jn_theme';
+
+/**
+ * 读取已保存的主题（新键优先，旧键兜底并迁移）。
+ *
+ * <p>localStorage 在隐私模式下会直接抛异常，所以整段包 try。
+ */
+function readSavedTheme() {
+    try {
+        const saved = localStorage.getItem(THEME_KEY);
+        if (saved === 'light' || saved === 'dark') {
+            return saved;
+        }
+        const legacy = localStorage.getItem(THEME_KEY_LEGACY);
+        if (legacy === 'light' || legacy === 'dark') {
+            localStorage.setItem(THEME_KEY, legacy);
+            localStorage.removeItem(THEME_KEY_LEGACY);
+            return legacy;
+        }
+    } catch (e) {
+        // 隐私模式下 localStorage 不可用，退回时间判断
+    }
+    return '';
+}
 
 /**
  * 已保存的主题；没手动选过就按客户端本地时间自动判断。
@@ -949,22 +992,15 @@ const THEME_KEY = 'jn_theme';
  * 用户在顶栏点过太阳/月亮后以保存值为准，不再随时间跳变。
  */
 function currentTheme() {
-    try {
-        const saved = localStorage.getItem(THEME_KEY);
-        if (saved === 'light' || saved === 'dark') {
-            return saved;
-        }
-    } catch (e) {
-        // 隐私模式下 localStorage 不可用，退回时间判断
-    }
-    return autoThemeByClock();
+    const saved = readSavedTheme();
+    return saved || autoThemeByClock();
 }
 
 /**
  * 按客户端本地时间自动选主题：06:00–18:00 亮色，其余暗色。
  *
  * <p>各页面 {@code <head>} 里的首屏内联脚本有一份等价实现 —— 那段必须早于 CSS 渲染执行，
- * 引不到本文件，改这里的规则时记得同步改那 14 份（否则会先按旧规则闪一下）。
+ * 引不到本文件，改这里的规则（含键名）时记得同步改那十几份页面（否则会先按旧规则闪一下）。
  */
 function autoThemeByClock() {
     const h = new Date().getHours();
@@ -988,6 +1024,8 @@ function toggleTheme() {
     const next = currentTheme() === 'light' ? 'dark' : 'light';
     try {
         localStorage.setItem(THEME_KEY, next);
+        // 顺手清掉改名前的旧键，免得两处并存、以后改键值时互相干扰
+        localStorage.removeItem(THEME_KEY_LEGACY);
     } catch (e) {
         // 忽略：写不进 cookie / localStorage 时页面仍然可用
     }
@@ -1371,7 +1409,7 @@ function scheduleLabelGridTables() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[金牛数据] 前端版本 20260920d（v1.5.9：按钮统一靠右（顶栏亮暗按钮归位、表格操作列贴右、动作行 row-end）+ 移动端顶栏两行布局）');
+    console.info('[影流数据] 前端版本 20260920e（v1.6.0：品牌改影流数据 / 多模块拆分 / 通知 SDK / 提示文案收进 ? 气泡）');
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();

@@ -15,17 +15,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * waizao_stock_kline_daily 的后台管理（分页 / 单条增删改 / 区间删除 / 图数据）。
+ * shadowflow_stock_kline_daily 的后台管理（分页 / 单条增删改 / 区间删除 / 图数据）。
  *
  * <p>v1.3：K线的<b>落库</b>动作统一走 {@code KlineRepository#save}（抓取链路），
  * 这里只保留「库里已有数据的管理」—— 无数据库模式下K线现取现用、不落盘，
  * 也就没有可管理的数据，所以本类仍只在数据库模式装配。
  */
 @Service
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "true")
 public class StockKlineService {
 
-    private static final String TABLE = "waizao_stock_kline_daily";
+    private static final String TABLE = "shadowflow_stock_kline_daily";
     private static final String COLUMNS = "k.stock_code, k.market, k.trade_date, k.open_price, k.close_price,"
             + " k.high_price, k.low_price, k.volume, k.amount, k.pre_close, k.create_time, k.update_time";
 
@@ -63,7 +63,7 @@ public class StockKlineService {
         params.put("limit", size);
         List<StockKlineDaily> rows = named.query(
                 "SELECT " + COLUMNS + ", s.stock_name FROM " + TABLE + " k"
-                        + " LEFT JOIN waizao_stock_list s ON s.stock_code = k.stock_code AND s.market = k.market"
+                        + " LEFT JOIN shadowflow_stock_list s ON s.stock_code = k.stock_code AND s.market = k.market"
                         + where
                         + " ORDER BY k.trade_date DESC, k.stock_code LIMIT :offset, :limit",
                 params, new BeanPropertyRowMapper<>(StockKlineDaily.class));

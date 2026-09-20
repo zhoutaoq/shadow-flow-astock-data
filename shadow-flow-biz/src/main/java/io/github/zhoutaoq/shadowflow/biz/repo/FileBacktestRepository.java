@@ -32,10 +32,10 @@ import java.util.TreeMap;
  * 文件里存主记录 + 每日快照 + 交易明细，<b>不存K线</b> —— K线按设计不落盘，
  * 回看时由 {@link KlineRepository} 现取（与数据库模式「回看时反查日K表」是同一个动作）。
  *
- * <p>保留条数受 {@code waizao.store.backtest-keep} 限制，超出淘汰最旧的，避免目录无限膨胀。
+ * <p>保留条数受 {@code shadowflow.store.backtest-keep} 限制，超出淘汰最旧的，避免目录无限膨胀。
  */
 @Repository
-@ConditionalOnProperty(name = "waizao.db.enabled", havingValue = "false", matchIfMissing = true)
+@ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
 public class FileBacktestRepository implements BacktestRepository {
 
     private static final Logger log = LoggerFactory.getLogger(FileBacktestRepository.class);
@@ -162,7 +162,7 @@ public class FileBacktestRepository implements BacktestRepository {
         out.setBacktest(bt);
         out.setDailies(src.getDailies() == null ? new ArrayList<>() : new ArrayList<>(src.getDailies()));
         out.setTrades(src.getTrades() == null ? new ArrayList<>() : new ArrayList<>(src.getTrades()));
-        // K线不落盘，回看时按回测区间现取（无数据库模式下即向供应商取一次）
+        // K线不落盘，回看时按回测区间现取（无数据库模式下即向行情数据服务取一次）
         List<StockKlineDaily> klines = new ArrayList<>();
         if (bt != null && bt.getStockCode() != null && bt.getStartDate() != null && bt.getEndDate() != null) {
             try {
