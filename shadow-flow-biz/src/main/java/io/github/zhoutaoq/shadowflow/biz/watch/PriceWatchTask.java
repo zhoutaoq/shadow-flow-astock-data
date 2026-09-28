@@ -1,7 +1,10 @@
 package io.github.zhoutaoq.shadowflow.biz.watch;
 
+import io.github.zhoutaoq.shadowflow.biz.service.StockLinkService;
 import io.github.zhoutaoq.shadowflow.biz.support.PushEnvelope;
+import io.github.zhoutaoq.shadowflow.notify.api.NotifyMessage;
 import io.github.zhoutaoq.shadowflow.notify.api.NotifyService;
+import io.github.zhoutaoq.shadowflow.notify.support.NotifyText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -48,10 +51,10 @@ public class PriceWatchTask {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
-    /** 封板状态：涨停 / 未涨跌停 / 跌停 */
-    private static final int LIMIT_UP = 1;
-    private static final int LIMIT_NONE = 0;
-    private static final int LIMIT_DOWN = -1;
+    /** 封板状态：涨停 / 未涨跌停 / 跌停（包内可见：WatchCards 渲染器与推送页共用） */
+    static final int LIMIT_UP = 1;
+    static final int LIMIT_NONE = 0;
+    static final int LIMIT_DOWN = -1;
 
     /** 封板判断阈值（百分比，各留 0.5% 容错）：ST 5%→4.5%，创业 30x / 科创 688 为 20%→19.5%，其余 10%→9.5% */
     private static final BigDecimal TH_ST = new BigDecimal("4.5");
@@ -69,6 +72,8 @@ public class PriceWatchTask {
     private final WatchConfigStore store;
     private final SinaQuoteClient quoteClient;
     private final NotifyService notify;
+    /** 行情跳转链接来源：系统配置页维护的站外目标（百度股市通 / 雪球） */
+    private final StockLinkService stockLinks;
     private final ExecutorService executor;
 
     /** "用户id|代码" → 历史价格采样（按时间升序）：同一个人盯同一只才有共同基线 */
@@ -81,11 +86,13 @@ public class PriceWatchTask {
                           WatchConfigStore store,
                           SinaQuoteClient quoteClient,
                           NotifyService notify,
+                          StockLinkService stockLinks,
                           @Qualifier("watchExecutor") ExecutorService watchExecutor) {
         this.props = props;
         this.store = store;
         this.quoteClient = quoteClient;
         this.notify = notify;
+        this.stockLinks = stockLinks;
         this.executor = watchExecutor;
     }
 
@@ -352,12 +359,9 @@ public class PriceWatchTask {
 
         if (!hits.isEmpty()) {
             String msg = buildAlert(ctx, q, hits);
-            if (notify.send(ctx.webhook, pushPrefix(), msg)) {
-                log.info("[watch] 已推送（用户 {}）：{}", ctx.userId, msg);
-            } else {
-                log.warn("[watch] 未推送（没有可用机器人或被闸门拦下），用户 {}，内容：{}", ctx.userId, msg);
+            if (sendCard(ctx, msg, linkOf(q))) {
+                pushed = true;
             }
-            pushed = true;
         }
 
         st.lastVolume = q.getVolume();
@@ -411,7 +415,8 @@ public class PriceWatchTask {
     }
 
     /**
-     * 拼钉钉消息：把同一轮里所有命中的规则合并成一条，按涨幅取最大的一档作为主措辞。
+     * 拼钉钉消息（v1.6.3 起为 markdown 卡片）：把同一轮里所有命中的规则合并成一条，
+     * 按涨幅取最大的一档作为主措辞；末行附系统配置的行情跳转链接（百度股市通 / 雪球）。
      *
      * <p>措辞分档（绝对值，涨 / 跌对称）：
      * <ul>
@@ -420,6 +425,7 @@ public class PriceWatchTask {
      *   <li>≥ 3%   急速拉升 / 急速下挫</li>
      * </ul>
      * 消息含"过去 Ns 内累计涨幅"与"当前涨跌幅"，并列出拉升成交量 / 拉升成交额。
+     * 排版细节统一在 {@link WatchCards}，与推送页（手动实时推送）共用同一份渲染。
      */
     String buildAlert(Ctx ctx, Quote q, List<Hit> hits) {
         BigDecimal maxDelta = BigDecimal.ZERO;
@@ -435,25 +441,28 @@ public class PriceWatchTask {
         BigDecimal volDelta = volumeDelta(ctx, q);
         BigDecimal amtDelta = amountDelta(ctx, q);
 
-        StringBuilder sb = new StringBuilder();
-        sb.append(q.getName()).append(' ').append(action);
         // 命中的第一条规则 intervals × 轮询间隔秒 = 这次推送的主要时间范围
         long mainSec = (long) hits.get(0).rule.getIntervals() * ctx.intervalSec;
-        sb.append("，过去 ").append(mainSec).append("s 内");
-        sb.append(up ? "累计涨幅 " : "累计跌幅 ")
-                .append(absPct.toPlainString()).append('%');
-        sb.append("，现价 ").append(q.getPrice().toPlainString()).append(" 元");
-        BigDecimal todayPct = q.changePercent();
-        sb.append("，当前涨跌幅 ")
-                .append(todayPct == null ? "—" : todayPct.toPlainString()).append('%');
-        if (volDelta != null) {
-            sb.append("，拉升成交量：").append(formatVolume(volDelta));
+        return WatchCards.fluctuation(q.getName(), up, action, mainSec,
+                absPct.toPlainString(),
+                q.priceText(),
+                q.changePercentText(),
+                volDelta == null ? null : formatVolume(volDelta),
+                amtDelta == null ? null : formatAmount(amtDelta));
+    }
+
+    /**
+     * 该标的的整卡跳转地址：<b>与页面点标的跳的是同一个源</b> ——
+     * 系统配置页选的默认目标。拿不到（总开关关闭 / 目标全停 / 拼装异常）返回 null，
+     * 卡片照发，只是不挂跳转 —— 跳转是增强，不能反过来卡住告警。
+     */
+    private String linkOf(Quote q) {
+        try {
+            return stockLinks.primaryLink(q.getCode(), q.getName());
+        } catch (RuntimeException e) {
+            log.warn("[watch] 行情跳转地址拼装失败，本条消息不跳转：{}", e.getMessage());
+            return null;
         }
-        if (amtDelta != null) {
-            sb.append("，拉升成交额：").append(formatAmount(amtDelta));
-        }
-        sb.append('。');
-        return sb.toString();
     }
 
     /**
@@ -548,7 +557,7 @@ public class PriceWatchTask {
     }
 
     /** 成交量按"手"显示（v 单位是"股"，1手=100股）：1234 → 1234 手；万手 / 亿手自动进位 */
-    static String formatVolume(BigDecimal v) {
+    public static String formatVolume(BigDecimal v) {
         if (v == null) return "—";
         BigDecimal hand = v.divide(BigDecimal.valueOf(100), 2, BigDecimal.ROUND_HALF_UP);
         if (hand.compareTo(YI_HAND) >= 0) {
@@ -561,7 +570,7 @@ public class PriceWatchTask {
     }
 
     /** 成交额按"万元"显示 */
-    static String formatAmount(BigDecimal v) {
+    public static String formatAmount(BigDecimal v) {
         if (v == null) return "—";
         // v 单位是"元"
         BigDecimal wan = v.divide(BigDecimal.valueOf(10000L), 2, BigDecimal.ROUND_HALF_UP);
@@ -631,23 +640,38 @@ public class PriceWatchTask {
      */
     private void sendLimitAlert(Ctx ctx, Quote q, int state, boolean closed,
                                 BigDecimal windowVol, BigDecimal windowAmt) {
-        String word;
-        if (state == LIMIT_UP) {
-            word = closed ? "涨停" : "打开涨停";
-        } else {
-            word = closed ? "跌停" : "打开跌停";
+        String msg = WatchCards.limit(q.getName(), state, closed,
+                q.priceText(),
+                q.changePercentText(),
+                windowVol == null ? null : formatVolume(windowVol),
+                windowAmt == null ? null : formatAmount(windowAmt),
+                q.getAmount() == null ? null : formatAmount(q.getAmount()));
+        sendCard(ctx, msg, linkOf(q));
+    }
+
+    /**
+     * 告警卡片统一出口：前缀（关键词 + 主机 + 时刻）拼在正文最前，失败不重试不抛异常。
+     *
+     * <p>{@code linkUrl} 非空时投「整卡可点」的形态：点消息任意位置都跳到系统配置的
+     * 跳转源；为空（没配 / 全停 / 拼不出来）就退回普通 markdown 卡片，消息照发。
+     */
+    private boolean sendCard(Ctx ctx, String content, String linkUrl) {
+        NotifyMessage.Builder b = NotifyMessage.to(ctx.webhook)
+                .prefix(pushPrefix())
+                .content(content)
+                .cardTitle(WatchCards.titleOf(content))
+                .markdown();
+        if (linkUrl != null && !linkUrl.trim().isEmpty()) {
+            b.link(linkUrl.trim());
         }
-        String pctText = q.changePercentText() == null ? "—" : q.changePercentText() + "%";
-        String msg = q.getName() + " " + word
-                + "，现价 " + q.priceText() + " 元，涨跌幅为 " + pctText
-                + "，本窗口成交量 " + formatVolume(windowVol)
-                + "，本窗口成交额 " + formatAmount(windowAmt)
-                + "，总成交额 " + formatAmount(q.getAmount()) + "。";
-        if (notify.send(ctx.webhook, pushPrefix(), msg)) {
-            log.info("[watch] 已推送（用户 {}）：{}", ctx.userId, msg);
-        } else {
-            log.warn("[watch] 未推送（没有可用机器人或被闸门拦下），用户 {}，内容：{}", ctx.userId, msg);
+        NotifyMessage message = b.build();
+        if (notify.send(message)) {
+            log.info("[watch] 已推送（用户 {}）：{}", ctx.userId, NotifyText.oneLine(content));
+            return true;
         }
+        log.warn("[watch] 未推送（没有可用机器人或被闸门拦下），用户 {}，内容：{}",
+                ctx.userId, NotifyText.oneLine(content));
+        return false;
     }
 
     /**
@@ -659,28 +683,21 @@ public class PriceWatchTask {
      * @return 是否真的推成功（失败也照样记状态，跟封板通知一个口径，不逐轮重试刷屏）
      */
     private boolean sendSurgeAlert(Ctx ctx, Quote q, int state, BigDecimal curAmount, BigDecimal prevAmount) {
-        String word = state == LIMIT_UP ? "涨停" : "跌停";
-        StringBuilder sb = new StringBuilder();
-        sb.append(q.getName()).append(' ').append(word).append("放量");
-        sb.append("，现价 ").append(q.priceText()).append(" 元");
-        String pctText = q.changePercentText();
-        sb.append("，涨跌幅 ").append(pctText == null ? "—" : pctText).append('%');
-        sb.append("，本区间成交额 ").append(formatAmount(curAmount));
-        if (prevAmount != null) {
-            sb.append("（上区间 ").append(formatAmount(prevAmount));
-            if (prevAmount.signum() > 0 && curAmount != null && curAmount.signum() > 0) {
-                BigDecimal times = curAmount.divide(prevAmount, 1, BigDecimal.ROUND_HALF_UP);
-                sb.append("，放大 ").append(times.toPlainString()).append(" 倍");
-            }
-            sb.append("）");
+        String timesText = null;
+        if (prevAmount != null && prevAmount.signum() > 0
+                && curAmount != null && curAmount.signum() > 0) {
+            timesText = curAmount.divide(prevAmount, 1, BigDecimal.ROUND_HALF_UP).toPlainString() + " 倍";
         }
-        sb.append("，本区间成交量 ").append(formatVolume(volumeDelta(ctx, q))).append('。');
-        String msg = sb.toString();
-        if (notify.send(ctx.webhook, pushPrefix(), msg)) {
-            log.info("[watch] 已推送（用户 {}）：{}", ctx.userId, msg);
-            return true;
-        }
-        log.warn("[watch] 未推送（没有可用机器人或被闸门拦下），用户 {}，内容：{}", ctx.userId, msg);
-        return false;
+        String msg = WatchCards.surge(q.getName(), state,
+                q.priceText(),
+                q.changePercentText(),
+                curAmount == null ? null : formatAmount(curAmount),
+                prevAmount == null ? null : formatAmount(prevAmount),
+                timesText,
+                formatVolume(volumeDelta(ctx, q)));
+        sendCard(ctx, msg, linkOf(q));
+        // 与封板通知一个口径：发送失败也照样记状态，不逐轮重试刷屏；
+        // 返回值只用于「本轮触发条数」统计，与是否记状态无关
+        return true;
     }
 }

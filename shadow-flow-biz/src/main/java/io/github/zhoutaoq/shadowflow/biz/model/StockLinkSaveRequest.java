@@ -16,6 +16,8 @@ public class StockLinkSaveRequest {
     private Boolean enabled;
     /** 默认跳转目标 key（必须是本次提交里启用的目标之一） */
     private String defaultTarget;
+    /** 本站对外地址（站内目标要在钉钉里能点开就得填它）；null = 不改动 */
+    private String siteBaseUrl;
     /** 各目标的启用状态 */
     private List<TargetState> targets = new ArrayList<>();
 
@@ -33,6 +35,14 @@ public class StockLinkSaveRequest {
 
     public void setDefaultTarget(String defaultTarget) {
         this.defaultTarget = defaultTarget;
+    }
+
+    public String getSiteBaseUrl() {
+        return siteBaseUrl;
+    }
+
+    public void setSiteBaseUrl(String siteBaseUrl) {
+        this.siteBaseUrl = siteBaseUrl;
     }
 
     public List<TargetState> getTargets() {

@@ -5,6 +5,7 @@ import io.github.zhoutaoq.shadowflow.biz.model.StockLink;
 import io.github.zhoutaoq.shadowflow.biz.model.StockLinkSaveRequest;
 import io.github.zhoutaoq.shadowflow.biz.model.SysConfig;
 import io.github.zhoutaoq.shadowflow.biz.repo.SysConfigRepository;
+import io.github.zhoutaoq.shadowflow.biz.support.SiteBase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -42,11 +43,18 @@ public class StockLinkService {
 
     private final StockLinkProperties props;
     private final SysConfigRepository configs;
+    private final SiteBase site;
 
-    public StockLinkService(StockLinkProperties props, SysConfigRepository configs) {
+    public StockLinkService(StockLinkProperties props, SysConfigRepository configs, SiteBase site) {
         this.props = props;
         this.configs = configs;
+        this.site = site;
     }
+
+    /** 站点对外地址的落点：与跳转开关同一层（系统级 + 场景 site） */
+    private static final String SITE_SCENE = "site";
+    private static final String SITE_KEY = "base-url";
+    private static final String SITE_REMARK = "站点对外地址";
 
     /** 当前生效的一份（未配置过时就是 application.yml 里的默认） */
     public StockLink current() {
@@ -63,7 +71,16 @@ public class StockLinkService {
         if (!StringUtils.hasText(wantDefault)) {
             wantDefault = trim(props.getDefaultTarget());
         }
-        return assemble(enabled, wantDefault, disabled);
+        StockLink out = assemble(enabled, wantDefault, disabled);
+        String raw = trim(configs.get(SITE_SCENE, SITE_KEY));
+        out.setSiteBaseUrl(StringUtils.hasText(raw) ? raw : ymlSiteBase());
+        return out;
+    }
+
+    /** 配置文件里的出厂值（页面没填过地址时展示它，省得超管以为压根没这项） */
+    private String ymlSiteBase() {
+        String v = trim(props.getSiteBaseUrl());
+        return v.isEmpty() ? "" : v;
     }
 
     /**
@@ -116,18 +133,28 @@ public class StockLinkService {
             throw new IllegalArgumentException("至少启用一个跳转目标");
         }
 
+        String siteBase = req.getSiteBaseUrl() == null ? null : req.getSiteBaseUrl().trim();
+        if (siteBase != null && !siteBase.isEmpty() && SiteBase.normalize(siteBase) == null) {
+            throw new IllegalArgumentException("站点对外地址格式不对，应形如 http://1.2.3.4:8080");
+        }
         saveRow(KEY_ENABLED, enabled ? "true" : "false");
         saveRow(KEY_DEFAULT, resolved.getDefaultTarget());
         saveRow(KEY_DISABLED, String.join(",", disabled));
-        log.info("[stock-link] 股票名称跳转已更新：{}，默认 {}，停用 [{}]",
-                enabled ? "启用" : "停用", resolved.getDefaultTarget(), String.join(",", disabled));
+        if (siteBase != null) {
+            saveRow(SITE_SCENE, SITE_KEY, siteBase, SITE_REMARK);
+            resolved.setSiteBaseUrl(siteBase);
+        }
+        log.info("[stock-link] 股票名称跳转已更新：{}，默认 {}，停用 [{}]，站点对外地址 [{}]",
+                enabled ? "启用" : "停用", resolved.getDefaultTarget(), String.join(",", disabled),
+                resolved.getSiteBaseUrl());
         return resolved;
     }
 
     /** 恢复默认：删掉这几行配置，回到 application.yml 的默认口径 */
     public void reset() {
         for (SysConfig row : configs.list(SysConfig.SYSTEM_OWNER)) {
-            if (SCENE.equals(row.getConfigScene()) && row.getId() != null) {
+            if ((SCENE.equals(row.getConfigScene()) || SITE_SCENE.equals(row.getConfigScene()))
+                    && row.getId() != null) {
                 configs.delete(SysConfig.SYSTEM_OWNER, row.getId());
             }
         }
@@ -181,13 +208,133 @@ public class StockLinkService {
         return out;
     }
 
+    /**
+     * 交易所前缀推导（雪球这类「市场前缀 + 代码」的平台要用）。
+     *
+     * <p>口径与前端 {@code common.js stockMarketOf} 完全一致，<b>两边必须共改</b>：
+     * 6 / 9 开头是沪市（含 688 科创板），4 / 8 开头是北交所，其余按深市算。
+     * 指数代码（如 000001 上证指数）在这里会被判成深市 —— 同一个 6 位代码
+     * 在两个交易所都成立时无法从代码本身区分，这是固有歧义，不为了它去猜。
+     */
+    public static String marketOf(String code) {
+        String c = code == null ? "" : code.trim();
+        char head = c.isEmpty() ? '0' : c.charAt(0);
+        if (head == '6' || head == '9') {
+            return "SH";
+        }
+        if (head == '4' || head == '8') {
+            return "BJ";
+        }
+        return "SZ";
+    }
+
+    /**
+     * 整卡跳转用的<b>唯一地址</b>：与 PC 页面点标的跳的是同一个源 ——
+     * 系统配置页选的默认目标（{@code defaultTarget}）就是这里的结果。
+     *
+     * <p>口径说明（只给一个地址，不列候选）：
+     * 页面上一次点击只会去一个地方，就是默认目标；推送消息同理，
+     * 不该在一条消息里塞好几个候选让用户挑。所以这里<b>只返回一个地址</b>。
+     *
+     * <p>三级兜底，任何一级拿不到就顺延，全拿不到返回 null（调用方据此退回不带跳转的卡片，
+     * 消息照发）：
+     * <ol>
+     *   <li>默认目标（可能是站内页面，此时补成绝对地址）；</li>
+     *   <li>第一个能用的启用目标；</li>
+     *   <li>没有可用目标 → null。</li>
+     * </ol>
+     *
+     * <p>拼装出异常一律按「没有地址」处理 —— 链接问题绝不能阻塞告警本身。
+     */
+    public String primaryLink(String code, String name) {
+        if (code == null || code.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            StockLink link = current();
+            if (link == null || !link.isEnabled() || link.getTargets() == null) {
+                return null;
+            }
+            String c = code.trim();
+            String n = name == null || name.trim().isEmpty() ? c : name.trim();
+            String url = urlOf(link, link.getDefaultTarget(), c, n);
+            if (url != null) {
+                return url;
+            }
+            // 默认目标不可用（被停用、或站内地址补不出绝对地址）时顺延到第一个能用的
+            for (StockLink.Target t : link.getTargets()) {
+                if (t == null || !t.isEnabled()) {
+                    continue;
+                }
+                url = urlOf(link, t.getKey(), c, n);
+                if (url != null) {
+                    return url;
+                }
+            }
+            return null;
+        } catch (RuntimeException e) {
+            log.warn("[stock-link] 跳转地址拼装失败 {}({})，本条消息不跳转：{}", name, code, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 按 key 拼出最终地址：填占位符；<b>站内相对路径补成本站绝对地址</b>。
+     *
+     * @return 最终地址；目标不存在 / 被停用 / 模板为空 / 站内地址补不出绝对地址时返回 null
+     */
+    private String urlOf(StockLink link, String key, String code, String name) {
+        if (key == null || key.trim().isEmpty() || link.getTargets() == null) {
+            return null;
+        }
+        for (StockLink.Target t : link.getTargets()) {
+            if (t == null || !key.trim().equals(t.getKey()) || !t.isEnabled()) {
+                continue;
+            }
+            String tpl = t.getUrl();
+            if (tpl == null || tpl.trim().isEmpty()) {
+                return null;
+            }
+            String u = tpl
+                    .replace("{code}", urlencode(code))
+                    .replace("{market}", marketOf(code))
+                    .replace("{name}", urlencode(name));
+            if (u.startsWith("http://") || u.startsWith("https://")) {
+                return u;
+            }
+            String base = site == null ? null : site.base();
+            if (base == null || base.isEmpty()) {
+                return null; // 拼不出绝对地址的站内页面宁可不给，点了打不开更糟
+            }
+            return base + (u.startsWith("/") ? u : "/" + u);
+        }
+        return null;
+    }
+
+    /**
+     * 与前端 {@code encodeURIComponent} 同口径的编码：空格变 %20 而不是 +，
+     * 其余非保留字符保持原样（A股名称是汉字为主，差异只落在空格这类罕见字符上）。
+     */
+    private static String urlencode(String v) {
+        try {
+            // JDK 8 没有 encode(String, Charset)，只能用受检异常的字符串重载
+            return java.net.URLEncoder.encode(v, "UTF-8").replace("+", "%20");
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new IllegalStateException(e); // UTF-8 永远存在，不会走到这
+        }
+    }
+
     private void saveRow(String key, String value) {
+        saveRow(SCENE, key, value, REMARK);
+    }
+
+    private void saveRow(String scene, String key, String value, String remark) {
         SysConfig cfg = new SysConfig();
         cfg.setOwnerId(SysConfig.SYSTEM_OWNER);
-        cfg.setConfigScene(SCENE);
+        cfg.setConfigScene(scene);
         cfg.setConfigKey(key);
         cfg.setConfigValue(value == null ? "" : value);
-        cfg.setRemark(REMARK);
+        cfg.setRemark(remark);
         configs.save(cfg);
     }
 

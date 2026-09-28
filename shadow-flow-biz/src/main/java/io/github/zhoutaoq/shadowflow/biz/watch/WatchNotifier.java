@@ -2,8 +2,10 @@ package io.github.zhoutaoq.shadowflow.biz.watch;
 
 import io.github.zhoutaoq.shadowflow.biz.config.IntegrationConfigService;
 import io.github.zhoutaoq.shadowflow.biz.config.NotifyWiring;
+import io.github.zhoutaoq.shadowflow.biz.service.StockLinkService;
 import io.github.zhoutaoq.shadowflow.biz.support.PublicIp;
 import io.github.zhoutaoq.shadowflow.biz.support.PushEnvelope;
+import io.github.zhoutaoq.shadowflow.notify.api.NotifyMessage;
 import io.github.zhoutaoq.shadowflow.notify.api.NotifyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +58,8 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
     private final WatchConfigStore store;
     private final NotifyService notify;
     private final IntegrationConfigService integration;
+    /** 行情跳转链接来源：系统配置页维护的站外目标（百度股市通 / 雪球） */
+    private final StockLinkService stockLinks;
     private final Environment env;
     private final ExecutorService sendPool;
 
@@ -63,11 +67,13 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
     private final Map<Long, Baseline> baselines = new ConcurrentHashMap<>();
 
     public WatchNotifier(WatchProperties props, WatchConfigStore store,
-                         NotifyService notify, IntegrationConfigService integration, Environment env) {
+                         NotifyService notify, IntegrationConfigService integration,
+                         StockLinkService stockLinks, Environment env) {
         this.props = props;
         this.store = store;
         this.notify = notify;
         this.integration = integration;
+        this.stockLinks = stockLinks;
         this.env = env;
         this.sendPool = Executors.newSingleThreadExecutor(new ThreadFactory() {
             private final AtomicInteger seq = new AtomicInteger();
@@ -153,12 +159,12 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         List<String> removed = new ArrayList<>();
         for (Map.Entry<String, String> e : now.entrySet()) {
             if (!base.stocks.containsKey(e.getKey())) {
-                added.add(nameLine(e.getKey(), e.getValue()));
+                added.add(linkedNameLine(e.getKey(), e.getValue()));
             }
         }
         for (Map.Entry<String, String> e : base.stocks.entrySet()) {
             if (!now.containsKey(e.getKey())) {
-                removed.add(nameLine(e.getKey(), e.getValue()));
+                removed.add(linkedNameLine(e.getKey(), e.getValue()));
             }
         }
         boolean rulesChanged = !nowRules.equals(base.rules);
@@ -167,18 +173,41 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         }
         baselines.put(userId, new Baseline(snap));
 
-        StringBuilder sb = new StringBuilder("盯盘配置已变更\n");
+        // markdown 卡片：名单行带上「查看行情」跳转链接，与告警卡片同一套排版口径
+        StringBuilder sb = new StringBuilder("### 盯盘配置已变更\n\n");
         if (!added.isEmpty()) {
-            sb.append("新增 ").append(added.size()).append(" 只：").append(String.join("、", added)).append('\n');
+            sb.append("- 新增 ").append(added.size()).append(" 只：").append(String.join("、", added)).append('\n');
         }
         if (!removed.isEmpty()) {
-            sb.append("移除 ").append(removed.size()).append(" 只：").append(String.join("、", removed)).append('\n');
+            sb.append("- 移除 ").append(removed.size()).append(" 只：").append(String.join("、", removed)).append('\n');
         }
-        sb.append("当前共 ").append(now.size()).append(" 只\n");
+        sb.append("- 当前共 ").append(now.size()).append(" 只\n");
         if (rulesChanged) {
-            sb.append("告警规则已更新：").append(ruleText(snap)).append('\n');
+            sb.append("- 告警规则已更新：").append(ruleText(snap)).append('\n');
         }
-        dispatch(sb.toString().trim(), "配置变更通知", webhook);
+        dispatchMarkdown(sb.toString().trim(), "配置变更通知", webhook);
+    }
+
+    /**
+     * 名单行做成链接：{@code [贵州茅台(600519)](地址)}。
+     *
+     * <p>这条消息一次列多只标的，整卡跳转没有「哪一只」可指，所以退一步：
+     * <b>每只标的名称自己是一个链接</b>，跳的仍然是系统配置页选的那个源 ——
+     * 与页面点名称去同一个地方，不在消息里摆一串候选让人挑。
+     * 拼不出来（配置停用 / 异常）就退回纯文本的「名称(代码)」，不影响消息发出。
+     */
+    private String linkedNameLine(String code, String name) {
+        String line = nameLine(code, name);
+        try {
+            String url = stockLinks.primaryLink(code, name);
+            if (url == null || url.trim().isEmpty()) {
+                return line;
+            }
+            return '[' + line + "](" + url.trim() + ')';
+        } catch (RuntimeException e) {
+            log.warn("[watch] 配置变更通知的跳转地址拼装失败，该行退回纯文本：{}", e.getMessage());
+            return line;
+        }
     }
 
     /** 启动消息：【生产发布】+ 版本号 + IP + 服务地址 + 盯盘名单 + 告警规则 */
@@ -216,6 +245,23 @@ public class WatchNotifier implements ApplicationListener<ApplicationReadyEvent>
         final String prefix = PushEnvelope.of(props.getDingtalk().getKeyword());
         sendPool.execute(() -> {
             if (notify.send(target, prefix, content)) {
+                log.info("[watch] 已推送{}：{}", kind, content);
+            } else {
+                log.warn("[watch] 未推送（没有可用机器人或发送被拦下），{}内容：{}", kind, content);
+            }
+        });
+    }
+
+    /** markdown 版投递：与 {@link #dispatch} 同一出口，只多一个 markdown 标记 */
+    private void dispatchMarkdown(String content, String kind, String target) {
+        final String prefix = PushEnvelope.of(props.getDingtalk().getKeyword());
+        sendPool.execute(() -> {
+            NotifyMessage message = NotifyMessage.to(target)
+                    .prefix(prefix)
+                    .content(content)
+                    .markdown()
+                    .build();
+            if (notify.send(message)) {
                 log.info("[watch] 已推送{}：{}", kind, content);
             } else {
                 log.warn("[watch] 未推送（没有可用机器人或发送被拦下），{}内容：{}", kind, content);

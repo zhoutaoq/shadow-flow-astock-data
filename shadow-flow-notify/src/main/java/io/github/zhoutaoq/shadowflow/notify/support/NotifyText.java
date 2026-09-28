@@ -120,6 +120,42 @@ public final class NotifyText {
         return prefix.length() <= 60 ? prefix + (q < 0 ? "" : "?***") : prefix.substring(0, 60) + "...?***";
     }
 
+    /**
+     * 把富文本正文洗成纯文本：给「只吃纯文本」的位置（会话列表透出的标题、
+     * 通知栏摘要、日志）从 markdown 正文里取一段能读的话。
+     *
+     * <p>处理范围是几种通用标记：标题井号、加粗星号、列表短横、{@code [文字](地址)}
+     * 形式的链接（留文字去地址）、以及 {@code <font ...>} 染色标签（含手机端
+     * 那种带转义引号的写法）。洗完只留文字本身，不保留任何排版意图。
+     *
+     * <p>这是「尽力而为」的清洗：认不出的标记原样留下，总比把内容删没了强。
+     */
+    public static String plainOf(String s) {
+        if (s == null) {
+            return "";
+        }
+        String v = s
+                .replaceAll("(?i)</?font[^>]*>", "")
+                .replaceAll("\\[([^\\]]*)\\]\\([^)]*\\)", "$1")
+                .replace("**", "")
+                .replaceAll("(?m)^\\s*#{1,6}\\s*", "")
+                .replaceAll("(?m)^\\s*[-*]\\s*", "")
+                .replace('\n', ' ')
+                .replace('\r', ' ')
+                .replaceAll("\\s{2,}", " ")
+                .trim();
+        return v;
+    }
+
+    /** {@link #plainOf(String)} 后截取前 max 个字符（超出加省略号），用于有长度上限的字段 */
+    public static String plainHead(String s, int max) {
+        String v = plainOf(s);
+        if (max <= 0 || v.length() <= max) {
+            return v;
+        }
+        return v.substring(0, max) + "...";
+    }
+
     public static boolean blank(String s) {
         return s == null || s.trim().isEmpty();
     }

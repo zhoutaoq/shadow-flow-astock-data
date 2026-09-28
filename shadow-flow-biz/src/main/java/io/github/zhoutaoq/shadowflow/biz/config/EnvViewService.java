@@ -12,11 +12,12 @@ import java.util.Map;
 /**
  * 服务环境变量总览（v1.6.1）—— 给「系统配置 → 环境变量查看」提供一份<b>只读</b>清单。
  *
- * <p><b>为什么要有这一页</b>：v1.6.1 起密钥不再写进 application.yml，改由发布目录的
- * {@code sh/app.env}（服务器上同名文件保留真实配置）在启动时注入进程环境，
+ * <p><b>为什么要有这一页</b>：密钥不再写进 application.yml —— v1.6.4 起由
+ * classpath 的 {@code app.env}（src/main/resources 下，不入库）在启动时经
+ * {@link AppEnv} 装成<b>系统属性</b>（此前版本经进程环境变量），
  * yml 里只留 {@code ${DB_PASSWORD:}} 这类占位符。这样仓库里没有明文口令，
- * 但「线上到底注进来了没有」也变得看不见 —— 本类就是把这层补上，
- * 免得排查时只能登服务器去看进程环境。
+ * 但「线上到底装没装进来」也变得看不见 —— 本类就是把这层补上，
+ * 免得排查时只能登服务器。
  *
  * <p>清单分两组：
  * <ul>
@@ -40,8 +41,8 @@ public class EnvViewService {
     /**
      * 凭据类变量 —— 值脱敏。
      *
-     * <p>{@code name} 就是环境变量名（也是 app.env 里的键），页面直接照这个核对；
-     * 顺序与 {@code sh/app.env} 保持一致，方便左右对照。
+     * <p>{@code name} 就是 app.env 里的键（历史上也是环境变量名），页面直接照这个核对；
+     * 顺序与 app.env 保持一致，方便左右对照。
      */
     private static final List<Field> SECRETS = Collections.unmodifiableList(Arrays.asList(
             new Field("DB_PASSWORD", "数据库口令",
@@ -153,10 +154,16 @@ public class EnvViewService {
             one.put("configured", true);
             return one;
         }
-        String env = nz(System.getenv(f.name));
-        one.put("source", env.isEmpty() ? "未设置" : "环境变量");
-        one.put("display", IntegrationConfigService.mask(env));
-        one.put("configured", !env.isEmpty());
+        // v1.6.4 起密钥由 AppEnv 装成系统属性；兼容旧部署仍认进程环境变量
+        String v = nz(System.getProperty(f.name));
+        String source = v.isEmpty() ? null : "app.env";
+        if (v.isEmpty()) {
+            v = nz(System.getenv(f.name));
+            source = v.isEmpty() ? "未设置" : "环境变量";
+        }
+        one.put("source", source);
+        one.put("display", IntegrationConfigService.mask(v));
+        one.put("configured", !v.isEmpty());
         return one;
     }
 

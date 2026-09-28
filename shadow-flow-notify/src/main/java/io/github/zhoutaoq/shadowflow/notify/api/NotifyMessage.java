@@ -22,11 +22,18 @@ import java.util.Map;
  *       「自定义关键词」校验的标签 + 发送时刻，例如 <code>[标签-主机] 2026-09-20 13:20:00</code>。
  *       标签文字由调用方决定，SDK 不认识它。</li>
  *   <li>{@link #markdown()} —— 正文格式；false 为纯文本。</li>
+ *   <li>{@link #linkUrl()} —— <b>整条消息（整卡）的跳转地址</b>。非空时通道应投递
+ *       「整卡可点」的形态（钉钉对应整体跳转卡片）：点消息任意位置都跳这个地址。
+ *       通道不支持整卡跳转、或这里为空时退回普通正文 —— 跳转只是增强，
+ *       不能因为没有它就不发消息。</li>
  *   <li>{@link #bypassSchedule()} —— 是否跳过「静默时段」闸门。
  *       语义是「这条消息不受时段限制」，<b>不跳过</b>总开关与其它闸门。</li>
  * </ul>
  */
 public final class NotifyMessage {
+
+    /** 整卡跳转条的默认文案（调用方没指定时用；通道协议要求这条文案非空） */
+    public static final String DEFAULT_LINK_TEXT = "查看详情";
 
     private final String channel;
     private final String target;
@@ -34,6 +41,9 @@ public final class NotifyMessage {
     private final String prefix;
     private final boolean markdown;
     private final boolean bypassSchedule;
+    private final String cardTitle;
+    private final String linkUrl;
+    private final String linkText;
     private final Map<String, String> meta;
 
     private NotifyMessage(Builder b) {
@@ -43,6 +53,9 @@ public final class NotifyMessage {
         this.prefix = b.prefix;
         this.markdown = b.markdown;
         this.bypassSchedule = b.bypassSchedule;
+        this.cardTitle = b.cardTitle;
+        this.linkUrl = b.linkUrl;
+        this.linkText = b.linkText;
         this.meta = b.meta;
     }
 
@@ -74,6 +87,21 @@ public final class NotifyMessage {
         return bypassSchedule;
     }
 
+    /** 卡片标题（会话列表与通知栏透出的短文案）；未指定时由通道从正文首行截取 */
+    public String cardTitle() {
+        return cardTitle;
+    }
+
+    /** 整卡跳转地址；null / 空白表示不跳转 */
+    public String linkUrl() {
+        return linkUrl;
+    }
+
+    /** 整卡跳转条的文案；未指定时用 {@link #DEFAULT_LINK_TEXT} */
+    public String linkText() {
+        return linkText;
+    }
+
     /** 调用方自定义的附加信息（透传，SDK 不解释）；无附加信息时返回空 Map */
     public Map<String, String> meta() {
         return meta;
@@ -94,6 +122,9 @@ public final class NotifyMessage {
         private String prefix;
         private boolean markdown;
         private boolean bypassSchedule;
+        private String cardTitle;
+        private String linkUrl;
+        private String linkText;
         private Map<String, String> meta;
 
         private Builder(String target) {
@@ -125,6 +156,25 @@ public final class NotifyMessage {
         /** 本条消息跳过静默时段（仍受总开关约束） */
         public Builder bypassSchedule() {
             this.bypassSchedule = true;
+            return this;
+        }
+
+        /** 卡片标题：会话列表与通知栏透出的短文案；不传则由通道从正文首行截取 */
+        public Builder cardTitle(String cardTitle) {
+            this.cardTitle = cardTitle;
+            return this;
+        }
+
+        /** 整卡跳转：点整条消息任意位置都跳这个地址（跳转条文案用默认） */
+        public Builder link(String url) {
+            this.linkUrl = url;
+            return this;
+        }
+
+        /** 整卡跳转，并指定跳转条文案 */
+        public Builder link(String url, String text) {
+            this.linkUrl = url;
+            this.linkText = text;
             return this;
         }
 

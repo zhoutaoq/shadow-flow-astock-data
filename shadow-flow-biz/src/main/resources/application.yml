@@ -26,8 +26,8 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/mydb?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: root
-    # 口令不写进本文件：真实值放 sh/app.env 的 DB_PASSWORD（服务器上同名文件保留真实配置），
-    # 由发布脚本注入进程环境，这里只留占位符。缺 env 时为空串 ——
+    # 口令不写进本文件：真实值放 classpath 的 app.env（src/main/resources 下，不入库），
+    # 由启动类 AppEnv.load() 装载成系统属性，这里只留占位符。缺 app.env 时启动直接报错 ——
     # 无数据库模式不连库、不受影响；数据库模式会连不上，这是有意的，口令不留明文兜底。
     password: ${DB_PASSWORD:}
     hikari:
@@ -68,8 +68,8 @@ app:
   admin:
     # 超管用户名固定 admin；初始密码只在「账号还不存在」时用于初始化，
     # 之后一律以页面改过的为准（否则每次重启都会把密码打回初始值）。
-    # 口令不写进本文件：真实值放 sh/app.env 的 ADMIN_PASSWORD（服务器上同名文件保留真实配置），
-    # 由发布脚本注入进程环境，这里只留占位符。
+    # 口令不写进本文件：真实值放 classpath 的 app.env（src/main/resources 下，不入库），
+    # 由启动类 AppEnv.load() 装载成系统属性，这里只留占位符。
     username: admin
     password: ${ADMIN_PASSWORD:}
   auth:
@@ -88,6 +88,12 @@ app:
   stock-link:
     enabled: true
     default-target: chart
+    # 本站在「站外场合」被点开时用的地址（钉钉/微信里看推送消息时的那种场合）。
+    # 只有站内目标（本系统 K 线）需要它：站内模板是相对路径，站外点不开，必须补成绝对地址。
+    # 留空 = 不拼 —— 这时推送消息里的站内目标自动顺延到站外平台（百度/雪球），
+    # 宁可跳到一个真能打开的站外页，也不跳到猜出来的、点了打不开的地址。
+    # 超管也可以在「系统配置 → 股票名称跳转」页填，那份优先。
+    site-base-url: ""
     targets:
       - key: chart
         label: 本系统 K 线查看
@@ -156,8 +162,8 @@ shadowflow:
     # ⚠️ token 是频繁变动的凭据。v1.5.9 起由超管在「系统配置」页维护（
     #    http://<host>/pages/system.html → 第三方对接），存在系统级配置行
     #    （场景 shadowflow / 键 token / 归属 0），全局一份、全站共用，保存即生效。
-    # 出厂兜底值不写进本文件：真实值放 sh/app.env 的 SHADOWFLOW_API_TOKEN
-    # （服务器上同名文件保留真实配置），由发布脚本注入进程环境，这里只留占位符。
+    # 出厂兜底值不写进本文件：真实值放 classpath 的 app.env（src/main/resources 下，
+    # 不入库），由启动类 AppEnv.load() 装载成系统属性，这里只留占位符。
     # 首次启动把该值播种进配置行，之后一律以配置行为准。
     token: ${SHADOWFLOW_API_TOKEN:}
     # 总开关：false 时抓取请求在发出前就被拦住
@@ -183,7 +189,7 @@ shadowflow:
     # 通知总开关：false 时一条都发不出去（盯盘告警 / 关键时点快报 / 启动通知 / 用户反馈全部拦下），只写日志。
     # 本地默认 false —— 开发环境反复启停不该往群里刷消息；
     # 需要推送时用启动参数显式打开：--shadowflow.notify.enabled=true（见 sh/server.env 的 ARGS）
-    enabled: false
+    enabled: true
     # 默认通道标识
     default-channel: dingtalk
     # 允许发送的时段（HH:mm-HH:mm，逗号分隔，闭区间）；空白 = 不限时段。
@@ -226,7 +232,7 @@ watch:
   # 默认 false —— 本地开发反复重启不该往群里刷消息；
   # 生产发布时在启动命令上显式打开：--watch.startup-notify.enabled=true（见 sh/remote.sh 的 ARGS）
   startup-notify:
-    enabled: false
+    enabled: true
     # 版本号：留空 = 自动取 jar 清单里的 Implementation-Version（即 pom 的 <version>）
     version: ""
   # 并发查询的线程池大小
@@ -253,9 +259,8 @@ watch:
     #    发布通知 / 注册通知 / 用户反馈兜底。
     #    它同时是盯盘的<b>默认群</b> —— 用户没在「盯盘 → 推送」页配自己的机器人时，
     #    他的告警发到这里；配了自己的就只进他自己的群，不受这里影响。
-    # 出厂兜底值不写进本文件：真实值放 sh/app.env 的 DINGTALK_WEBHOOK
-    # （服务器上同名文件保留真实配置），由发布脚本注入进程环境，这里只留占位符；
-    # 配置行没填时用它。
+    # 出厂兜底值不写进本文件：真实值放 classpath 的 app.env（src/main/resources 下，
+    # 不入库），由启动类 AppEnv.load() 装载成系统属性，这里只留占位符；配置行没填时用它。
     # 机器人只支持"自定义关键词"模式（消息文本必须含后台配置的关键词），不支持「加签」，
     # 所以也不需要 secret 字段。
     webhook: ${DINGTALK_WEBHOOK:}

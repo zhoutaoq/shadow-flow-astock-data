@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <title>钉钉推送 - 影流数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20261011d">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">影流数据</a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <div id="pushPanel" style="display:none">
+        <div class="cfg-panel-head">
+            <h2>钉钉推送</h2>
+        </div>
+
+        <div class="card" style="margin-bottom:var(--sp-4)">
+            <div class="field">
+                <label>消息类型</label>
+                <div class="aseg" id="pushType">
+                    <button type="button" class="buy on" data-type="snapshot">行情快照</button>
+                    <button type="button" class="sell" data-type="limit">涨跌停状态</button>
+                </div>
+                <div class="modal-note" id="typeNote">把所选标的的实时行情摆成一张卡片：现价、涨跌幅、今最高最低、成交与跳转链接。</div>
+            </div>
+            <div class="field">
+                <label>推送标的</label>
+                <div id="pushPickerBox"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-ghost" id="btnPreview">拉取行情预览</button>
+                <button id="btnSend">推送到钉钉</button>
+            </div>
+        </div>
+
+        <div class="card" id="previewCard" style="display:none">
+            <div class="card-title">行情预览</div>
+            <div id="previewList"></div>
+        </div>
+
+        <div class="modal-note" style="margin-top:var(--sp-4)">
+            推送走「系统配置」页里的系统通知机器人；涨跌停状态只在该标的正封在板上时才推得出去。
+        </div>
+    </div>
+</main>
+
+<script src="/js/common.js?v=20261011d"></script>
+<script src="/js/stock-picker.js?v=20261011d"></script>
+<script>
+    let pushType = 'snapshot';
+    let picker = null;
+
+    function paintType() {
+        document.querySelectorAll('#pushType button').forEach(b => {
+            b.classList.toggle('on', b.getAttribute('data-type') === pushType);
+        });
+        document.getElementById('typeNote').textContent = pushType === 'snapshot'
+            ? '把所选标的的实时行情摆成一张卡片：现价、涨跌幅、今最高最低、成交与跳转链接。'
+            : '只推当前封在涨停 / 跌停上的标的；不在板上的会逐只提示推不了。';
+    }
+
+    function bindType() {
+        document.querySelectorAll('#pushType button').forEach(b => {
+            b.addEventListener('click', () => {
+                pushType = b.getAttribute('data-type');
+                paintType();
+            });
+        });
+    }
+
+    function chosenCodes() {
+        const codes = picker ? picker.getCodes() : [];
+        if (!codes.length && picker && picker.hasUnresolvedInput()) {
+            toast('标的「' + picker.getInputText() + '」没有对应标的，请从下拉里点选', 'err');
+            return null;
+        }
+        if (!codes.length) {
+            toast('请先选择要推送的标的', 'err');
+            return null;
+        }
+        return codes;
+    }
+
+    function pctCell(v) {
+        const n = Number(v);
+        if (v === null || v === undefined || isNaN(n)) return '—';
+        const cls = n > 0 ? 'up' : (n < 0 ? 'down' : '');
+        return '<span class="' + cls + '">' + (n > 0 ? '+' : '') + n + '%</span>';
+    }
+
+    function paintPreview(rows) {
+        const box = document.getElementById('previewList');
+        if (!rows.length) {
+            box.innerHTML = '<div class="modal-note">没有可显示的行情</div>';
+            return;
+        }
+        box.innerHTML = rows.map(r => {
+            if (!r.ok) {
+                return '<div class="prow"><span class="pcode">' + esc(r.code) + '</span>'
+                    + '<span class="perr">' + esc(r.error || '没取到行情') + '</span></div>';
+            }
+            const state = r.limitState === 1 ? '<span class="up">涨停</span>'
+                : (r.limitState === -1 ? '<span class="down">跌停</span>' : '—');
+            return '<div class="prow">'
+                + '<span class="pcode">' + esc(r.name || '') + ' ' + esc(r.code) + '</span>'
+                + '<span>现价 ' + esc(r.price) + '</span>'
+                + '<span>' + pctCell(r.changePercent) + '</span>'
+                + '<span>状态 ' + state + '</span>'
+                + '<span class="ptime">' + esc(r.timeText || '') + '</span>'
+                + '</div>';
+        }).join('');
+    }
+
+    async function preview() {
+        const codes = chosenCodes();
+        if (!codes) return;
+        const btn = document.getElementById('btnPreview');
+        btn.disabled = true;
+        try {
+            const r = await get('/api/admin/push/quotes?codes=' + encodeURIComponent(codes.join(',')));
+            if (!r || !r.success) return;
+            document.getElementById('previewCard').style.display = '';
+            paintPreview(r.data || []);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function send() {
+        const codes = chosenCodes();
+        if (!codes) return;
+        const btn = document.getElementById('btnSend');
+        btn.disabled = true;
+        btn.textContent = '推送中…';
+        try {
+            const r = await post('/api/admin/push/send', {codes: codes, type: pushType});
+            if (!r || !r.success) return;
+            const rows = r.data || [];
+            const ok = rows.filter(x => x.ok).length;
+            document.getElementById('previewCard').style.display = '';
+            paintPreview(rows);
+            toast(ok === rows.length
+                ? '已推送 ' + ok + ' 条到钉钉'
+                : '推送完成：成功 ' + ok + ' 条，失败 ' + (rows.length - ok) + ' 条',
+                ok ? 'ok' : 'err');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '推送到钉钉';
+        }
+    }
+
+    (async function init() {
+        await loadMode();
+        if (!(await requireLogin())) {
+            return;
+        }
+        // 菜单本来就不给非超管显示这一项，直接输地址进来的就回首页
+        if (!isAdmin()) {
+            location.replace('/');
+            return;
+        }
+        document.getElementById('pushPanel').style.display = '';
+        bindType();
+        picker = createStockPicker(document.getElementById('pushPickerBox'), {multiple: true});
+        document.getElementById('btnPreview').addEventListener('click', preview);
+        document.getElementById('btnSend').addEventListener('click', send);
+    })();
+</script>
+<style>
+    .prow {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-4);
+        padding: var(--sp-2) 0;
+        border-bottom: 1px solid var(--border-soft);
+        font-size: var(--fs-13);
+        flex-wrap: wrap;
+    }
+    .prow:last-child { border-bottom: none; }
+    .prow .pcode { font-weight: 600; color: var(--text-strong); min-width: 140px; }
+    .prow .perr { color: var(--down); }
+    .prow .ptime { margin-left: auto; color: var(--text-soft, var(--text)); font-size: var(--fs-12); }
+    .prow .up { color: var(--up); }
+    .prow .down { color: var(--down); }
+</style>
+</body>
+</html>

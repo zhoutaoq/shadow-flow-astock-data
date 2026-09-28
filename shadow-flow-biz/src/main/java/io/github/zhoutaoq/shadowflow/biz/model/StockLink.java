@@ -23,6 +23,14 @@ public class StockLink {
     private boolean enabled = true;
     /** 点名称直接打开的目标 key */
     private String defaultTarget = "";
+    /**
+     * 本站的对外地址（{@code http://主机:端口}），空表示还没填。
+     *
+     * <p>只有站内目标（本系统 K 线）需要它：相对路径在钉钉、微信这类站外场合点不开，
+     * 必须补成绝对地址。没填时站内目标在推送消息里不可用（会自动顺延到站外平台），
+     * 浏览器里不受影响 —— 页面本来就有「当前站点」这个概念。
+     */
+    private String siteBaseUrl = "";
     private List<Target> targets = new ArrayList<>();
 
     public boolean isEnabled() {
@@ -39,6 +47,14 @@ public class StockLink {
 
     public void setDefaultTarget(String defaultTarget) {
         this.defaultTarget = defaultTarget;
+    }
+
+    public String getSiteBaseUrl() {
+        return siteBaseUrl;
+    }
+
+    public void setSiteBaseUrl(String siteBaseUrl) {
+        this.siteBaseUrl = siteBaseUrl;
     }
 
     public List<Target> getTargets() {

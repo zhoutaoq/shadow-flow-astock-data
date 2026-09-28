@@ -23,7 +23,15 @@ import java.nio.charset.StandardCharsets;
  * <pre>
  * 文本     {"msgtype":"text","text":{"content":"..."}}
  * Markdown {"msgtype":"markdown","markdown":{"title":"...","text":"..."}}
+ * 整卡跳转 {"msgtype":"actionCard","actionCard":{"title":"...","text":"...",
+ *                                                "singleTitle":"...","singleURL":"..."}}
  * </pre>
+ *
+ * <p><b>整卡跳转（{@link NotifyMessage#linkUrl()} 非空）时投整体跳转卡片</b>：
+ * 点消息任意位置都跳那个地址 —— 这是钉钉唯一「整条消息就是一个链接」的形态，
+ * 普通 markdown 只能靠正文里的行内链接，点空白区域没反应。卡片正文仍是 markdown，
+ * 排版与染色都不受影响；通道不支持或没给地址时退回普通正文，跳转只是增强，
+ * 不能因为没有它就不发消息。
  *
  * <p><b>本类里没有任何业务词</b>：出现的字符串只有协议层的 JSON 字段名与消息类型。
  * 消息前缀（比如满足关键词校验的标签）由调用方通过
@@ -67,8 +75,18 @@ public class DingTalkWebhookNotifier implements Notifier {
             return NotifyResult.fail("消息内容为空");
         }
         boolean markdown = message != null && message.markdown();
+        String linkUrl = message == null ? null : message.linkUrl();
         try {
-            String body = markdown ? markdownBody(content) : textBody(content);
+            String body;
+            if (!NotifyText.blank(linkUrl)) {
+                body = actionCardBody(cardTitleOf(message, content), content,
+                        linkTextOf(message), linkUrl.trim());
+            } else {
+                // 标题同样走纯文本清洗：会话列表只吃纯文本，带前缀或染色标签会露馅
+                body = markdown
+                        ? markdownBody(cardTitleOf(message, content), content)
+                        : textBody(content);
+            }
             String resp = postJson(endpoint.trim(), body);
             String err = businessError(resp);
             if (err != null) {
@@ -88,11 +106,42 @@ public class DingTalkWebhookNotifier implements Notifier {
         return "{\"msgtype\":\"text\",\"text\":{\"content\":" + NotifyText.json(content) + "}}";
     }
 
-    private static String markdownBody(String content) {
-        // 没有单独的标题字段：取正文首行当标题，够用且不必让调用方多传一个参数
-        String title = content.split("\\R", 2)[0];
+    private static String markdownBody(String title, String content) {
         return "{\"msgtype\":\"markdown\",\"markdown\":{\"title\":" + NotifyText.json(title)
                 + ",\"text\":" + NotifyText.json(content) + "}}";
+    }
+
+    /**
+     * 整体跳转卡片：{@code singleURL} 是卡片级跳转地址，点消息任意位置都走它。
+     *
+     * <p>字段口径按自定义机器人的协议来（与服务端单发消息 API 的下划线写法不同）：
+     * 正文用 {@code text}（内容是 markdown）、跳转条用 {@code singleTitle} + {@code singleURL}。
+     * 会话列表透出的 {@code title} 只吃纯文本，所以这里先洗掉排版标记。
+     */
+    private static String actionCardBody(String title, String content, String linkText, String linkUrl) {
+        return "{\"msgtype\":\"actionCard\",\"actionCard\":{"
+                + "\"title\":" + NotifyText.json(title)
+                + ",\"text\":" + NotifyText.json(content)
+                + ",\"singleTitle\":" + NotifyText.json(linkText)
+                + ",\"singleURL\":" + NotifyText.json(linkUrl)
+                + "}}";
+    }
+
+    /** 卡片标题：调用方给了就用，没给就从正文首行截取（会话列表只吃纯文本） */
+    private static String cardTitleOf(NotifyMessage message, String content) {
+        String given = message == null ? null : message.cardTitle();
+        if (!NotifyText.blank(given)) {
+            return given.trim();
+        }
+        String first = content.split("\\R", 2)[0];
+        String plain = NotifyText.plainHead(first, 64);
+        return plain.isEmpty() ? "通知" : plain;
+    }
+
+    /** 跳转条文案：调用方没指定时用 {@link NotifyMessage#DEFAULT_LINK_TEXT} */
+    private static String linkTextOf(NotifyMessage message) {
+        String given = message == null ? null : message.linkText();
+        return NotifyText.blank(given) ? NotifyMessage.DEFAULT_LINK_TEXT : given.trim();
     }
 
     /**

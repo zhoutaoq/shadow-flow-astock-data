@@ -1149,6 +1149,7 @@ const NAV_ITEMS = [
     {key: 'account', text: '我的账户', href: '/pages/account.html', login: true},
     {key: 'feedback', text: '问题反馈', href: '/pages/feedback.html'},
     {key: 'system', text: '系统配置', href: '/pages/system.html', admin: true},
+    {key: 'push', text: '钉钉推送', href: '/pages/push.html', admin: true},
     {key: 'users', text: '用户管理', href: '/pages/users.html', admin: true}
 ];
 

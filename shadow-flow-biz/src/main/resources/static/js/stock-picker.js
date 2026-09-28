@@ -433,6 +433,11 @@ const STOCK_PICKER_DROP_MAX_W = 420;
             else if (multiple) { /* 多选靠点选，回车不追加 */ }
             else if (tryManual()) close();
             else if (onEnter) onEnter();
+            else if (inputEl.value.trim()) {
+                // 手输没匹配上：把下拉重新撑开，让「没有匹配」的提示露出来 ——
+                // 别让回车像坏了一样毫无反应
+                search(inputEl.value.trim());
+            }
         } else if (e.key === 'Escape') {
             close();
             inputEl.blur();

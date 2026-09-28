@@ -159,15 +159,16 @@ data/
 stock-kline-deploy-config.yaml
 
 # 发布脚本目录 sh/：脚本与服务器运行参数入库（deploy.bat / remote.sh / server.env /
-# app.env.example / deploy.env.example / 使用说明.md），只排除下面三类别的东西 ——
+# deploy.env.example / 使用说明.md），只排除下面两类别的东西 ——
 #   ① 连接凭据：服务器 IP / 账号 / 口令 / 主机指纹，单独放 deploy.env（由 deploy.env.example 复制而来）
-#   ② 应用密钥：数据库口令 / 超管初始口令 / 行情令牌 / 钉钉机器人，单独放 app.env
-#      （由 app.env.example 复制而来），服务器上保留真实配置
-#   ③ 第三方二进制：PuTTY 的 plink.exe / pscp.exe，按需自行下载，不塞进仓库
+#   ② 第三方二进制：PuTTY 的 plink.exe / pscp.exe，按需自行下载，不塞进仓库
+# 应用密钥 app.env（数据库口令 / 超管初始口令 / 行情令牌 / 钉钉机器人）自 v1.6.4 起
+# 放 shadow-flow-biz/src/main/resources 下、随包走（AppEnv 从 classpath 装载），
+# 真实值同样不入库；模板 app.env.example 入库。
 sh/deploy.env
-sh/app.env
 sh/plink.exe
 sh/pscp.exe
+shadow-flow-biz/src/main/resources/app.env
 
 # 构建产物 / 日志
 target/

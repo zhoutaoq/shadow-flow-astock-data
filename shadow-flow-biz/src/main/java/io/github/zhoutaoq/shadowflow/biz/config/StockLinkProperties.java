@@ -35,6 +35,16 @@ public class StockLinkProperties {
     /** 默认跳转目标（点名称时开哪个）；目标被停用时会自动落到第一个启用的 */
     private String defaultTarget = "chart";
 
+    /**
+     * 本站对外地址的出厂值（{@code http://主机:端口}）。
+     *
+     * <p>只有站内目标需要它：站内模板是相对路径（{@code /pages/chart.html?code=...}），
+     * 在钉钉这类站外场合必须补成绝对地址才能点开。<b>留空表示不拼</b> ——
+     * 这时站内目标在推送消息里不可用，会自动顺延到站外的平台目标（浏览器里不受影响）。
+     * 超管也可以在「系统配置」页填，那份优先。
+     */
+    private String siteBaseUrl = "";
+
     private List<Target> targets = new ArrayList<>();
 
     public boolean isEnabled() {
@@ -51,6 +61,14 @@ public class StockLinkProperties {
 
     public void setDefaultTarget(String defaultTarget) {
         this.defaultTarget = defaultTarget;
+    }
+
+    public String getSiteBaseUrl() {
+        return siteBaseUrl;
+    }
+
+    public void setSiteBaseUrl(String siteBaseUrl) {
+        this.siteBaseUrl = siteBaseUrl;
     }
 
     public List<Target> getTargets() {

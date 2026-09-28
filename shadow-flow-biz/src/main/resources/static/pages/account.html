@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261011a">
-    <link rel="stylesheet" href="/css/account.css?v=20261011a">
+    <link rel="stylesheet" href="/css/common.css?v=20261011d">
+    <link rel="stylesheet" href="/css/account.css?v=20261011d">
 </head>
 <body>
 <header class="topbar">
@@ -167,9 +167,9 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261011a"></script>
-<script src="/js/date-picker.js?v=20261011a"></script>
-<script src="/js/stock-picker.js?v=20261011a"></script>
+<script src="/js/common.js?v=20261011d"></script>
+<script src="/js/date-picker.js?v=20261011d"></script>
+<script src="/js/stock-picker.js?v=20261011d"></script>
 <script>
     let overview = null;     // /api/account/accounts 一级列表
     let cfg = null;          // /api/account 当前账户设置
@@ -861,20 +861,22 @@
             mask.id = 'recMask';
             mask.innerHTML = '<div class="modal" style="width:500px">'
                 + '<h3>添加操作记录</h3>'
-                + '<div class="field"><label>标的</label><div id="recPickerBox"></div></div>'
                 + '<div class="field"><label>方向</label>'
                 + '<div class="aseg" id="recAction">'
                 + '<button type="button" class="buy on" data-act="buy">买入</button>'
                 + '<button type="button" class="sell" data-act="sell">卖出</button>'
                 + '</div></div>'
+                + '<div class="field"><label>标的</label><div id="recPickerBox"></div></div>'
                 + '<div class="field"><label for="recQty">数量（股）</label>'
                 + '<input type="number" id="recQty" min="1" step="100" inputmode="numeric"></div>'
                 + '<div class="field"><label for="recPrice">成交价（元）</label>'
                 + '<input type="number" id="recPrice" min="0" step="0.01" inputmode="decimal"></div>'
+                + '<div class="modal-note" id="recAmountNote" style="display:none"></div>'
                 + '<div class="field"><label for="recDate">日期</label>'
                 + '<input type="date" id="recDate"></div>'
-                + '<div class="field"><label class="chk"><input type="checkbox" id="recToday" checked>'
+                + '<div class="field" id="recTodayField"><label class="chk"><input type="checkbox" id="recToday" checked>'
                 + '<span id="recTodayText">当天买入</span></label></div>'
+                + '<div class="modal-note" id="recTodayHint" style="display:none">成交日期不是今天，这条记录不区分「当天买入」</div>'
                 + '<div class="modal-note" id="recNote" style="display:none"></div>'
                 + '<div class="modal-actions">'
                 + '<button class="btn-ghost" id="recCancel">取消</button>'
@@ -886,6 +888,13 @@
                 if (e.target === mask) mask.classList.remove('show');
             });
             mask.querySelector('#recSave').addEventListener('click', submitRecord);
+            mask.querySelector('#recQty').addEventListener('input', paintAmount);
+            mask.querySelector('#recPrice').addEventListener('input', function () {
+                paintAmount();
+                paintRecordNote();
+            });
+            // date-picker 选完会派发原生 change，这里只管跟着收放「当天」勾选框
+            mask.querySelector('#recDate').addEventListener('change', syncTodayField);
             recPicker = createStockPicker(mask.querySelector('#recPickerBox'), {
                 multiple: false,
                 // 卖出只认持仓：候选就是持仓里还有可用数量的那些，名录与手输一律不认
@@ -918,36 +927,116 @@
         }
         const label = document.getElementById('recTodayText');
         if (label) {
-            label.textContent = buy ? '当天买入' : '卖出当天买入的持仓';
+            label.textContent = buy ? '当天买入（当日盈亏按买入价算）' : '卖的是当天买入的部分';
         }
         if (recPicker) {
             recPicker.setPlaceholder(buy ? '代码或名称' : '从持仓中选择');
-            // 换了方向，之前选中的标的可能已经不在候选里（买入选的未必是持仓）
-            recPicker.setItems([]);
+            // 换方向尽量保留已选：只有「卖出时选的标的不在可卖清单里」才清掉，
+            // 别让用户白选一遍
+            const kept = recPicker.getFirst();
+            if (kept && kept.code) {
+                const pos = findPosition(kept.code);
+                if (buy || (pos && usableQty(pos) > 0)) {
+                    recPicker.setItems([{code: kept.code, name: kept.name || ''}]);
+                } else {
+                    recPicker.setItems([]);
+                }
+            }
             recPicker.refresh('');
         }
+        syncTodayField();
         paintRecordNote();
+        paintAmount();
+    }
+
+    /** 成交日期是否补录（不是今天） */
+    function isBackfill() {
+        const d = document.getElementById('recDate');
+        return !!d && !!d.value && d.value !== today();
     }
 
     /**
-     * 卖出时把「可用数量」摆到明面上，数量输入框的 max 同时跟着走（上限提前挡住，
-     * 别等提交才报错）。没有要写的就把这一行收掉，不留空框。
+     * 「当天」勾选框只在成交日期 = 今天时有意义：补录历史日期时后端不认这个标记
+     * （勾了也不生效），所以直接把勾选框收起、换成一句灰字说明，别让用户勾个寂寞。
+     */
+    function syncTodayField() {
+        const field = document.getElementById('recTodayField');
+        const chk = document.getElementById('recToday');
+        const hint = document.getElementById('recTodayHint');
+        if (!field || !chk) return;
+        if (isBackfill()) {
+            chk.checked = false;
+            field.style.display = 'none';
+            if (hint) hint.style.display = '';
+        } else {
+            field.style.display = '';
+            if (hint) hint.style.display = 'none';
+        }
+    }
+
+    /** 这笔的成交额与资金影响：买入显示成交后剩余可用，卖出显示预计回笼 */
+    function paintAmount() {
+        const box = document.getElementById('recAmountNote');
+        if (!box) return;
+        const qty = parseInt(document.getElementById('recQty').value, 10);
+        const price = parseFloat(document.getElementById('recPrice').value);
+        if (!qty || qty <= 0 || isNaN(price) || price <= 0) {
+            box.style.display = 'none';
+            box.textContent = '';
+            return;
+        }
+        const amt = qty * price;
+        const parts = ['成交额 ' + money(amt) + ' 元'];
+        if (summary && summary.cash != null) {
+            if (recAction === 'buy') {
+                const left = summary.cash - amt;
+                parts.push('成交后可用 ' + money(left) + ' 元' + (left < 0 ? '（超出可用金额）' : ''));
+            } else {
+                parts.push('预计回笼 ' + money(amt) + ' 元');
+            }
+        }
+        box.textContent = parts.join(' · ');
+        box.style.display = '';
+    }
+
+    /**
+     * 弹窗里的上下文提示行：卖出摆「可用数量」（并压住数量输入的上限），
+     * 买入摆「已持有 N 股 · 加仓后成本约 X」，让加仓前心里有数。没要写的就收掉。
      */
     function paintRecordNote() {
         const note = document.getElementById('recNote');
         const qty = document.getElementById('recQty');
         if (!note) return;
         const picked = recPicker ? recPicker.getFirst() : null;
-        const pos = (picked && recAction === 'sell') ? findPosition(picked.code) : null;
-        const usable = pos ? usableQty(pos) : 0;
-        if (qty) {
-            if (pos) {
-                qty.setAttribute('max', String(Math.max(usable, 0)));
-            } else {
-                qty.removeAttribute('max');
+        const pos = picked ? findPosition(picked.code) : null;
+        const lines = [];
+        if (recAction === 'sell') {
+            const usable = pos ? usableQty(pos) : 0;
+            if (qty) {
+                if (pos) {
+                    qty.setAttribute('max', String(Math.max(usable, 0)));
+                } else {
+                    qty.removeAttribute('max');
+                }
             }
+            if (pos) {
+                lines.push('可用 ' + fmtNum(usable, 0) + ' 股（卖出上限）');
+            }
+        } else if (qty) {
+            qty.removeAttribute('max');
         }
-        const text = pos ? '可用 ' + fmtNum(usable, 0) + ' 股（卖出上限）' : '';
+        if (recAction === 'buy' && pos) {
+            const held = Number(pos.quantity) || 0;
+            const q = qty ? parseInt(qty.value, 10) : 0;
+            const pr = parseFloat(document.getElementById('recPrice').value);
+            let extra = '';
+            if (q > 0 && pr > 0 && pos.costPrice != null && held + q > 0) {
+                const cost = (held * pos.costPrice + q * pr) / (held + q);
+                extra = ' · 加仓后成本约 ' + money(cost) + ' 元';
+            }
+            lines.push('已持有 ' + fmtNum(held, 0) + ' 股' + extra);
+        }
+        const text = lines.join('；');
         note.textContent = text;
         note.style.display = text ? '' : 'none';
     }
@@ -1000,6 +1089,16 @@
                 return toast('成交价必须大于 0', 'err');
             }
         }
+        if (recAction === 'buy') {
+            const held = findPosition(picked.code);
+            if (price == null && !held) {
+                // 没持仓的标的后端没有成本价可以兜底，别让这笔糊里糊涂地记进去
+                return toast('请填成交价：' + (picked.name || picked.code) + ' 还没有持仓，无法自动补价', 'err');
+            }
+            if (price != null && summary && summary.cash != null && qty * price > summary.cash) {
+                return toast('成交额 ' + money(qty * price) + ' 元超出可用金额 ' + money(summary.cash) + ' 元', 'err');
+            }
+        }
         const btn = document.getElementById('recSave');
         btn.disabled = true;
         try {
@@ -1040,9 +1139,22 @@
         if (!force && String(input.value).trim() !== '') {
             return;
         }
-        const r = await get('/api/account/price?accountId=' + curId + '&code=' + encodeURIComponent(picked.code));
-        if (r && r.success && r.data && r.data.price != null) {
-            input.value = r.data.price;
+        input.placeholder = '行情获取中…';
+        try {
+            const r = await get('/api/account/price?accountId=' + curId + '&code=' + encodeURIComponent(picked.code));
+            if (r && r.success && r.data && r.data.price != null) {
+                input.value = r.data.price;
+            } else {
+                // 带不出价格不无声：留在输入框上说明，别让用户以为点了没反应
+                input.placeholder = '未能自动带出，请手动填写';
+            }
+        } catch (e) {
+            input.placeholder = '未能自动带出，请手动填写';
+        } finally {
+            if (input.placeholder === '行情获取中…') {
+                input.placeholder = '';
+            }
+            paintAmount();
         }
     }
 

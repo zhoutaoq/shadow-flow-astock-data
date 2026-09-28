@@ -76,28 +76,32 @@ spring:
   datasource:
     url: jdbc:mysql://127.0.0.1:3306/mydb?...
     username: root
-    password: ${DB_PASSWORD:}   # 口令不写进本文件，真实值放 sh/app.env（见下）
+    password: ${DB_PASSWORD:}   # 口令不写进本文件，真实值放 app.env（见下）
 ```
 
-### 3. 凭据配置（sh/app.env）
+### 3. 凭据配置（app.env，v1.6.4 起在 classpath）
 
-**所有密钥集中在发布目录的 `sh/app.env`**，`application.yml` 里只留 `${...}` 占位符：
+**所有密钥集中在 `shadow-flow-biz/src/main/resources/app.env`**（已列入 `.gitignore` 不入库，
+打包时随 jar 走），`application.yml` 里只留 `${...}` 占位符。启动时
+`ShadowFlowApplication.main()` 先调 `AppEnv.load()` 从 classpath 读出该文件、
+把键值设成 JVM 系统属性（**不经过环境变量**），占位符解析时自然取到真实值；
+**读不到该文件服务直接拒绝启动**，值仍是「在此填写…」占位文字的项按未配置处理：
 
-| 环境变量 | 用途 |
+| 配置键 | 用途 |
 |---|---|
 | `DB_PASSWORD` | 数据库口令（仅数据库模式用） |
 | `ADMIN_PASSWORD` | 超管初始口令（只在 admin 账号还不存在时用于初始化） |
 | `SHADOWFLOW_API_TOKEN` | 行情数据服务令牌 —— 数据更新的核心凭据 |
 | `DINGTALK_WEBHOOK` | 系统通知机器人（发布通知 / 注册通知 / 用户反馈，兼作盯盘默认群） |
 
-- 模板见 `sh/app.env.example`，复制成 `sh/app.env` 后填真实值；`app.env` 已列入 `.gitignore`，
-  **服务器上那份保留真实配置**，由发布脚本上传并在启动前注入进程环境。
-- 本地开发可以直接用环境变量，不必建文件：
-  `ADMIN_PASSWORD=xxx SHADOWFLOW_API_TOKEN=xxx mvn -pl shadow-flow-biz -am spring-boot:run`。
+- 模板见同目录 `app.env.example`，复制成 `app.env` 后填真实值。
+- 本地开发与服务器行为完全一致，本地跑也要先建好 `app.env`；
+  临时覆盖单项仍可用 `-D`（如 `-DDINGTALK_WEBHOOK=…`）或命令行 `--watch.dingtalk.webhook=…`
+  —— 同名系统属性已存在时 `AppEnv` 不覆盖。
 - 行情令牌与钉钉机器人**还有一层「系统配置页」**：优先读超管在
   「系统配置 → 第三方对接」页维护的配置行（全局一份、保存即生效），
   配置行没填时才回落到 `app.env` 里的出厂值 —— 所以换令牌 / 换机器人不用重启、也不用改文件。
-- 线上到底注进来了哪些变量，看「系统配置」页右上角的**环境变量查看**（只读弹窗：
+- 线上到底装没装进来，看「系统配置」页右上角的**环境查看**（只读弹窗：
   凭据脱敏、运行参数明文）。
 
 ### 4. 运行项目

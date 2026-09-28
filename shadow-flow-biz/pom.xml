@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.zhoutaoq</groupId>
         <artifactId>shadow-flow-parent</artifactId>
-        <version>1.6.2</version>
+        <version>1.6.5</version>
     </parent>
 
     <artifactId>shadow-flow-biz</artifactId>

@@ -7,11 +7,10 @@
 # 本机 deploy.bat 的调用方式是先洗掉 CR 再喂给 bash（防止脚本被 Windows 改成 CRLF）：
 #     cd <部署目录> && tr -d '\r' < remote.sh | REMOTE_DIR=<部署目录> bash -s -- restart
 #
-# 配置来源：同目录的两个 env 文件，都由本机 deploy.bat 每次发布时上传，改配置不用动本脚本 ——
-#   server.env  部署目录 / JDK 路径 / JVM 参数 / 启动参数（入库）
-#   app.env     应用密钥：数据库口令 / 超管初始口令 / 行情令牌 / 钉钉机器人（不入库，
-#               服务器上保留真实配置），启动前 export 给 java 进程，
-#               供 application.yml 的 ${DB_PASSWORD} 这类占位符取值
+# 配置来源：
+#   server.env  部署目录 / JDK 路径 / JVM 参数 / 启动参数（入库），本脚本解析后 export
+#   app.env     应用密钥（不入库）—— v1.6.4 起打进 jar 随包走，由启动类的
+#               AppEnv.load() 从 classpath 装载成系统属性，与本脚本无关
 #
 # 职责: 杀旧进程 -> 换新 jar -> setsid 后台启动 -> 探活 -> 打印状态
 #   stop    仅停掉运行中的 java（不换 jar）
@@ -24,13 +23,10 @@ set -u
 # ---- 部署目录：优先取调用方传入的 REMOTE_DIR，其次内置兜底 ----
 DIR="${REMOTE_DIR:-/home/stock-backtesting}"
 
-# ---- 读取 server.env / app.env（cmd 的 set "K=V" 格式，逐行解析；REM / @echo off / 空行忽略）----
-# 两个文件共用这一套解析器，分工见 sh/使用说明.md：
-#   server.env  服务器运行参数（入库，随每次发布上传）
-#   app.env     应用密钥（不入库，服务器上保留真实配置）
-# 解析出的键一律 export 进本进程，start_new 起的 java 进程继承它们 ——
-# application.yml 里的 ${DB_PASSWORD} / ${ADMIN_PASSWORD} / ${SHADOWFLOW_API_TOKEN}
-# / ${DINGTALK_WEBHOOK} 占位符就是靠这一层取到真实值的。
+# ---- 读取 server.env（cmd 的 set "K=V" 格式，逐行解析；REM / @echo off / 空行忽略）----
+# 解析出的键一律 export 进本进程，start_new 起的 java 进程继承它们。
+# 应用密钥（DB_PASSWORD / ADMIN_PASSWORD / SHADOWFLOW_API_TOKEN / DINGTALK_WEBHOOK）
+# 自 v1.6.4 起不再走环境变量：app.env 在 jar 里，由启动类的 AppEnv.load() 装载。
 load_env_file() {
   local file="$1" line body
   while IFS= read -r line || [ -n "$line" ]; do
@@ -57,20 +53,7 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 load_env_file "$ENV_FILE"
-
-# 应用密钥：有就读，没有只告警、不退出 ——
-# 配置页填过的凭据不受影响（配置行优先），服务照样能起，
-# 只是 yml 里的 ${...} 占位符拿不到出厂兜底值。
-APP_ENV_FILE="$DIR/app.env"
-if [ -f "$APP_ENV_FILE" ]; then
-  load_env_file "$APP_ENV_FILE"
-  echo "[env] 已载入 server.env + app.env"
-else
-  echo "[WARN] 缺少 $APP_ENV_FILE：密钥类环境变量未注入（DB_PASSWORD / ADMIN_PASSWORD /"
-  echo "       SHADOWFLOW_API_TOKEN / DINGTALK_WEBHOOK），服务按空兜底值启动。"
-  echo "       补齐办法：在本机 sh 目录执行  copy app.env.example app.env  填入真实值，"
-  echo "                 再跑一次 deploy.bat deploy"
-fi
+echo "[env] 已载入 server.env（app.env 在 jar 内由启动类装载，不经这里）"
 
 # ---- 必需参数：缺了直接报错退出，避免用空值启出一个坏进程 ----
 : "${JAVA:?server.env 里缺少 JAVA}"

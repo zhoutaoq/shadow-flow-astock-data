@@ -17,9 +17,9 @@ REM    deploy.env   服务器连接信息：IP / 账号 / 口令 / 主机指纹
 REM                 ^<-- 含密钥，已列入 .gitignore，不入库
 REM    server.env   服务器运行参数：部署目录 / JDK / JVM / 启动参数
 REM                 ^<-- 无密钥，入版本库；并会一起上传到服务器供 remote.sh 读取
-REM    app.env      应用密钥：数据库口令 / 超管初始口令 / 行情令牌 / 钉钉机器人
-REM                 ^<-- 含密钥，已列入 .gitignore，不入库；上传后由远端 remote.sh
-REM                     注入 java 进程环境，application.yml 里的 ${...} 占位符据此取值
+REM
+REM  应用密钥（app.env：数据库口令 / 超管初始口令 / 行情令牌 / 钉钉机器人）自 v1.6.4 起
+REM  放在 shadow-flow-biz/src/main/resources 下，打进 jar 由启动类装载，不经本脚本上传。
 REM
 REM  Files needed in THIS folder:  plink.exe  pscp.exe  remote.sh  (见 使用说明.md)
 REM ============================================================
@@ -138,10 +138,10 @@ if not exist "%LOCAL_JAR%" ( echo   [ERROR] jar missing: %LOCAL_JAR% & exit /b 1
 echo   [OK] built %LOCAL_JAR%
 exit /b 0
 
-REM ---------- upload: jar + remote.sh + server.env + app.env ----------
+REM ---------- upload: jar + remote.sh + server.env ----------
 :step_upload
 echo.
-echo [2/3] uploading jar / remote.sh / server.env / app.env ...
+echo [2/3] uploading jar / remote.sh / server.env ...
 "%PSCP%" %AUTH% "%LOCAL_JAR%" "%SSH%:%REMOTE_DIR%/%JAR_NAME%.jar.new"
 if errorlevel 1 ( echo   [ERROR] jar upload failed & exit /b 1 )
 echo   [OK] jar uploaded (as .jar.new)
@@ -149,17 +149,8 @@ echo   [OK] jar uploaded (as .jar.new)
 if errorlevel 1 ( echo   [ERROR] remote.sh upload failed & exit /b 1 )
 "%PSCP%" %AUTH% "%HERE%server.env" "%SSH%:%REMOTE_DIR%/server.env"
 if errorlevel 1 ( echo   [ERROR] server.env upload failed & exit /b 1 )
-REM app.env 是密钥文件（不入库）：本机没有就只告警、不中断发布 ——
-REM 服务器上那份保留真实配置，跳过上传不会动它。
-if exist "%HERE%app.env" (
-  "%PSCP%" %AUTH% "%HERE%app.env" "%SSH%:%REMOTE_DIR%/app.env"
-  if errorlevel 1 ( echo   [ERROR] app.env upload failed & exit /b 1 )
-  echo   [OK] remote.sh + server.env + app.env uploaded
-) else (
-  echo   [WARN] 本机缺少 %HERE%app.env，跳过密钥文件上传
-  echo          服务器上原有的 app.env 保持不动；远端也没有时，密钥类环境变量不会被注入
-  echo          [OK] remote.sh + server.env uploaded
-)
+echo   [OK] remote.sh + server.env uploaded
+REM v1.6.4 起应用密钥 app.env 在 jar 里（src/main/resources），随包发布，不经这里上传。
 exit /b 0
 
 REM ---------- remote restart ----------

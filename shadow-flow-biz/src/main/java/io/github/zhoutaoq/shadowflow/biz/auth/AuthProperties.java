@@ -7,12 +7,12 @@ import org.springframework.stereotype.Component;
  * 账号体系相关参数（{@code app.*}）。
  *
  * <p><b>超管口令不写在代码里，也不写在 application.yml 里</b> ——
- * 真实值统一放发布目录的 {@code sh/app.env}（服务器上同名文件保留真实配置，
- * 已列入 .gitignore 不入库），由启动脚本注入进程环境，
+ * 真实值统一放 classpath 的 {@code app.env}（src/main/resources 下，
+ * 已列入 .gitignore 不入库），由启动类 AppEnv.load() 装载成系统属性，
  * application.yml 里只留 {@code ${ADMIN_PASSWORD:}} 占位符。
  * 本类的默认值因此是空串：本地不带 env 直接跑时，admin 不会用任何默认口令建出来。
  *
- * <p>仓库里的模板见 {@code sh/app.env.example}。
+ * <p>仓库里的模板见同目录的 {@code app.env.example}。
  */
 @Component
 @ConfigurationProperties(prefix = "app")
@@ -48,7 +48,7 @@ public class AuthProperties {
          * 已经存在则保留现状，否则页面改过的密码一重启就被覆盖回去。
          *
          * <p>值来自环境变量 {@code ADMIN_PASSWORD}（application.yml 里配的占位符），
-         * 真实值在发布目录的 {@code sh/app.env}；这里不设明文默认值。
+         * 真实值在 classpath 的 {@code app.env}；这里不设明文默认值。
          */
         private String password = "";
 

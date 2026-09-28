@@ -1,148 +1,152 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="zh-CN" data-page-node-id="GhMLcdAlB6WR4CdchpFdFt">
+<head data-page-node-id="nBcbsFZqsW3lwwdVl1Zj9o">
+    <meta charset="UTF-8" data-page-node-id="rjMdHlpCUSd3Af6GtutBaE">
+    <meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="FBt58zB8PAKNduQJYNN4NZ">
     <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>系统配置 - 影流数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261011a">
+    <link rel="stylesheet" href="/css/common.css?v=20261011d" data-page-node-id="s8Sz1XIVlPjoxS72SVQomE">
 </head>
-<body>
-<header class="topbar">
-    <a class="brand" href="/">影流数据</a>
-    <nav class="nav" id="nav"></nav>
+<body data-page-node-id="CmpnL8CdVPeBk2Mmq7apAL">
+<header class="topbar" data-page-node-id="qENBJUznHI4YaM82B60Xjw">
+    <a class="brand" href="/" data-page-node-id="ubBN3G6QycQ9LynGgF8oA5">影流数据</a>
+    <nav class="nav" id="nav" data-page-node-id="DEAJBFt4LIHyqKHrj1kLa9"></nav>
 </header>
 
-<main class="container">
-    <div id="msgBox" class="msg"></div>
+<main class="container" data-page-node-id="hyNRBgZ5QMxPsvkWfplqKF">
+    <div id="msgBox" class="msg" data-page-node-id="1c8p9NgrSnPXiEQhIJGq3n"></div>
 
-    <div id="cfgPanel" style="display:none">
+    <div id="cfgPanel" style="display:none" data-page-node-id="HilGiNcSuc5MMzkTYzk8Fk">
 
-        <div class="cfg-panel-head">
-            <h2>系统配置</h2>
-            <div class="cfg-panel-actions">
-                <button class="btn-ghost" onclick="openEnvModal()">环境变量查看</button>
-                <button class="btn-ghost" onclick="reload()">放弃改动</button>
-                <button onclick="save()" id="btnSave">保存并应用</button>
+        <div class="cfg-panel-head" data-page-node-id="DT80LnAzVHmUDqMkGSPn6z">
+            <h2 data-page-node-id="q3WEh0pISEDPwzXYDmybBL">系统配置</h2>
+            <div class="cfg-panel-actions" data-page-node-id="hpw4RvF24zKno311okWK0x">
+                <button class="btn-ghost" onclick="openEnvModal()" data-page-node-id="tEc08s0vm3dDP8ZzT42UeY">环境查看</button>
+                <button class="btn-ghost" onclick="reload()" data-page-node-id="Jue9aHo7bKsnkLAfwEapYO">放弃改动</button>
+                <button onclick="save()" id="btnSave" data-page-node-id="zaKStnKnQJjy7G7hH3kvEI">保存并应用</button>
             </div>
         </div>
 
-        <section class="cards">
-            <div class="card">
-                <div class="card-title">当前标的</div>
-                <div class="card-value" id="cName">—</div>
-                <div class="card-desc" id="cCode"></div>
+        <section class="cards" data-page-node-id="VIsKfMfquKS8D4tVAtA2qF">
+            <div class="card" data-page-node-id="2PAXfcYqaHv54c4w4d2Jy5">
+                <div class="card-title" data-page-node-id="MNa8w7PKQTP0OQS2QXQy8F">当前标的</div>
+                <div class="card-value" id="cName" data-page-node-id="AkuVVdQ4yOW617AJqXGoia">—</div>
+                <div class="card-desc" id="cCode" data-page-node-id="LGsTn0hxZwZewuKVUI76Zk"></div>
             </div>
-            <div class="card">
-                <div class="card-title">行情区间</div>
-                <div class="card-value" id="cRange" style="font-size:var(--fs-20)">—</div>
+            <div class="card" data-page-node-id="oHoXRvXxBRgoEWTbL0acwA">
+                <div class="card-title" data-page-node-id="yO1tHJX57rP5OdcKpMezHr">行情区间</div>
+                <div class="card-value" id="cRange" style="font-size:var(--fs-20)" data-page-node-id="MDW7VKXlv716G4GIN5Ewk0">—</div>
             </div>
-            <div class="card">
-                <div class="card-title">交易日</div>
-                <div class="card-value" id="cDays">—</div>
-                <div class="card-desc">区间内的交易日数量</div>
+            <div class="card" data-page-node-id="RnZd2IjTBfVv8C2GNkVJjS">
+                <div class="card-title" data-page-node-id="TzhJDYcFQEzKDAMv0tEvFY">交易日</div>
+                <div class="card-value" id="cDays" data-page-node-id="VKNnwTYMOwccWIDic1Azhp">—</div>
+                <div class="card-desc" data-page-node-id="rPdZZUDOzrZFZSK1BmLxek">区间内的交易日数量</div>
             </div>
-            <div class="card">
-                <div class="card-title">区间涨跌幅</div>
-                <div class="card-value" id="cPct">—</div>
+            <div class="card" data-page-node-id="OT1Bvy1kl27ZVYd6MfpMNO">
+                <div class="card-title" data-page-node-id="krrbD5bOLsKVvCd1VFObnV">区间涨跌幅</div>
+                <div class="card-value" id="cPct" data-page-node-id="EPk00eyIOZ71ZwqugMf1zK">—</div>
             </div>
         </section>
 
-        <section class="panel">
-            <h2>首页背景行情</h2>
-            <div class="form-row">
-                <div class="field grow">
-                    <label>标的</label>
-                    <div id="codePick"></div>
+        <section class="panel" data-page-node-id="cz1ZbydBf9dhjHJr7cqNFO">
+            <h2 data-page-node-id="EB854ITWwkaGGBWtPhOYK9">首页背景行情</h2>
+            <div class="form-row" data-page-node-id="wzdoGGXXso4bT0Ea5Dt8h2">
+                <div class="field grow" data-page-node-id="SLFNjVpH820ApPn9aeiyKK">
+                    <label data-page-node-id="rm7edjnr4C68hwZz8ueUl7">标的</label>
+                    <div id="codePick" data-page-node-id="1WMRYgXUj0L2iiCwIbMWEl"></div>
                 </div>
-                <div class="field">
-                    <label>起始日期</label>
-                    <input type="date" id="fStart">
+                <div class="field" data-page-node-id="qHhJwRSWVq3DEh3BSg6Hsp">
+                    <label data-page-node-id="9Gpnxz79yUULHB2QWF2TWv">起始日期</label>
+                    <input type="date" id="fStart" data-page-node-id="aqYgWbZaY9skgFeeykDJDJ">
                 </div>
-                <div class="field">
-                    <label>结束日期</label>
-                    <input type="date" id="fEnd">
+                <div class="field" data-page-node-id="JGvJgebOP32LgNcB8fuxLE">
+                    <label data-page-node-id="O2YLAmpLScT3p3tONsOpvA">结束日期</label>
+                    <input type="date" id="fEnd" data-page-node-id="TKHPVxHP7h9dzNpwJ4wXxe">
                 </div>
             </div>
             <!-- 动作按钮组统一靠右（.modal-actions 默认 justify-content:flex-end），
                  与页面顶部那组「放弃改动 / 保存并应用」同一口径；原来写 flex-start
                  会把它们摁在左边，右侧空一大片 -->
-            <div class="modal-actions" style="margin-top:14px">
-                <button class="btn-ghost" onclick="resetDefault()">恢复默认</button>
-                <button class="btn-ghost" onclick="location.href='/'">去看首页</button>
+            <div class="modal-actions" style="margin-top:14px" data-page-node-id="VGRvYamy8dcNU6rbtDQp6I">
+                <button class="btn-ghost" onclick="resetDefault()" data-page-node-id="e6AhkKGPQ5GcKDsVgGw5nl">恢复默认</button>
+                <button class="btn-ghost" onclick="location.href='/'" data-page-node-id="hlpqRDBZKXfHknqEknRvBD">去看首页</button>
             </div>
-            <div class="sp-hint" id="stateLine"></div>
+            <div class="sp-hint" id="stateLine" data-page-node-id="ucQm0j4BILTEbCe9w9K7Ir"></div>
         </section>
 
-        <section class="panel">
-            <h2>股票名称跳转<span class="hint-q" tabindex="0" role="button" aria-label="股票名称跳转说明">?<span class="hint-box">全站的股票名称都会带上跳转链接，点击开新窗口。勾选的平台会出现在名称旁边（点名称本身直接开「默认」那个）；一个都不勾选时名称退回纯文本。<span class="hint-li">URL 模板写在 application.yml 的 <b>app.stock-link</b>，这里只维护「开关」那一层。</span></span></span></h2>
-            <div class="form-row" style="margin-top:12px">
-                <label class="chk-inline">
-                    <input type="checkbox" id="slEnabled"> 启用股票名称跳转
+        <section class="panel" data-page-node-id="X5IBe5SthWaZtRnapZB6iS">
+            <h2 data-page-node-id="E6Gvjs62lhr9Pvi2i1kJiR">股票名称跳转<span class="hint-q" tabindex="0" role="button" aria-label="股票名称跳转说明" data-page-node-id="rfbwBS7zeNa6zEXOLcds6W">?<span class="hint-box" data-page-node-id="I3JpT4B3slNkTVw07yI08y">全站的股票名称都会带上跳转链接，点击开新窗口。勾选的平台会出现在名称旁边（点名称本身直接开「默认」那个）；一个都不勾选时名称退回纯文本。</span></span></h2>
+            <div class="form-row" style="margin-top:12px" data-page-node-id="2DdUh8QbPsOxTcHxGKN5DG">
+                <label class="chk-inline" data-page-node-id="gHIqySGOm1eF0DgR9vjvBg">
+                    <input type="checkbox" id="slEnabled" data-page-node-id="Q3HxgYTv0RONvwEqGhNztv"> 启用股票名称跳转
                 </label>
             </div>
-            <div class="sl-rows" id="slList"></div>
-            <div class="modal-actions" style="margin-top:14px">
-                <button class="btn-ghost" onclick="resetStockLink()">恢复默认</button>
-                <button id="slSave" onclick="saveStockLink()">保存跳转配置</button>
-                <button class="btn-ghost" onclick="window.open('/pages/news.html','_blank')">看实际效果</button>
+            <div class="sl-rows" id="slList" data-page-node-id="uQFXMc2s61DarpWqPKGvqA"></div>
+            <div class="form-row" style="margin-top:14px" data-page-node-id="N5ssMBsUPyfdZdI212VYcE">
+                <label for="slSiteBase" data-page-node-id="63NCl4Zp7OzgkLfmk0Ejsx">本系统对外地址</label>
+                <input type="text" id="slSiteBase" autocomplete="off" placeholder="选填" data-page-node-id="TCwkFwojgeGGhxwkzhMgxH">
             </div>
-            <div class="sp-hint" id="slState"></div>
+            <div class="sp-hint" style="margin-top:6px" data-page-node-id="RymvnLj9gxq6t1PABoFnHL">填了它，钉钉消息里点「本系统」就能打开本系统的页面；不填时消息会改跳下面已启用的站外平台。</div>
+            <div class="modal-actions" style="margin-top:14px" data-page-node-id="L4NRisFJS8PGQUtI5czdoz">
+                <button class="btn-ghost" onclick="resetStockLink()" data-page-node-id="DmKrsJtHCg9YWKEtHDVEiM">恢复默认</button>
+                <button id="slSave" onclick="saveStockLink()" data-page-node-id="VPeOXTJIJKHIf0ObxOvsQ1">保存跳转配置</button>
+                <button class="btn-ghost" onclick="window.open('/pages/news.html','_blank')" data-page-node-id="Qepg8chMP97LXQmldilpxs">看实际效果</button>
+            </div>
+            <div class="sp-hint" id="slState" data-page-node-id="RlHQPnZpEDTDEx0ztCoMUX"></div>
         </section>
 
-        <section class="panel">
-            <h2>外观与导航<span class="hint-q" tabindex="0" role="button" aria-label="外观与导航说明">?<span class="hint-box">系统 logo 与顶部菜单都属于「全站外观」，改完所有页面下一次加载即生效，不用重启服务。<span class="hint-li">菜单只开放<b>名称</b>与<b>顺序</b>：地址、登录要求与超管权限由代码决定 —— 地址可配等于开一堆 404 死菜单，权限可配等于开越权入口。</span><span class="hint-li">logo 支持 jpg / png / webp / gif，单张不超过 2MB；上传后存在数据目录，不会打进发布包。</span></span></span></h2>
+        <section class="panel" data-page-node-id="mzY3DtwYTeL8gK3dz3AerQ">
+            <h2 data-page-node-id="CTOgpEF8N1PtbVt1eMgMZ4">外观与导航<span class="hint-q" tabindex="0" role="button" aria-label="外观与导航说明" data-page-node-id="uRzaPVg4iXRyrZ5jFRAVwp">?<span class="hint-box" data-page-node-id="DMBRK8KIxv7do73avKQU9k">系统 logo 与顶部菜单都属于「全站外观」，改完所有页面下一次加载即生效，不用重启服务。<span class="hint-li" data-page-node-id="gUItEGtJAjBvH2gk7tV4GT">菜单只开放<b data-page-node-id="ON6sNOdl43KjbkyU5YB6ux">名称</b>与<b data-page-node-id="SFHWAqYOxppmxRxRWryTGf">顺序</b>：地址、登录要求与超管权限由代码决定 —— 地址可配等于开一堆 404 死菜单，权限可配等于开越权入口。</span><span class="hint-li" data-page-node-id="CkUK0eovPPvkdujTVaO7zA">logo 支持 jpg / png / webp / gif，单张不超过 2MB；上传后存在数据目录，不会打进发布包。</span></span></span></h2>
 
-            <div class="logo-box">
-                <div class="logo-prev"><img id="logoPrev" src="/img/logo.jpg" alt="系统 logo 预览"></div>
-                <div class="logo-meta">
-                    <div id="logoState" class="dim">出厂 logo</div>
-                    <div class="logo-tip">建议正方形、背景干净的小图；顶栏只占 26×26 像素。</div>
-                    <div class="modal-actions" style="margin-top:10px;justify-content:flex-start">
-                        <button onclick="pickLogoFile()">上传新 logo</button>
-                        <button class="btn-ghost" onclick="resetLogo()">恢复默认</button>
+            <div class="logo-box" data-page-node-id="4WajLKrWPhuFeeRkwTat6b">
+                <div class="logo-prev" data-page-node-id="qHpbzoMQfE5CsOf4mJQ9zj"><img id="logoPrev" src="/img/logo.jpg" alt="系统 logo 预览" data-page-node-id="4EMoh4yYudDKSunuyJv8by"></div>
+                <div class="logo-meta" data-page-node-id="ujqCGupwi4URT17AGtFWv0">
+                    <div id="logoState" class="dim" data-page-node-id="XW4LoGmpJu7qFsNPNUyvgZ">出厂 logo</div>
+                    <div class="logo-tip" data-page-node-id="PVYa8HlbwBgkU0IAMrzEoA">建议正方形、背景干净的小图；顶栏只占 26×26 像素。</div>
+                    <div class="modal-actions" style="margin-top:10px;justify-content:flex-start" data-page-node-id="JyJFRPB9IFgOGEAnmlWIzz">
+                        <button onclick="pickLogoFile()" data-page-node-id="Bbv4B4ZnAmpGOubJ3XZ95Q">上传新 logo</button>
+                        <button class="btn-ghost" onclick="resetLogo()" data-page-node-id="NiX6IJwuZ13YQ64TcCADz2">恢复默认</button>
                     </div>
                 </div>
             </div>
 
-            <div class="modal-actions" style="margin-top:18px">
-                <button onclick="openMenuModal()">菜单配置</button>
+            <div class="modal-actions" style="margin-top:18px" data-page-node-id="3N53y42NpOs1pBIiOZY7SJ">
+                <button onclick="openMenuModal()" data-page-node-id="8ypwEg1Zy3u2ty90bweijF">菜单配置</button>
             </div>
-            <div class="sp-hint" id="menuState"></div>
+            <div class="sp-hint" id="menuState" data-page-node-id="mxr6Z36u9x6r5iCOeXmz0v"></div>
         </section>
 
-        <section class="panel">
-            <h2>第三方对接<span class="hint-q" tabindex="0" role="button" aria-label="第三方对接说明">?<span class="hint-box"><b>平台自己</b>对接第三方用的凭据，全局一份、全站生效 —— 行情抓取与系统通知（发布通知 / 注册通知 / 问题反馈）都从这里取值，改完即生效不用重启。<span class="hint-li">令牌与 Webhook 只回显前后各 4 位；输入框留空表示这一项不动，要让它回落到配置文件的出厂值请点旁边的「清除」。</span><span class="hint-li">注意：盯盘告警的机器人<b>不在这里</b> —— 那是每个用户自己的推送通道，在「盯盘 → 推送」页各人配自己的；用户没配才落到这里的系统通知机器人。</span></span></span></h2>
-            <div class="ig-rows" id="igList"></div>
-            <div class="modal-actions" style="margin-top:14px">
-                <button id="igSave" onclick="saveIntegration()">保存对接配置</button>
-                <button class="btn-ghost" onclick="loadIntegration()">重新载入</button>
-                <button class="btn-ghost" onclick="resetIntegration()">全部恢复出厂值</button>
+        <section class="panel" data-page-node-id="PyclqzloFnVqBF3ug1ShGE">
+            <h2 data-page-node-id="4N3wSEqQT1t9FO2WApSA1A">第三方对接<span class="hint-q" tabindex="0" role="button" aria-label="第三方对接说明" data-page-node-id="pilrXtAadKIrkFEKehJKUN">?<span class="hint-box" data-page-node-id="Gl2ZlkdNaG9uNu8HgCYP00"><b data-page-node-id="NINge4HTiCpGXQqXDiRv4E">平台自己</b>对接第三方用的凭据，全局一份、全站生效 —— 行情抓取与系统通知（发布通知 / 注册通知 / 问题反馈）都从这里取值，改完即生效不用重启。<span class="hint-li" data-page-node-id="wIG8fPYAMjIlC56PMGWMbs">令牌与 Webhook 只回显前后各 4 位；输入框留空表示这一项不动，要让它回落到配置文件的出厂值请点旁边的「清除」。</span><span class="hint-li" data-page-node-id="oFcJQutsSjnMrxJkb81OLH">注意：盯盘告警的机器人<b data-page-node-id="R6eoRSjQfwAB2J7FWAHtIe">不在这里</b> —— 那是每个用户自己的推送通道，在「盯盘 → 推送」页各人配自己的；用户没配才落到这里的系统通知机器人。</span></span></span></h2>
+            <div class="ig-rows" id="igList" data-page-node-id="jbkGx70hDlxi7jiHmZnObv"></div>
+            <div class="modal-actions" style="margin-top:14px" data-page-node-id="C3IvStK0c1jFOYc6PNLVE8">
+                <button id="igSave" onclick="saveIntegration()" data-page-node-id="TVwo0153tcJf7IO4LmQBQc">保存对接配置</button>
+                <button class="btn-ghost" onclick="loadIntegration()" data-page-node-id="A5NiJbGll3dcyCl7ALh2sk">重新载入</button>
+                <button class="btn-ghost" onclick="resetIntegration()" data-page-node-id="Gq8EVIfX3lafwmxBJY2be2">全部恢复出厂值</button>
             </div>
-            <div class="sp-hint" id="igState"></div>
+            <div class="sp-hint" id="igState" data-page-node-id="8SFJwH4GgELHImUMhi9u7C"></div>
         </section>
 
     </div>
 </main>
 
-<!-- 环境变量查看（v1.6.1）：只读弹窗，内容由 openEnvModal() 填充 -->
-<div class="mask" id="envMask">
-    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-label="服务环境变量">
-        <h3>服务环境变量</h3>
-        <div class="dim" style="font-size:var(--fs-12);margin-bottom:14px">
-            本服务启动时由发布脚本注入的环境变量。凭据只露前后各 4 位；真实值保留在服务器发布目录的
-            <span class="mono">sh/app.env</span>，改完跑一次发布即生效 —— 本页只读。
+<!-- 环境查看（v1.6.1）：只读弹窗，内容由 openEnvModal() 填充 -->
+<div class="mask" id="envMask" data-page-node-id="xub8CGgWilLHSzHwleognZ">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-label="服务环境" data-page-node-id="19419mPI25F3fSsBCCJUAm">
+        <h3 data-page-node-id="awUH0MoFy4OAFMjoiuyPFx">服务环境</h3>
+        <div class="dim" style="font-size:var(--fs-12);margin-bottom:14px" data-page-node-id="vORg6w58gxZ00ON8DwPvpo">
+            服务运行时实际生效的配置总览。凭据只露前后各 4 位，运行参数明文展示 —— 本页只读。
         </div>
-        <div id="envBody"></div>
-        <div class="modal-actions">
-            <button class="btn-ghost" onclick="closeEnvModal()">关闭</button>
+        <div id="envBody" data-page-node-id="VAXJwQ28x7BpxAlHTHC4Pf"></div>
+        <div class="modal-actions" data-page-node-id="rGdHbgwzbOqsyDk2ahTNNk">
+            <button class="btn-ghost" onclick="closeEnvModal()" data-page-node-id="JrdNSBF2DtnJKF2n1LCCZF">关闭</button>
         </div>
     </div>
 </div>
 
-<script src="/js/common.js?v=20261011a"></script>
-<script src="/js/date-picker.js?v=20261011a"></script>
-<script src="/js/stock-picker.js?v=20261011a"></script>
+<script src="/js/common.js?v=20261011d"></script>
+<script src="/js/date-picker.js?v=20261011d"></script>
+<script src="/js/stock-picker.js?v=20261011d"></script>
 <script>
     /** 与后端口径一致：背景区间最长一年 */
     const MAX_SPAN_DAYS = 365;
@@ -310,7 +314,8 @@
                     + (off ? ' disabled' : '') + '> 默认</label>'
                     + '</div>';
             }).join('')
-            : '<div class="sp-hint">application.yml 里没有配置任何跳转目标（app.stock-link.targets）</div>';
+            : '<div class="sp-hint">还没有可跳转的平台</div>';
+        document.getElementById('slSiteBase').value = c.siteBaseUrl || '';
 
         bindStockLinkRows();
         paintStockLinkState();
@@ -347,6 +352,7 @@
         return {
             enabled: document.getElementById('slEnabled').checked,
             defaultTarget: picked ? picked.value : '',
+            siteBaseUrl: document.getElementById('slSiteBase').value.trim(),
             targets: targets
         };
     }
@@ -563,14 +569,13 @@
     }
 
     /* =====================================================================
-     * 环境变量查看（v1.6.1）
+     * 环境查看（v1.6.1；v1.6.4 起凭据来自包内 app.env）
      *
-     * v1.6.0 之前凭据是写死在 application.yml 里的；v1.6.1 起全部搬到发布目录的
-     * sh/app.env（服务器上同名文件保留真实配置），启动时注入进程环境，
-     * yml 里只留 ${...} 占位符。仓库是干净了，但「线上到底注进来了没有」也跟着看不见了 ——
+     * v1.6.0 之前凭据是写死在 application.yml 里的；之后全部外置，启动时装进进程，
+     * yml 里只留 ${...} 占位符。仓库是干净了，但「线上到底装没装进来」也跟着看不见了 ——
      * 这一块把那层补上：只读，凭据脱敏（只露前后各 4 位）、运行参数明文。
      *
-     * 页面不提供写入口：改值去改 sh/app.env（服务器上那份），改完跑一次发布即生效。
+     * 页面不提供写入口：改值去改应用密钥文件，改完重新打包发布即生效。
      * 这里能改等于给口令开了第二个写入口，两边不一致时反而更难查。
      * ===================================================================== */
     let envCfg = null;
@@ -593,9 +598,9 @@
         const c = envCfg || {};
         document.getElementById('envBody').innerHTML =
             '<div class="ig-label">凭据（值脱敏）</div>'
-            + envTable(['环境变量', '当前值', '来源'], envSecretRows(c.secrets))
+            + envTable(['配置项', '当前值', '来源'], envSecretRows(c.secrets))
             + '<div class="ig-label" style="margin:18px 0 6px">运行参数</div>'
-            + envTable(['环境变量', '当前值'], envRuntimeRows(c.runtimes));
+            + envTable(['配置项', '当前值'], envRuntimeRows(c.runtimes));
     }
 
     function envTable(heads, rows) {
@@ -633,10 +638,13 @@
             + (v ? esc(v) : '<span class="dim">—</span>') + '</td>';
     }
 
-    /** 值的来源：系统配置页（覆盖了环境变量）/ 环境变量 / 未设置 */
+    /** 值的来源：系统配置页（覆盖了出厂值）/ 应用密钥文件 / 环境变量 / 未设置 */
     function envSourceBadge(s) {
         if (s === '系统配置页') {
             return '<span class="ig-src is-cfg">系统配置页</span>';
+        }
+        if (s === 'app.env') {
+            return '<span class="ig-src">应用密钥文件</span>';
         }
         if (s === '环境变量') {
             return '<span class="ig-src">环境变量</span>';
