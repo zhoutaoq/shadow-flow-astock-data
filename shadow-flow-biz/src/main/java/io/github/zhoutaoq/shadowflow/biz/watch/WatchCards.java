@@ -69,6 +69,15 @@ public final class WatchCards {
     }
 
     /**
+     * 卡片正文里的换行符。
+     *
+     * <p><b>这里用 {@code <br>} 而不是 {@code \n}，是钉钉的硬约束</b>：钉钉 markdown
+     * 只支持语法的子集，正文里的 {@code \n} 会被折叠、连续空格被并成一个，列表 {@code - }
+     * 在窄屏手机上缩进错乱。只有 {@code <br>} 能保证「每条数据独占一行」。
+     */
+    private static final String BR = "<br>";
+
+    /**
      * 行情快照卡片（推送页手动推送用）：不动告警口径，把当下的行情摆出来。
      *
      * @param color  整卡颜色（涨 {@link #UP} / 跌 {@link #DOWN} / 平 {@link #FLAT}）
@@ -80,17 +89,17 @@ public final class WatchCards {
         String dot = FLAT.equals(color) ? FLAT_DOT : (UP.equals(color) ? UP_TRI : DOWN_TRI);
         StringBuilder sb = new StringBuilder();
         sb.append(head(color, dot + " " + name + " 行情快照")).append("\n\n");
-        sb.append(paint(color, "- 现价：" + yuan(priceText)
-                + "（涨跌幅 " + pctWord(pctText) + "）")).append('\n');
-        sb.append(paint(color, "- 昨收：" + yuan(preCloseText)
-                + "，最高 " + (highText == null ? "—" : highText)
-                + " / 最低 " + (lowText == null ? "—" : lowText))).append('\n');
+        sb.append(paint(color, "现价：" + yuan(priceText)
+                + "（涨跌幅 " + pctWord(pctText) + "）")).append(BR);
+        sb.append(paint(color, "昨收：" + yuan(preCloseText)
+                + "　最高 " + (highText == null ? "—" : highText)
+                + "　最低 " + (lowText == null ? "—" : lowText))).append(BR);
         if (volText != null || amtText != null) {
-            sb.append(paint(color, "- 今日：" + (volText == null ? "—" : volText)
-                    + " / " + (amtText == null ? "—" : amtText))).append('\n');
+            sb.append(paint(color, "今日：" + (volText == null ? "—" : volText)
+                    + " / " + (amtText == null ? "—" : amtText))).append(BR);
         }
         if (timeText != null && !timeText.trim().isEmpty()) {
-            sb.append(paint(color, "- 行情时间：" + timeText)).append('\n');
+            sb.append(paint(color, "行情时间：" + timeText)).append(BR);
         }
         return sb.toString();
     }
@@ -116,13 +125,13 @@ public final class WatchCards {
         sb.append(head(color, dot + " " + name + " " + action)).append("\n\n");
         // 累计涨跌幅与当前涨跌幅各自独立取缺失：缺哪个哪个退灰，不影响另一行
         sb.append(paint(spanPct == null ? FLAT : color,
-                "- 过去 " + mainSec + "s：累计" + (up ? "涨幅 " : "跌幅 ")
-                        + (spanPct == null ? "—" : pctWord(spanPct)))).append('\n');
-        sb.append(paint(color, "- 现价：" + yuan(priceText)))
+                "过去 " + mainSec + "s：" + (up ? "涨幅 " : "跌幅 ")
+                        + (spanPct == null ? "—" : pctWord(spanPct)))).append(BR);
+        sb.append(paint(color, "现价：" + yuan(priceText)))
                 .append(paint(todayPct == null ? FLAT : color,
-                        "（当前涨跌幅 " + pctWord(todayPct) + "）")).append('\n');
+                        "（当前涨跌幅 " + pctWord(todayPct) + "）")).append(BR);
         if (volText != null || amtText != null) {
-            StringBuilder line = new StringBuilder("- 拉升");
+            StringBuilder line = new StringBuilder("拉升");
             if (volText != null) {
                 line.append("成交量：").append(volText);
                 if (amtText != null) {
@@ -132,7 +141,7 @@ public final class WatchCards {
             if (amtText != null) {
                 line.append("成交额：").append(amtText);
             }
-            sb.append(paint(color, line.toString())).append('\n');
+            sb.append(paint(color, line.toString())).append(BR);
         }
         return sb.toString();
     }
@@ -155,12 +164,12 @@ public final class WatchCards {
         String dot = closed ? (up ? UP_DOT : DOWN_DOT) : OPEN_DOT;
         StringBuilder sb = new StringBuilder();
         sb.append(head(color, dot + " " + name + " " + word)).append("\n\n");
-        sb.append(paint(color, "- 现价：" + yuan(priceText)))
+        sb.append(paint(color, "现价：" + yuan(priceText)))
                 .append(paint(todayPct == null ? FLAT : color,
-                        "（涨跌幅 " + pctWord(todayPct) + "）")).append('\n');
-        sb.append(paint(color, "- 本窗口：" + (windowVol == null ? "—" : windowVol)
-                + " / " + (windowAmt == null ? "—" : windowAmt))).append('\n');
-        sb.append(paint(color, "- 总成交额：" + (totalAmt == null ? "—" : totalAmt))).append('\n');
+                        "（涨跌幅 " + pctWord(todayPct) + "）")).append(BR);
+        sb.append(paint(color, "本窗口：" + (windowVol == null ? "—" : windowVol)
+                + " / " + (windowAmt == null ? "—" : windowAmt))).append(BR);
+        sb.append(paint(color, "总成交额：" + (totalAmt == null ? "—" : totalAmt))).append(BR);
         return sb.toString();
     }
 
@@ -176,7 +185,7 @@ public final class WatchCards {
         StringBuilder sb = new StringBuilder();
         sb.append(head(color, (up ? UP_DOT : DOWN_DOT) + " " + name + " "
                 + (up ? "涨停" : "跌停") + "放量")).append("\n\n");
-        StringBuilder line = new StringBuilder("- 本区间成交额：").append(curAmt == null ? "—" : curAmt);
+        StringBuilder line = new StringBuilder("本区间成交额：").append(curAmt == null ? "—" : curAmt);
         if (prevAmt != null) {
             line.append("（上区间 ").append(prevAmt);
             if (timesText != null) {
@@ -184,11 +193,11 @@ public final class WatchCards {
             }
             line.append('）');
         }
-        sb.append(paint(color, line.toString())).append('\n');
-        sb.append(paint(color, "- 本区间成交量：" + (volText == null ? "—" : volText))).append('\n');
-        sb.append(paint(color, "- 现价：" + yuan(priceText)))
+        sb.append(paint(color, line.toString())).append(BR);
+        sb.append(paint(color, "本区间成交量：" + (volText == null ? "—" : volText))).append(BR);
+        sb.append(paint(color, "现价：" + yuan(priceText)))
                 .append(paint(todayPct == null ? FLAT : color,
-                        "（涨跌幅 " + pctWord(todayPct) + "）")).append('\n');
+                        "（涨跌幅 " + pctWord(todayPct) + "）")).append(BR);
         return sb.toString();
     }
 

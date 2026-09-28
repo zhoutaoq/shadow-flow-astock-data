@@ -117,14 +117,35 @@ public class DingTalkWebhookNotifier implements Notifier {
      * <p>字段口径按自定义机器人的协议来（与服务端单发消息 API 的下划线写法不同）：
      * 正文用 {@code text}（内容是 markdown）、跳转条用 {@code singleTitle} + {@code singleURL}。
      * 会话列表透出的 {@code title} 只吃纯文本，所以这里先洗掉排版标记。
+     *
+     * <p><b>外部浏览器打开</b>：钉钉 PC 端默认在侧边栏/内嵌打开 URL，要落到外部浏览器
+     * 得在地址上追加 {@code pc_slide=false}（官方约定，见消息链接说明）。这里统一拼上；
+     * 移动端是钉钉的硬限制，只能在客户端内打开，无法从消息侧绕过。
      */
     private static String actionCardBody(String title, String content, String linkText, String linkUrl) {
         return "{\"msgtype\":\"actionCard\",\"actionCard\":{"
                 + "\"title\":" + NotifyText.json(title)
                 + ",\"text\":" + NotifyText.json(content)
                 + ",\"singleTitle\":" + NotifyText.json(linkText)
-                + ",\"singleURL\":" + NotifyText.json(linkUrl)
+                + ",\"singleURL\":" + NotifyText.json(forceExternalBrowser(linkUrl))
                 + "}}";
+    }
+
+    /**
+     * 给跳转地址追加 {@code pc_slide=false}，让 PC 端在外部浏览器打开。
+     *
+     * <p>已有 query 就用 {@code &}、没有就用 {@code ?}。钉钉只认 {@code pc_slide} 这一个
+     * 官方开关（false = 外部浏览器，true = 侧边栏）。别手写别的键名，钉钉不认。
+     */
+    static String forceExternalBrowser(String url) {
+        if (url == null || url.trim().isEmpty()) {
+            return url;
+        }
+        String u = url.trim();
+        if (u.contains("pc_slide=")) {
+            return u; // 调用方已经自己控制过，不重复拼
+        }
+        return u + (u.contains("?") ? "&" : "?") + "pc_slide=false";
     }
 
     /** 卡片标题：调用方给了就用，没给就从正文首行截取（会话列表只吃纯文本） */
