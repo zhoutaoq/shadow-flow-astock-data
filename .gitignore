@@ -174,3 +174,5 @@ shadow-flow-biz/src/main/resources/app.env
 target/
 *.log
 *.jar.new
+
+docs
