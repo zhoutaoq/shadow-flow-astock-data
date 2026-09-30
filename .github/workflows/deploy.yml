@@ -76,7 +76,7 @@ jobs:
           echo "部署目录=$DIR jar=$JAR 端口=$PORT"
 
       - name: 上传 jar / remote.sh / server.env
-        timeout-minutes: 8
+        timeout-minutes: 30
         env:
           SSHPASS: ${{ secrets.SSH_PASSWORD }}
           SSH_USER: ${{ secrets.SSH_USER }}
@@ -86,7 +86,6 @@ jobs:
         run: |
           set -ex
           command -v sshpass >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq sshpass; }
-          command -v sshpass
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
@@ -94,14 +93,29 @@ jobs:
           DIR="${{ steps.cfg.outputs.remote_dir }}"
           JAR="${{ steps.cfg.outputs.jar_name }}"
           PORT="${SSH_PORT:-22}"
-          SSH_BASE="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ConnectTimeout=15 -P $PORT"
+          TARGET="${SSH_USER}@${SSH_HOST}"
+          SSH_OPT="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ConnectTimeout=15"
+          SSH_CMD="sshpass -e ssh $SSH_OPT -p $PORT $TARGET"
+          SCP_CMD="sshpass -e scp $SSH_OPT -P $PORT"
 
-          timeout 60 sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=15 -p "$PORT" "${SSH_USER}@${SSH_HOST}" "echo ssh-ok; whoami"
+          # 先清掉上一轮可能残留的半成品，再传小文件（顺带确认 SFTP 通道可用）
+          timeout 60 $SSH_CMD "rm -f ${DIR}/${JAR}.jar.new ${DIR}/${JAR}.jar.uploading; echo cleaned"
+          timeout 120 $SCP_CMD sh/remote.sh sh/server.env "${TARGET}:${DIR}/"
+          echo "[OK] remote.sh / server.env 已同步"
 
-          timeout 300 sshpass -e scp $SSH_BASE "shadow-flow-biz/target/${JAR}.jar" "${SSH_USER}@${SSH_HOST}:${DIR}/${JAR}.jar.new"
-          timeout 60 sshpass -e scp $SSH_BASE sh/remote.sh sh/server.env "${SSH_USER}@${SSH_HOST}:${DIR}/"
-          echo "[OK] jar 已上传为 ${JAR}.jar.new，remote.sh / server.env 已同步"
+          # jar 先传成 .uploading，校验大小一致后才改名成 .jar.new —— 传一半的包绝不能进 swap
+          LOCAL_JAR="shadow-flow-biz/target/${JAR}.jar"
+          LOCAL_SIZE=$(stat -c%s "$LOCAL_JAR")
+          echo "本地 jar 大小: ${LOCAL_SIZE}"
+          time timeout 1500 $SCP_CMD "$LOCAL_JAR" "${TARGET}:${DIR}/${JAR}.jar.uploading"
+          REMOTE_SIZE=$(timeout 60 $SSH_CMD "stat -c%s ${DIR}/${JAR}.jar.uploading")
+          echo "远端 jar 大小: ${REMOTE_SIZE}"
+          if [ "$LOCAL_SIZE" != "$REMOTE_SIZE" ]; then
+            echo "::error::上传不完整（本地 ${LOCAL_SIZE} / 远端 ${REMOTE_SIZE}），终止发布"
+            exit 1
+          fi
+          timeout 60 $SSH_CMD "mv -f ${DIR}/${JAR}.jar.uploading ${DIR}/${JAR}.jar.new"
+          echo "[OK] jar 已上传为 ${JAR}.jar.new"
 
       - name: 远端重启（停旧 -> 换 jar -> 启动）
         timeout-minutes: 6
