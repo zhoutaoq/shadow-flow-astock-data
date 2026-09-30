@@ -96,7 +96,10 @@ stop_old() {
 start_new() {
   rm -f "${JAR_NAME}.pid"
   # setsid 脱离会话 + nohup 挡 HUP + stdin 重定向, 保证 plink/ssh 断开后进程存活
-  setsid bash -c "cd $DIR && $JAVA $OPTS -jar $P $ARGS >> $LOG 2>&1 < /dev/null" &
+  # ⚠️ 外层这层重定向不能省：只重定向里面的 java，外面这层 bash 会一直持有调用方的
+  #    stdout（也就是 ssh/plink 那条通道），服务在跑它就永不退出 —— ssh 会话关不掉，
+  #    表现为发布命令卡住不动 / 几分钟后被链路掐断报 client_loop: Broken pipe (exit 255)。
+  setsid bash -c "cd $DIR && $JAVA $OPTS -jar $P $ARGS >> $LOG 2>&1 < /dev/null" >> "$LOG" 2>&1 < /dev/null &
   echo $! > "${JAR_NAME}.pid"
   sleep 8
   if kill -0 "$(cat "${JAR_NAME}.pid" 2>/dev/null)" 2>/dev/null; then
