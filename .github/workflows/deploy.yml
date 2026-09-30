@@ -1,0 +1,130 @@
+name: 构建并发布到生产
+
+# 推送到 github / main 分支即自动：Maven 打包 -> 上传 jar -> 远端重启 -> 探活。
+# 也可在 GitHub 页面 Actions 里手动 Run workflow。
+#
+# 复用的既有脚本（不在 CI 里另写一套发布逻辑）：
+#   sh/server.env   部署目录 / jar 名 / JVM 参数 / 启动参数（入库，本工作流直接解析）
+#   sh/remote.sh    远端 stop -> 换 jar -> setsid 启动 -> 探活（上传到服务器后执行）
+#
+# 需要的仓库 Secrets（Settings -> Secrets and variables -> Actions）：
+#   SSH_HOST         服务器 IP，如 111.231.171.218
+#   SSH_USER         登录账号，如 root
+#   SSH_PASSWORD     登录口令（与 sh/deploy.env 的 PWD 同一份，deploy.env 不入库）
+#   SSH_PORT         可选，默认 22
+#   SSH_KNOWN_HOSTS  服务器主机公钥，一行，取法见 docs/CI自动发布.md
+#   APP_ENV          shadow-flow-biz/src/main/resources/app.env 的全文（不入库，打进 jar）
+#
+# 说明：app.env 缺失时 AppEnv.load() 会直接抛异常拒绝启动，所以必须在打包前写回。
+
+on:
+  push:
+    branches:
+      - github
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: shadow-flow-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: 打包并重启线上服务
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 准备 JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: 写入 app.env
+        env:
+          APP_ENV: ${{ secrets.APP_ENV }}
+        run: |
+          set -e
+          if [ -z "$APP_ENV" ]; then
+            echo "::error::缺少仓库 Secret APP_ENV"
+            exit 1
+          fi
+          printf '%s' "$APP_ENV" > shadow-flow-biz/src/main/resources/app.env
+          echo "app.env 已写入，键值行数: $(grep -c '^set \"' shadow-flow-biz/src/main/resources/app.env)"
+
+      - name: Maven 打包
+        run: mvn -B clean package -DskipTests
+
+      - name: 解析 sh/server.env
+        id: cfg
+        run: |
+          set -e
+          get() { grep -m1 "^set \"$1=" sh/server.env | sed -E 's/^set "[^=]+=(.*)"[[:space:]]*$/\1/'; }
+          DIR=$(get REMOTE_DIR)
+          JAR=$(get JAR_NAME)
+          PORT=$(get ARGS | grep -o -- '--server.port=[0-9]*' | cut -d= -f2)
+          : "${DIR:?server.env 缺 REMOTE_DIR}"
+          : "${JAR:?server.env 缺 JAR_NAME}"
+          : "${PORT:?server.env 的 ARGS 里没取到 --server.port}"
+          echo "remote_dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "jar_name=$JAR"   >> "$GITHUB_OUTPUT"
+          echo "port=$PORT"      >> "$GITHUB_OUTPUT"
+          echo "部署目录=$DIR jar=$JAR 端口=$PORT"
+
+      - name: 上传 jar / remote.sh / server.env
+        env:
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -e
+          command -v sshpass >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq sshpass; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          DIR="${{ steps.cfg.outputs.remote_dir }}"
+          JAR="${{ steps.cfg.outputs.jar_name }}"
+          PORT="${SSH_PORT:-22}"
+          SSH_BASE="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -P $PORT"
+
+          sshpass -e scp $SSH_BASE "shadow-flow-biz/target/${JAR}.jar" "${SSH_USER}@${SSH_HOST}:${DIR}/${JAR}.jar.new"
+          sshpass -e scp $SSH_BASE sh/remote.sh sh/server.env "${SSH_USER}@${SSH_HOST}:${DIR}/"
+          echo "[OK] jar 已上传为 ${JAR}.jar.new，remote.sh / server.env 已同步"
+
+      - name: 远端重启（停旧 -> 换 jar -> 启动）
+        env:
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -e
+          DIR="${{ steps.cfg.outputs.remote_dir }}"
+          PORT="${SSH_PORT:-22}"
+          sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -p "$PORT" "${SSH_USER}@${SSH_HOST}" \
+            "cd ${DIR} && tr -d '\r' < remote.sh | REMOTE_DIR=${DIR} bash -s -- restart"
+
+      - name: 线上探活
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          PORT="${{ steps.cfg.outputs.port }}"
+          for i in $(seq 1 24); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://${SSH_HOST}:${PORT}/" || true)
+            if [ "$code" = "200" ]; then
+              echo "[OK] http://${SSH_HOST}:${PORT}/ -> 200（第 ${i} 次探测）"
+              exit 0
+            fi
+            echo "  第 ${i} 次探测: ${code:-无响应}，5s 后重试"
+            sleep 5
+          done
+          echo "::error::探活失败，请看上一步远端日志"
+          exit 1
