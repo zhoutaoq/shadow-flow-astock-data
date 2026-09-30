@@ -94,7 +94,7 @@ jobs:
           JAR="${{ steps.cfg.outputs.jar_name }}"
           PORT="${SSH_PORT:-22}"
           TARGET="${SSH_USER}@${SSH_HOST}"
-          SSH_OPT="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ConnectTimeout=15"
+          SSH_OPT="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ConnectTimeout=15 -o ServerAliveInterval=20 -o ServerAliveCountMax=3"
           SSH_CMD="sshpass -e ssh $SSH_OPT -p $PORT $TARGET"
           SCP_CMD="sshpass -e scp $SSH_OPT -P $PORT"
 
@@ -129,7 +129,7 @@ jobs:
           DIR="${{ steps.cfg.outputs.remote_dir }}"
           PORT="${SSH_PORT:-22}"
           timeout 300 sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=15 -p "$PORT" "${SSH_USER}@${SSH_HOST}" \
+            -o ConnectTimeout=15 -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -p "$PORT" "${SSH_USER}@${SSH_HOST}" \
             "cd ${DIR} && tr -d '\r' < remote.sh | REMOTE_DIR=${DIR} bash -s -- restart"
 
       - name: 线上探活
@@ -137,8 +137,8 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
         run: |
           PORT="${{ steps.cfg.outputs.port }}"
-          for i in $(seq 1 24); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' "http://${SSH_HOST}:${PORT}/" || true)
+          for i in $(seq 1 12); do
+            code=$(curl -s --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "http://${SSH_HOST}:${PORT}/" || true)
             if [ "$code" = "200" ]; then
               echo "[OK] http://${SSH_HOST}:${PORT}/ -> 200（第 ${i} 次探测）"
               exit 0
