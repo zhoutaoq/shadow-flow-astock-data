@@ -76,6 +76,7 @@ jobs:
           echo "部署目录=$DIR jar=$JAR 端口=$PORT"
 
       - name: 上传 jar / remote.sh / server.env
+        timeout-minutes: 8
         env:
           SSHPASS: ${{ secrets.SSH_PASSWORD }}
           SSH_USER: ${{ secrets.SSH_USER }}
@@ -83,8 +84,9 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: |
-          set -e
+          set -ex
           command -v sshpass >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq sshpass; }
+          command -v sshpass
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
@@ -92,24 +94,28 @@ jobs:
           DIR="${{ steps.cfg.outputs.remote_dir }}"
           JAR="${{ steps.cfg.outputs.jar_name }}"
           PORT="${SSH_PORT:-22}"
-          SSH_BASE="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -P $PORT"
+          SSH_BASE="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ConnectTimeout=15 -P $PORT"
 
-          sshpass -e scp $SSH_BASE "shadow-flow-biz/target/${JAR}.jar" "${SSH_USER}@${SSH_HOST}:${DIR}/${JAR}.jar.new"
-          sshpass -e scp $SSH_BASE sh/remote.sh sh/server.env "${SSH_USER}@${SSH_HOST}:${DIR}/"
+          timeout 60 sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 -p "$PORT" "${SSH_USER}@${SSH_HOST}" "echo ssh-ok; whoami"
+
+          timeout 300 sshpass -e scp $SSH_BASE "shadow-flow-biz/target/${JAR}.jar" "${SSH_USER}@${SSH_HOST}:${DIR}/${JAR}.jar.new"
+          timeout 60 sshpass -e scp $SSH_BASE sh/remote.sh sh/server.env "${SSH_USER}@${SSH_HOST}:${DIR}/"
           echo "[OK] jar 已上传为 ${JAR}.jar.new，remote.sh / server.env 已同步"
 
       - name: 远端重启（停旧 -> 换 jar -> 启动）
+        timeout-minutes: 6
         env:
           SSHPASS: ${{ secrets.SSH_PASSWORD }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
-          set -e
+          set -ex
           DIR="${{ steps.cfg.outputs.remote_dir }}"
           PORT="${SSH_PORT:-22}"
-          sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -p "$PORT" "${SSH_USER}@${SSH_HOST}" \
+          timeout 300 sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 -p "$PORT" "${SSH_USER}@${SSH_HOST}" \
             "cd ${DIR} && tr -d '\r' < remote.sh | REMOTE_DIR=${DIR} bash -s -- restart"
 
       - name: 线上探活
