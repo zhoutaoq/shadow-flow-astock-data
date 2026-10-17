@@ -66,6 +66,35 @@ ok(!fbService.includes('"用户反馈\\n"'), '钉钉消息首行不再拼「用�
 const menuSvc = read(path.join(ROOT, 'shadow-flow-biz/src/main/java/io/github/zhoutaoq/shadowflow/biz/service/MenuConfigService.java'));
 ok(menuSvc.includes('new BuiltIn("feedback", "问题反馈"'), 'MenuConfigService 内置菜单名称已是「问题反馈」');
 
+/*
+ * 菜单是「后端 BUILT_IN + 前端 NAV_ITEMS」两处维护的同一份真相，两边必须一一对应。
+ * 数量不写死：从源码里数出来。只改一边（比如新加了页面却没登记）会在这里直接失败 ——
+ * v1.6.6 加「钉钉推送」时就漏了后端，导致配置页久久看不到那一项。
+ */
+function parseBuiltIns(javaSrc) {
+    const out = [];
+    const re = /new BuiltIn\("([^"]+)",\s*"([^"]+)",\s*"([^"]+)"\)/g;
+    let m;
+    while ((m = re.exec(javaSrc))) out.push({key: m[1], text: m[2], href: m[3]});
+    return out;
+}
+function parseNavItems(jsSrc) {
+    const out = [];
+    const re = /\{key:\s*'([^']+)',\s*text:\s*'([^']+)',\s*href:\s*'([^']+)'/g;
+    let m;
+    while ((m = re.exec(jsSrc))) out.push({key: m[1], text: m[2], href: m[3]});
+    return out;
+}
+const BACKEND_MENUS = parseBuiltIns(menuSvc);
+const FRONT_MENUS = parseNavItems(read(path.join(STATIC, 'js/common.js')));
+const MENU_COUNT = BACKEND_MENUS.length;
+ok(MENU_COUNT > 0, '从 MenuConfigService 解析出内置菜单', String(MENU_COUNT));
+ok(BACKEND_MENUS.map(x => x.key).join(',') === FRONT_MENUS.map(x => x.key).join(','),
+    '前后端菜单 key 与顺序一致',
+    '后端 ' + BACKEND_MENUS.map(x => x.key).join('/') + ' ↔ 前端 ' + FRONT_MENUS.map(x => x.key).join('/'));
+ok(FRONT_MENUS.every((it, i) => !BACKEND_MENUS[i] || BACKEND_MENUS[i].href === it.href),
+    '前后端菜单地址一致');
+
 /* =================== 2. 静态：反馈输入框放大 =================== */
 console.log('== 2. 问题反馈主输入框 ==');
 
@@ -186,7 +215,7 @@ function makeDom(html) {
     // 配置里没有的 key 必须补回（按内置顺序追加到队尾），不能丢
     ok(navTexts.includes('股票列表') && navTexts.includes('实时资讯') && navTexts.includes('用户管理'),
         '配置漏掉的菜单按内置顺序补回队尾', navTexts.join(' · '));
-    ok(navTexts.length === 10, '补齐后仍是 10 项', String(navTexts.length));
+    ok(navTexts.length === MENU_COUNT, `补齐后仍是 ${MENU_COUNT} 项`, String(navTexts.length));
     // 导航里出现的名称必须是配置名（旧名不能残留）
     ok(!navTexts.includes('问题反馈'), '改名后导航里不再出现内置旧名「问题反馈」');
 
@@ -205,7 +234,7 @@ function makeDom(html) {
     ok(mask.classList.contains('show'), '点按钮后弹窗展开');
 
     const rows0 = mask.querySelectorAll('.menu-row');
-    ok(rows0.length === 10, '弹窗里列出了全部 10 个菜单项', String(rows0.length));
+    ok(rows0.length === MENU_COUNT, `弹窗里列出了全部 ${MENU_COUNT} 个菜单项`, String(rows0.length));
     const nameInputs = [...mask.querySelectorAll('.menu-text')].map(i => i.value);
     ok(nameInputs[0] === '首页' && nameInputs[1] === '反馈建议',
         '弹窗里回显的是「当前数据」', nameInputs.slice(0, 3).join(' | '));
@@ -224,10 +253,10 @@ function makeDom(html) {
     await sleep(60);
     const rows = mask.querySelectorAll('.menu-row');
     ok(rows[0].querySelector('button[data-act="up"]').disabled, '第 1 项的上移按钮禁用');
-    ok(rows[9].querySelector('button[data-act="down"]').disabled, '最后一项的下移按钮禁用');
+    ok(rows[rows.length - 1].querySelector('button[data-act="down"]').disabled, '最后一项的下移按钮禁用');
 
     // 名称不落字面量：弹窗里的输入框必须是可编辑的 text
-    ok(mask.querySelectorAll('input.menu-text').length === 10, '每行一个可编辑的名称输入框');
+    ok(mask.querySelectorAll('input.menu-text').length === MENU_COUNT, '每行一个可编辑的名称输入框');
     // 地址不给配：只以只读文本展示
     ok(mask.querySelectorAll('.menu-row input[type="text"]').length === 0
         || [...mask.querySelectorAll('.menu-row input')].every(i => i.classList.contains('menu-text')),

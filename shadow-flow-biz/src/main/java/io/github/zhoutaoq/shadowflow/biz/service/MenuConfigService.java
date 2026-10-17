@@ -69,6 +69,9 @@ public class MenuConfigService {
             new BuiltIn("account", "我的账户", "/pages/account.html"),
             new BuiltIn("feedback", "问题反馈", "/pages/feedback.html"),
             new BuiltIn("system", "系统配置", "/pages/system.html"),
+            // 补登记：前端 NAV_ITEMS 早就有「钉钉推送」，后端漏了这一项，
+            // 结果是菜单配置页只列 10 项、超管改不了它的名称与顺序
+            new BuiltIn("push", "钉钉推送", "/pages/push.html"),
             new BuiltIn("users", "用户管理", "/pages/users.html")
     ));
 

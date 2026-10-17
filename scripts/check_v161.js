@@ -29,16 +29,48 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 /* =================== 1. 静态：密钥不得再出现在仓库文件里 =================== */
 console.log('== 1. 仓库内无明文密钥 ==');
 
+/*
+ * 明文探针本身也不能写进仓库 —— 把真实令牌抄进校验脚本，等于换个文件继续泄露。
+ * 取值顺序：进程环境变量 -> 本机未入库的 app.env（src/main/resources 下）。
+ * 取不到就跳过该类探针（打印 SKIP），绝不留明文兜底值。
+ * 本地要跑全量检查，先把 app.env 填成真实值（它已在 .gitignore 里）。
+ */
+function loadAppEnv() {
+    const file = path.join(ROOT, 'shadow-flow-biz/src/main/resources/app.env');
+    const map = {};
+    if (!fs.existsSync(file)) return map;
+    for (const raw of read(file).split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line || /^(REM\b|#|@echo)/i.test(line)) continue;
+        // 键名限定为标识符：否则贪婪的 [^"]+ 会吃到 URL 里最后一个 '='，把整串当成键
+        const m = line.match(/^set\s+"([A-Za-z_][\w.]*)=(.*)"\s*$/) || line.match(/^([A-Za-z_][\w.]*)=(.*)$/);
+        if (m) map[m[1]] = m[2];
+    }
+    return map;
+}
+const LOCAL_ENV = loadAppEnv();
+// 「在此填写…」这类模板占位文字不算凭据，别拿它当探针去扫
+const PLACEHOLDER = /^(在此填写|your[_-]|changeme|placeholder|<.*>)/i;
+function probe(name) {
+    const v = (process.env[name] || LOCAL_ENV[name] || '').trim();
+    return v.length >= 6 && !PLACEHOLDER.test(v) ? v : '';
+}
+// webhook 整串 URL 受域名/参数顺序影响，只取 access_token 这一段做探针
+function webhookToken(url) {
+    const m = /\baccess_token=([0-9a-zA-Z_-]{16,})/.exec(url || '');
+    return m ? m[1] : '';
+}
+
 const PLAINS = [
-    ['行情令牌', '305c8974672f4bbe953e52a94a1f070c'],
-    ['钉钉 webhook access_token', 'ebcfa7713cec091fcbabaff738f68e3453365b47bf43d8e65894a9793fc33317'],
-    ['数据库口令默认值', 'root123456']
-];
-// 允许出现的地方：app.env（不入库，本机/服务器上的真实配置），
-// 以及本脚本自己 —— 下面 PLAINS 里的原值就是这里用来做「探针」的字符串。
+    ['行情令牌', probe('SHADOWFLOW_API_TOKEN')],
+    ['钉钉 webhook access_token', webhookToken(probe('DINGTALK_WEBHOOK'))],
+    ['数据库口令', probe('DB_PASSWORD')]
+].filter(pair => pair[1]);
+// 允许出现的地方：app.env（不入库，本机/服务器上的真实配置）。
 // 另外排除运行期目录（data/ 等，.gitignore 里已忽略、不进包）：它们装的是本机跑出来的
 // 配置快照，明文只存在于这台机器的磁盘上，与「仓库里有没有硬编码密钥」无关。
-const ALLOW = new Set(['app.env', 'check_v161.js']);
+const ALLOW = new Set(['app.env']);
+
 const SKIP_DIRS = ['target', 'node_modules', '.git', '.build', 'data', 'logs'];
 function walk(dir, out) {
     out = out || [];
@@ -57,16 +89,21 @@ function walk(dir, out) {
 // 只扫「会进包 / 会进进程」的那几类文件。文档（md）不扫：
 // docs/design 里的需求与方案记录按惯例会引用「改造前的值」，那是叙述历史，不是泄露当前凭据。
 const hits = [];
-for (const f of walk(ROOT)) {
-    const base = path.basename(f);
-    if (ALLOW.has(base)) continue;
-    if (!/\.(java|yml|yaml|properties|xml|html|js|css|bat|sh|env|example|json|txt)$/i.test(f)) continue;
-    const src = read(f);
-    for (const [label, plain] of PLAINS) {
-        if (src.includes(plain)) hits.push(path.relative(ROOT, f).replace(/\\/g, '/') + '  ' + label);
+if (PLAINS.length === 0) {
+    console.log('  SKIP  本机没有可用探针（app.env 未填 / 环境变量未设），跳过全仓密钥扫描');
+} else {
+    for (const f of walk(ROOT)) {
+        const base = path.basename(f);
+        if (ALLOW.has(base)) continue;
+        if (!/\.(java|yml|yaml|properties|xml|html|js|css|bat|sh|env|example|json|txt)$/i.test(f)) continue;
+        const src = read(f);
+        for (const [label, plain] of PLAINS) {
+            if (src.includes(plain)) hits.push(path.relative(ROOT, f).replace(/\\/g, '/') + '  ' + label);
+        }
     }
+    ok(hits.length === 0, `全仓库（除 app.env 与文档示例）无明文密钥，探针 ${PLAINS.length} 条`,
+        hits.join('\n         '));
 }
-ok(hits.length === 0, '全仓库（除 sh/app.env 与文档示例）无明文密钥', hits.join('\n         '));
 
 const yml = read(path.join(ROOT, 'shadow-flow-biz/src/main/resources/application.yml'));
 ['DB_PASSWORD', 'ADMIN_PASSWORD', 'SHADOWFLOW_API_TOKEN', 'DINGTALK_WEBHOOK'].forEach(k => {
@@ -85,14 +122,15 @@ try {
     process.exit(failed === 0 ? 0 : 1);
 }
 
-/** 明文只出现在 fixture 里当「探测器」：页面若把它渲染出来就是脱敏失效 */
+/** 明文只出现在 fixture 里当「探测器」：页面若把它渲染出来就是脱敏失效。
+ *  display 用的是纯占位打码串（aaaa****bbbb），不再借用真实凭据的首尾字符。 */
 const SECRETS_FIXTURE = [
     {name: 'DB_PASSWORD', label: '数据库口令', hint: '仅数据库模式用。', secret: true,
-        configured: true, source: '环境变量', display: 'root****3456'},
+        configured: true, source: '环境变量', display: 'aaaa****bbbb'},
     {name: 'ADMIN_PASSWORD', label: '超管初始口令', hint: '只在 admin 账号不存在时用。', secret: true,
         configured: true, source: '环境变量', display: '****'},
     {name: 'SHADOWFLOW_API_TOKEN', label: '行情数据服务令牌', hint: '优先取配置页。', secret: true,
-        configured: true, source: '系统配置页', display: '305c****070c'},
+        configured: true, source: '系统配置页', display: 'cccc****dddd'},
     {name: 'DINGTALK_WEBHOOK', label: '系统通知机器人 Webhook', hint: '平台通知出口。', secret: true,
         configured: false, source: '未设置', display: ''}
 ];
@@ -158,9 +196,10 @@ function fixtureFor(url) {
 
     await sleep(400);
 
+    // 按 onclick 找按钮，不绑死文案（v1.6.2 起按钮文案由「环境变量查看」收短为「环境查看」）
     const btn = [...win.document.querySelectorAll('.cfg-panel-actions button')]
-        .find(b => b.textContent.trim() === '环境变量查看');
-    ok(!!btn, '系统配置页工具条上有「环境变量查看」按钮');
+        .find(b => (b.getAttribute('onclick') || '').indexOf('openEnvModal') >= 0);
+    ok(!!btn, '系统配置页工具条上有「环境查看」按钮');
 
     const mask = win.document.getElementById('envMask');
     ok(!!mask, '页面里有 #envMask 弹窗容器');
@@ -184,12 +223,13 @@ function fixtureFor(url) {
     // 只读：弹窗内不得出现任何可写控件
     ok(mask.querySelectorAll('input, textarea, select').length === 0, '弹窗内没有任何输入控件（只读）');
 
-    // 明文不得出现：fixture 的 display 是打码值，页面里若搜到明文说明前端自己拼了原文
+    // 明文不得出现：fixture 的 display 是打码值，页面里若搜到明文说明前端自己拼了原文。
+    // 探针取自本机 app.env / 环境变量（见第 1 节），本机没配就按 0 条检查。
     const text = mask.textContent;
-    ok(text.indexOf('root123456') < 0 && text.indexOf('305c8974672f4bbe953e52a94a1f070c') < 0
-        && text.indexOf('ebcfa7713cec091fcbabaff738f68e3453365b47bf43d8e65894a9793fc33317') < 0,
-        '弹窗文本里没有凭据明文');
-    ok(text.indexOf('305c****070c') >= 0 && text.indexOf('root****3456') >= 0, '打码值原样展示');
+    const plainProbes = PLAINS.map(pair => pair[1]);
+    ok(plainProbes.every(p => text.indexOf(p) < 0), '弹窗文本里没有凭据明文',
+        plainProbes.length ? '' : '本机无真实值，按 0 条探针检查');
+    ok(text.indexOf('cccc****dddd') >= 0 && text.indexOf('aaaa****bbbb') >= 0, '打码值原样展示');
 
     // 来源三种口径都要标出来
     const badges = [...mask.querySelectorAll('.ig-src')].map(e => e.textContent.trim());

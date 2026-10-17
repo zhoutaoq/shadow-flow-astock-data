@@ -10,5 +10,8 @@
 *.bat         text eol=crlf
 *.env         text eol=crlf
 *.env.example text eol=crlf
+# git 钩子由 sh 执行（Windows 上走 Git Bash），必须 LF，否则 shebang 行带 \r 会报
+# "cannot execute: required file not found"
+.githooks/*   text eol=lf
 # 本文件自己固定 LF，免得被 core.autocrlf 来回改
 .gitattributes text eol=lf
