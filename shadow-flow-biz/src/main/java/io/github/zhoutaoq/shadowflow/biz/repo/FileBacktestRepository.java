@@ -33,6 +33,10 @@ import java.util.TreeMap;
  * 回看时由 {@link KlineRepository} 现取（与数据库模式「回看时反查日K表」是同一个动作）。
  *
  * <p>保留条数受 {@code shadowflow.store.backtest-keep} 限制，超出淘汰最旧的，避免目录无限膨胀。
+ *
+ * <p><b>v1.6.8 起按用户隔离</b>：归属直接存主记录的 {@code userId} 里，不另立目录 ——
+ * 一个文件就是一条完整回测，拆成「按用户分目录」只会让迁移与清理多一层复杂度。
+ * 老文件没有 {@code userId}（反序列化为 0），只对超管可见，见 {@link BacktestOwnership}。
  */
 @Repository
 @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
@@ -48,14 +52,18 @@ public class FileBacktestRepository implements BacktestRepository {
     private final Path dir;
     private final int keep;
     private final KlineRepository klineRepository;
+    /** 归属规则：谁的记录谁能看（v1.6.8 第 ① 条） */
+    private final BacktestOwnership ownership;
 
     /** id → 回测结果（含每日快照与交易明细）；TreeMap 天然按 id 升序，列表倒序遍历即可 */
     private final TreeMap<Long, BacktestResult> rows = new TreeMap<>();
 
-    public FileBacktestRepository(DataDir dataDir, StoreProperties props, KlineRepository klineRepository) {
+    public FileBacktestRepository(DataDir dataDir, StoreProperties props, KlineRepository klineRepository,
+                                  BacktestOwnership ownership) {
         this.dir = dataDir.dir(DIR);
         this.keep = props.getBacktestKeep() > 0 ? props.getBacktestKeep() : 500;
         this.klineRepository = klineRepository;
+        this.ownership = ownership;
     }
 
     @PostConstruct
@@ -135,7 +143,7 @@ public class FileBacktestRepository implements BacktestRepository {
     }
 
     @Override
-    public synchronized List<Backtest> list(int limit) {
+    public synchronized List<Backtest> list(long userId, int limit) {
         int lim = limit <= 0 ? 50 : Math.min(limit, 500);
         List<Backtest> out = new ArrayList<>();
         List<Long> ids = new ArrayList<>(rows.descendingKeySet());
@@ -144,7 +152,7 @@ public class FileBacktestRepository implements BacktestRepository {
                 break;
             }
             Backtest bt = rows.get(id).getBacktest();
-            if (bt != null) {
+            if (bt != null && ownership.visible(bt.getUserId(), userId)) {
                 out.add(bt);
             }
         }
@@ -152,12 +160,16 @@ public class FileBacktestRepository implements BacktestRepository {
     }
 
     @Override
-    public synchronized BacktestResult detail(long id) {
+    public synchronized BacktestResult detail(long userId, long id) {
         BacktestResult src = rows.get(id);
         if (src == null) {
             return null;
         }
         Backtest bt = src.getBacktest();
+        // 别人的记录等同于不存在：页面拿到的是「记录不存在」，不暴露「有这条但你没权限」
+        if (bt == null || !ownership.visible(bt.getUserId(), userId)) {
+            return null;
+        }
         BacktestResult out = new BacktestResult();
         out.setBacktest(bt);
         out.setDailies(src.getDailies() == null ? new ArrayList<>() : new ArrayList<>(src.getDailies()));
@@ -182,11 +194,13 @@ public class FileBacktestRepository implements BacktestRepository {
     }
 
     @Override
-    public synchronized void delete(long id) {
-        BacktestResult removed = rows.remove(id);
-        if (removed == null) {
+    public synchronized void delete(long userId, long id) {
+        BacktestResult src = rows.get(id);
+        if (src == null || src.getBacktest() == null
+                || !ownership.visible(src.getBacktest().getUserId(), userId)) {
             return;
         }
+        rows.remove(id);
         JsonFileIo.delete(fileOf(id));
     }
 

@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS shadowflow_account_trend (
 -- 回测主表：一次回测一条，策略以 JSON 存（策略种类扩展不动表结构）
 CREATE TABLE IF NOT EXISTS shadowflow_backtest (
     id           BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+    user_id      BIGINT         NOT NULL DEFAULT 0      COMMENT '归属用户 id（0 = v1.6.8 之前的老记录，仅超管可见）',
     stock_code   VARCHAR(16)    NOT NULL                COMMENT '股票代码',
     market       VARCHAR(16)    NOT NULL DEFAULT 'stock' COMMENT '市场/品种',
     start_date   DATE           NOT NULL                COMMENT '回测起始日',
@@ -206,6 +207,7 @@ CREATE TABLE IF NOT EXISTS shadowflow_backtest (
     trade_days   INT            NOT NULL DEFAULT 0      COMMENT '回测区间内交易日天数',
     create_time  DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
+    KEY idx_shadowflow_backtest_user (user_id, id),
     KEY idx_shadowflow_backtest_code_time (stock_code, create_time)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '回测主表';
 

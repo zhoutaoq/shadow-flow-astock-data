@@ -93,8 +93,12 @@ public class BacktestService {
 
     // ============ 执行回测 ============
 
-    /** 执行一次回测：校验 → 取数 → 模拟 → 落库 → 返回结果 */
-    public BacktestResult run(BacktestRunRequest req) {
+    /**
+     * 执行一次回测：校验 → 取数 → 模拟 → 落库 → 返回结果。
+     *
+     * @param userId 当前登录用户：回测记录按用户隔离（v1.6.8 第 ① 条），落库时写进主记录
+     */
+    public BacktestResult run(BacktestRunRequest req, long userId) {
         String taskId = req == null ? null : req.getTaskId();
         String code = req == null || req.getStockCode() == null ? null : req.getStockCode().trim();
         String market = req != null && StringUtils.hasText(req.getMarket()) ? req.getMarket().trim() : "stock";
@@ -222,6 +226,7 @@ public class BacktestService {
 
         // 落库（无数据库模式这三步都是空转，结果照样返回）
         Backtest bt = new Backtest();
+        bt.setUserId(userId);
         bt.setStockCode(code);
         bt.setStockName(stockName);
         bt.setMarket(market);
@@ -551,19 +556,19 @@ public class BacktestService {
 
     // ============ 查询 ============
 
-    /** 历史回测列表（无数据库模式恒为空） */
-    public List<Backtest> list(int limit) {
-        return backtestRepository.list(limit);
+    /** 该用户的历史回测列表；别人的一条都不返回（v1.6.8 第 ① 条） */
+    public List<Backtest> list(long userId, int limit) {
+        return backtestRepository.list(userId, limit);
     }
 
-    /** 回看某次回测（汇总 + 每日快照 + 交易明细 + 区间K线） */
-    public BacktestResult detail(long id) {
-        return backtestRepository.detail(id);
+    /** 回看某次回测（汇总 + 每日快照 + 交易明细 + 区间K线）；不属于该用户返回 null */
+    public BacktestResult detail(long userId, long id) {
+        return backtestRepository.detail(userId, id);
     }
 
-    /** 删除一次回测（连带快照与明细） */
-    public void delete(long id) {
-        backtestRepository.delete(id);
+    /** 删除一次回测（连带快照与明细）；不属于该用户时什么都不做 */
+    public void delete(long userId, long id) {
+        backtestRepository.delete(userId, id);
     }
 
     // ============ 数据校验与取数 ============

@@ -2,10 +2,18 @@ package io.github.zhoutaoq.shadowflow.biz.model;
 
 import java.math.BigDecimal;
 
-/** shadowflow_backtest 回测主表（一次回测一条，买卖策略以 JSON 存放） */
+/**
+ * shadowflow_backtest 回测主表（一次回测一条，买卖策略以 JSON 存放）。
+ *
+ * <p>v1.6.8 起带 {@code userId}：回测是「我自己跑的记录」，列表 / 回看 / 删除一律按用户隔离。
+ * 老数据（本字段加入之前落的）反序列化/读库时是 0，仓储把它们当作<b>超管独有</b>的历史记录，
+ * 只有超管能看到 —— 既不让别人的记录串到普通用户眼前，也不至于升级后历史凭空消失。
+ */
 public class Backtest {
 
     private Long id;
+    /** 归属用户 id：0 = 本字段引入之前的老记录（只对超管可见） */
+    private long userId;
     private String stockCode;
     private String market = "stock";
     private String startDate;
@@ -34,6 +42,14 @@ public class Backtest {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(long userId) {
+        this.userId = userId;
     }
 
     public String getStockCode() {

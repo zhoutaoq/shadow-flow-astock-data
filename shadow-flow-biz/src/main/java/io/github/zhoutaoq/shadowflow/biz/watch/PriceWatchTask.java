@@ -42,6 +42,10 @@ import java.util.concurrent.TimeUnit;
  * 用<b>自己的规则</b>判断、推到<b>自己的机器人</b>。调度器只提供一个"基础节拍"
  * （所有用户里最短的间隔），谁到点谁跑，所以改自己的间隔不会把别人的节奏带偏。
  * 各标的的历史采样按「用户 + 代码」分开存：两个人盯同一只股票，基线互不干扰。
+ *
+ * <p><b>v1.6.8</b>：封板判定加一条「现价连续三次没变化」（见 {@link LimitRules}）——
+ * 单根快照恰好成交在最高价上不再算涨停，避免冲高回落时推一堆假封板。
+ * 连续同价计数存在 {@link State} 里，跨交易日自动重置。
  */
 @Component
 @ConditionalOnProperty(name = "watch.enabled", havingValue = "true", matchIfMissing = true)
@@ -52,14 +56,9 @@ public class PriceWatchTask {
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
     /** 封板状态：涨停 / 未涨跌停 / 跌停（包内可见：WatchCards 渲染器与推送页共用） */
-    static final int LIMIT_UP = 1;
-    static final int LIMIT_NONE = 0;
-    static final int LIMIT_DOWN = -1;
-
-    /** 封板判断阈值（百分比，各留 0.5% 容错）：ST 5%→4.5%，创业 30x / 科创 688 为 20%→19.5%，其余 10%→9.5% */
-    private static final BigDecimal TH_ST = new BigDecimal("4.5");
-    private static final BigDecimal TH_GROW = new BigDecimal("19.5");
-    private static final BigDecimal TH_MAIN = new BigDecimal("9.5");
+    static final int LIMIT_UP = LimitRules.UP;
+    static final int LIMIT_NONE = LimitRules.NONE;
+    static final int LIMIT_DOWN = LimitRules.DOWN;
 
     /** 成交量显示用的进位基数：一万手 / 一亿手（手 = 股 / 100） */
     private static final BigDecimal WAN_HAND = BigDecimal.valueOf(10000L);
@@ -159,6 +158,11 @@ public class PriceWatchTask {
         int limitState = LIMIT_NONE;
         /** 是否已经跑过至少一轮：首轮看到的"封板"不是"刚封上"，不能当成状态变更推出去 */
         boolean limitPrimed;
+        /** 上一轮的现价与行情日期：用来数「连续几次同价」（v1.6.8 第 ② 条） */
+        BigDecimal lastPrice;
+        String lastQuoteDay;
+        /** 连续同价轮数：不足 {@link LimitRules#FLAT_ROUNDS} 一律不判封板 */
+        int flatCount;
     }
 
     private static class Sample {
@@ -273,7 +277,17 @@ public class PriceWatchTask {
      */
     private boolean check(Ctx ctx, WatchTarget t, Quote q) {
         State st = states.computeIfAbsent(key(ctx.userId, q.getCode()), k -> new State());
-        int limitState = limitStateOf(q);
+        // 先数「连续几次同价」再判封板（v1.6.8 第 ② 条）：
+        // 跨日必须重置 —— 否则昨天封在板上的票，今天开盘第一根快照就会被当成"已经封了三轮"
+        String quoteDay = quoteDayOf(q);
+        // 取不到日期时按「新的一天」处理：宁可这一轮不判封板，也不要拿跨日的同价凑够三轮去推假涨停
+        boolean sameDay = !quoteDay.isEmpty() && quoteDay.equals(st.lastQuoteDay);
+        st.flatCount = sameDay
+                ? LimitRules.nextFlatCount(st.lastPrice, q.getPrice(), st.flatCount)
+                : LimitRules.nextFlatCount(null, q.getPrice(), 0);
+        st.lastPrice = q.getPrice();
+        st.lastQuoteDay = quoteDay;
+        int limitState = limitStateOf(q, st.flatCount);
         // 本轮增量必须在写新一轮基数之前算：它就是"这一个轮询间隔"的量额
         BigDecimal amountDelta = intervalAmountDelta(st, q);
         BigDecimal volumeDelta = intervalVolumeDelta(st, q);
@@ -584,38 +598,25 @@ public class PriceWatchTask {
 
     /** 封板阈值（百分比）：名称含 ST 是 5%，创业板 30x 与科创板 688 是 20%，其余主板 10% */
     private BigDecimal limitThreshold(Quote q) {
-        String name = q.getName();
-        if (name != null && name.toUpperCase().contains("ST")) {
-            return TH_ST;
-        }
-        String c = q.getCode() == null ? "" : q.getCode().trim();
-        if (c.startsWith("688") || c.startsWith("30")) {
-            return TH_GROW;
-        }
-        return TH_MAIN;
+        return LimitRules.threshold(q.getName(), q.getCode());
     }
 
     /**
-     * 判断当前是否封板：现价贴在当日最高价上且涨幅达标 = 涨停；贴在最低价上且跌幅达标 = 跌停。
+     * 判断当前是否封板：<b>原规则</b>（现价贴当日最高/最低价且涨跌幅达标）
+     * <b>加上</b> v1.6.8 的「连续三次同价」，两条同时成立才算封板。
      *
+     * @param flatCount 连续同价轮数，由 {@link LimitRules#nextFlatCount} 逐轮累计
      * @return 1 涨停 / 0 未涨跌停 / -1 跌停
      */
-    private int limitStateOf(Quote q) {
-        BigDecimal price = q.getPrice();
-        BigDecimal pct = q.changePercent();
-        if (price == null || pct == null) {
-            return LIMIT_NONE;
-        }
-        BigDecimal th = limitThreshold(q);
-        BigDecimal high = q.getHigh();
-        BigDecimal low = q.getLow();
-        if (high != null && price.compareTo(high) == 0 && pct.compareTo(th) > 0) {
-            return LIMIT_UP;
-        }
-        if (low != null && price.compareTo(low) == 0 && pct.compareTo(th.negate()) < 0) {
-            return LIMIT_DOWN;
-        }
-        return LIMIT_NONE;
+    private int limitStateOf(Quote q, int flatCount) {
+        return LimitRules.stateOf(q.getPrice(), q.changePercent(), q.getHigh(), q.getLow(),
+                limitThreshold(q), flatCount);
+    }
+
+    /** 行情快照的日期（yyyy-MM-dd）：用来判断跨日、重置连续同价计数 */
+    private static String quoteDayOf(Quote q) {
+        String t = q == null ? null : q.getTimeText();
+        return t != null && t.length() >= 10 ? t.substring(0, 10) : "";
     }
 
     /** 封板状态的中文说法，只给日志用 */
