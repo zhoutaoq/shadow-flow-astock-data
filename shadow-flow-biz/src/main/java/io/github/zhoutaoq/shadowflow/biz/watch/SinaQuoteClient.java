@@ -74,7 +74,52 @@ public class SinaQuoteClient {
         return q;
     }
 
+    /**
+     * 查一只标的的行情，<b>供账户估值用</b>：现价字段为 0 时拿昨收顶上。
+     *
+     * <p>与 {@link #fetch} 的差别只有两点，但两点都很关键：
+     * <ol>
+     *   <li><b>不再返回 null</b>：新浪在集合竞价前、停牌时把现价写成 0，{@link #fetch}
+     *       按「没有有效行情」处理，账户侧就只能退回成本价算市值 —— 这就是用户说的
+     *       「未开盘用成本价算，太傻逼了」。这里改成落到昨收（day's settle price），
+     *       页面上是一个真实的收盘价口径，而不是编出来的成本价；</li>
+     *   <li><b>降级成 debug 日志</b>：估值链路在页面每 3 秒刷新一次，
+     *       按 info 打会把日志刷满，出问题时反而看不清。</li>
+     * </ol>
+     *
+     * @return 拿到的快照；连昨收都没有（代码不存在 / 请求失败）才返回 null
+     */
+    public Quote fetchForValuation(WatchTarget target) {
+        if (target == null) {
+            return null;
+        }
+        String url = props.getSina().getBaseUrl() + "/list=" + target.getSymbol();
+        long begin = System.currentTimeMillis();
+        String body;
+        try {
+            body = doGet(url);
+        } catch (IOException e) {
+            log.warn("[watch] 估值行情调用失败 {} url={} 耗时 {} ms err={}",
+                    target, url, System.currentTimeMillis() - begin, e.getMessage());
+            return null;
+        }
+        Quote q = parse(target, url, body, true);
+        if (q != null) {
+            log.debug("[watch] 估值行情 {} 价格 {}（{}）耗时 {} ms", target, q.priceText(),
+                    q.isPriceFromPreClose() ? "昨收" : "现价", System.currentTimeMillis() - begin);
+        }
+        return q;
+    }
+
     private Quote parse(WatchTarget target, String url, String body) {
+        return parse(target, url, body, false);
+    }
+
+    /**
+     * @param allowPreCloseFallback true = 现价无效时用昨收顶上并标记
+     *                              {@link Quote#isPriceFromPreClose()}（估值链路）
+     */
+    private Quote parse(WatchTarget target, String url, String body, boolean allowPreCloseFallback) {
         if (body == null || body.trim().isEmpty()) {
             return null;
         }
@@ -97,16 +142,22 @@ public class SinaQuoteClient {
         }
         BigDecimal price = decimal(f[F_PRICE]);
         BigDecimal preClose = decimal(f[F_PRE_CLOSE]);
+        boolean fromPreClose = false;
         if (price == null || price.signum() <= 0) {
-            // 停牌 / 未开盘，现价为 0，不参与比对
-            return null;
+            // 停牌 / 未开盘，现价为 0：盯盘链路不参与比对；
+            // 估值链路退回昨收，至少给一个真实存在过的价，而不是让调用方拿成本价凑
+            if (!allowPreCloseFallback || preClose == null || preClose.signum() <= 0) {
+                return null;
+            }
+            price = preClose;
+            fromPreClose = true;
         }
         String name = f[F_NAME] == null || f[F_NAME].trim().isEmpty() ? target.getName() : f[F_NAME].trim();
         String timeText = (f[30] + " " + f[31]).trim();
         return new Quote(target.getCode(), name, price, preClose,
                 decimal(f[F_HIGH]), decimal(f[F_LOW]),
                 decimal(f[F_VOLUME]), decimal(f[F_AMOUNT]),
-                System.currentTimeMillis(), timeText);
+                System.currentTimeMillis(), timeText, fromPreClose);
     }
 
     private String doGet(String urlStr) throws IOException {

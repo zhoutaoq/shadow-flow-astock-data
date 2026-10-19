@@ -30,10 +30,24 @@ public class Quote {
     private final long quoteTime;
     /** 接口返回的原始行情时间文本，如 2026-09-08 15:00:00 */
     private final String timeText;
+    /**
+     * {@link #price} 是不是「拿昨收顶上的」。
+     *
+     * <p>只有估值链路（{@code SinaQuoteClient#fetchForValuation}）会置 true：
+     * 集合竞价前 / 停牌时新浪的现价字段是 0，若照旧返回 null，账户市值就会退回成本价 ——
+     * 那正是用户反馈的错处。盯盘链路不置位，语义仍是「没有有效现价」。
+     */
+    private final boolean priceFromPreClose;
 
     public Quote(String code, String name, BigDecimal price, BigDecimal preClose,
                  BigDecimal high, BigDecimal low, BigDecimal volume, BigDecimal amount,
                  long quoteTime, String timeText) {
+        this(code, name, price, preClose, high, low, volume, amount, quoteTime, timeText, false);
+    }
+
+    public Quote(String code, String name, BigDecimal price, BigDecimal preClose,
+                 BigDecimal high, BigDecimal low, BigDecimal volume, BigDecimal amount,
+                 long quoteTime, String timeText, boolean priceFromPreClose) {
         this.code = code;
         this.name = name;
         this.price = price;
@@ -44,6 +58,7 @@ public class Quote {
         this.amount = amount;
         this.quoteTime = quoteTime;
         this.timeText = timeText;
+        this.priceFromPreClose = priceFromPreClose;
     }
 
     /**
@@ -130,5 +145,10 @@ public class Quote {
 
     public String getTimeText() {
         return timeText;
+    }
+
+    /** {@link #getPrice()} 是否取自昨收（未开盘 / 停牌时的估值口径） */
+    public boolean isPriceFromPreClose() {
+        return priceFromPreClose;
     }
 }

@@ -5,6 +5,8 @@ import io.github.zhoutaoq.shadowflow.biz.account.AccountOverview;
 import io.github.zhoutaoq.shadowflow.biz.account.AccountService;
 import io.github.zhoutaoq.shadowflow.biz.account.AccountSummary;
 import io.github.zhoutaoq.shadowflow.biz.account.AccountTransferService;
+import io.github.zhoutaoq.shadowflow.biz.account.AccountTrendPoint;
+import io.github.zhoutaoq.shadowflow.biz.account.AccountTrendService;
 import io.github.zhoutaoq.shadowflow.biz.account.Position;
 import io.github.zhoutaoq.shadowflow.biz.account.TradeRecord;
 import io.github.zhoutaoq.shadowflow.biz.auth.AuthContext;
@@ -69,10 +71,13 @@ import java.util.Map;
 public class AccountController {
 
     private final AccountService service;
+    private final AccountTrendService trendService;
     private final AccountTransferService transfer;
 
-    public AccountController(AccountService service, AccountTransferService transfer) {
+    public AccountController(AccountService service, AccountTrendService trendService,
+                             AccountTransferService transfer) {
         this.service = service;
+        this.trendService = trendService;
         this.transfer = transfer;
     }
 
@@ -249,6 +254,30 @@ public class AccountController {
     public ApiResponse<Void> clearRecords(@RequestParam(value = "accountId", required = false) Long accountId) {
         service.clearRecords(requireUserId(), requireAccountId(accountId));
         return ApiResponse.ok(null, "操作记录已清空");
+    }
+
+    /**
+     * 账户 1 分钟走势（需求 v1.6.7 第 ③ 条）。
+     *
+     * <p>{@code date} 缺省 = 今天，往回看由页面日期控件传；返回的是<b>原始采样点</b>，
+     * 缺失分钟由页面按「前值补平」画成横线 —— 不在服务端补，是因为补点需要知道交易时段
+     * 与「画到几点为止」，那是展示口径，跟着页面走更直观，也省一次全量序列化。
+     *
+     * <p>今天的请求会顺手补一个当前分钟的点（如果还没有），所以曲线能连到「现在」。
+     */
+    @GetMapping("/trend")
+    public ApiResponse<Map<String, Object>> trend(@RequestParam(value = "accountId", required = false) Long accountId,
+                                                  @RequestParam(value = "date", required = false) String date) {
+        long userId = requireUserId();
+        long aid = requireAccountId(accountId);
+        String day = AccountTrendService.normalizeDate(date);
+        List<AccountTrendPoint> points = trendService.series(userId, aid, day);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("accountId", aid);
+        out.put("date", day);
+        out.put("today", day.equals(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).toString()));
+        out.put("points", points);
+        return ApiResponse.ok(out);
     }
 
     /** 页面要展示的输入范围，与 AccountService 的校验保持一致 */

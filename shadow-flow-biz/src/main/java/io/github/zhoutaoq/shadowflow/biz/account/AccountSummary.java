@@ -102,6 +102,13 @@ public class AccountSummary {
         private boolean quoted;
         /** 行情时间文本，如 2026-09-15 15:00:00 */
         private String quoteTime;
+        /**
+         * 现价口径（v1.6.7）：{@code 现价} / {@code 昨收} / {@code 最近价} / {@code 成本价}。
+         *
+         * <p>未开盘时新浪的现价字段是 0，拿成本价算市值会把「没开盘」显示成一笔假亏损；
+         * 这里如实告诉页面这个价是哪来的，页面据此打标，用户一眼能看出数字的可信度。
+         */
+        private String priceBasis;
 
         public Long getId() {
             return id;
@@ -285,6 +292,14 @@ public class AccountSummary {
 
         public void setQuoteTime(String quoteTime) {
             this.quoteTime = quoteTime;
+        }
+
+        public String getPriceBasis() {
+            return priceBasis;
+        }
+
+        public void setPriceBasis(String priceBasis) {
+            this.priceBasis = priceBasis;
         }
     }
 

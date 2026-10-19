@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261011e">
-    <link rel="stylesheet" href="/css/account.css?v=20261011e">
+    <link rel="stylesheet" href="/css/common.css?v=20261019a">
+    <link rel="stylesheet" href="/css/account.css?v=20261019a">
 </head>
 <body>
 <header class="topbar">
@@ -107,7 +107,24 @@
                 </div>
             </section>
 
-            <!-- ③ 持仓列表：录入动作就落在这张卡片的页头，页面右上角不再堆按钮 -->
+            <!-- ③ 账户走势（v1.6.7）：1 分钟总市值曲线；缺失分钟按前值补平成横线 -->
+            <section class="acard">
+                <header class="acard-hd">
+                    <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3.5-4.5L14 12l4-5.5"/></svg></span>
+                    <h2>账户走势</h2>
+                    <span class="acard-note" id="trendNote">1 分钟 · 总市值</span>
+                    <div class="acard-acts">
+                        <input type="date" id="trendDate" class="atrend-date" onchange="onTrendDateChange(this.value)">
+                        <button class="btn-ghost btn-sm" id="trendTodayBtn" onclick="pickTrendToday()">今天</button>
+                    </div>
+                </header>
+                <div class="acard-bd">
+                    <div class="atrend" id="trendChart"></div>
+                    <div class="atrend-empty" id="trendEmpty" style="display:none"></div>
+                </div>
+            </section>
+
+            <!-- ④ 持仓列表：录入动作就落在这张卡片的页头，页面右上角不再堆按钮 -->
             <section class="acard">
                 <header class="acard-hd">
                     <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
@@ -143,7 +160,7 @@
                 </div>
             </section>
 
-            <!-- ④ 操作记录：随账户一起落盘。录入走「＋ 添加操作记录」弹窗（按钮在持仓列表卡头） -->
+            <!-- ⑤ 操作记录：随账户一起落盘。录入走「＋ 添加操作记录」弹窗（按钮在持仓列表卡头） -->
             <section class="acard">
                 <header class="acard-hd">
                     <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span>
@@ -167,9 +184,10 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261011e"></script>
-<script src="/js/date-picker.js?v=20261011e"></script>
-<script src="/js/stock-picker.js?v=20261011e"></script>
+<script src="/js/common.js?v=20261019a"></script>
+<script src="/js/date-picker.js?v=20261019a"></script>
+<script src="/js/stock-picker.js?v=20261019a"></script>
+<script src="/vendor/echarts.min.js"></script>
 <script>
     let overview = null;     // /api/account/accounts 一级列表
     let cfg = null;          // /api/account 当前账户设置
@@ -179,6 +197,11 @@
     let recAction = 'buy';   // 「添加操作记录」弹窗里当前选中的方向
     let posPicker = null;    // 持仓弹窗里的选择器
     let recPicker = null;    // 「添加操作记录」弹窗里的选择器
+
+    /** 二级视图的 3 秒自动刷新（v1.6.7 第 ② 条）：句柄 / 在途标记 / 计数（每 10 跳刷一次走势） */
+    let refreshTimer = null;
+    let refreshBusy = false;
+    let refreshTick = 0;
 
     function showGate() {
         document.getElementById('gatePanel').style.display = '';
@@ -223,6 +246,7 @@
     /* ==================== 一级：账户列表 ==================== */
 
     async function openList() {
+        stopAutoRefresh();
         const r = await get('/api/account/accounts');
         if (!r || !r.success) {
             showGate();
@@ -309,6 +333,9 @@
         document.getElementById('acctPanel').style.display = '';
         render();
         await loadRecords();
+        // 进来先按「今天」画一次走势，再把 3 秒刷新挂上（v1.6.7 第 ②③ 条）
+        openTrend();
+        startAutoRefresh();
     }
 
     function backToList() {
@@ -394,17 +421,37 @@
             + '<span class="achip">' + n + ' / ' + maxP + ' 只持仓</span>';
     }
 
+    /**
+     * 现价口径标记（v1.6.7 第 ① 条）。
+     *
+     * <p>未开盘时新浪现价是 0，后端按昨收算市值 —— 这个口径必须写在页面上，
+     * 否则用户看到「市值和昨天收盘一模一样、当日收益 0.00」会以为页面没刷新。
+     */
+    function priceBadge(p) {
+        const basis = p.priceBasis;
+        if (!basis || basis === '现价') return '';
+        if (basis === '昨收') return '<span class="abadge">未开盘 · 按昨收</span>';
+        if (basis === '最近价') return '<span class="abadge">行情中断 · 按最近价</span>';
+        return '<span class="abadge">成本价兜底</span>';
+    }
+
     /** 行情状态：一条行情都没取到时说明现价是哪来的，其余情况不占位 */
     function renderQuoteTip(s) {
         const ps = s.positions || [];
         const quoted = ps.filter(p => p.quoted).length;
+        const preClose = ps.filter(p => p.priceBasis === '昨收').length;
+        const stale = ps.filter(p => p.priceBasis === '最近价' || p.priceBasis === '成本价').length;
         const el = document.getElementById('quoteTip');
-        if (!ps.length || quoted === ps.length) {
+        if (!ps.length) {
             el.textContent = '';
+        } else if (preClose === ps.length) {
+            el.textContent = '未开盘，市值按昨收计算';
+        } else if (quoted === ps.length) {
+            el.textContent = preClose > 0 ? (ps.length - preClose) + ' 只现价 · ' + preClose + ' 只按昨收' : '';
         } else if (quoted === 0) {
-            el.textContent = '未取到行情，现价按成本价显示';
+            el.textContent = '未取到行情，市值按最近价/成本价兜底';
         } else {
-            el.textContent = quoted + '/' + ps.length + ' 只已取到行情';
+            el.textContent = quoted + '/' + ps.length + ' 只已取到行情' + (stale > 0 ? '（' + stale + ' 只兜底）' : '');
         }
         document.getElementById('posCount').textContent = ps.length + ' 条';
     }
@@ -422,7 +469,7 @@
             return '<tr>'
                 + '<td class="code">' + esc(p.code) + '</td>'
                 + '<td class="name">' + stockLinkHtml(p.code, p.name)
-                + (p.quoted ? '' : '<span class="abadge">成本价兜底</span>')
+                + priceBadge(p)
                 + (p.dayBuyQty > 0 ? '<span class="abadge abadge-day">当日买入 ' + fmtNum(p.dayBuyQty, 0) + ' 股</span>' : '')
                 + '</td>'
                 + '<td class="adim">' + (p.openDate ? esc(p.openDate) : '—') + '</td>'
@@ -443,6 +490,325 @@
                 + '</span></td>'
                 + '</tr>';
         }).join('');
+    }
+
+    /* ==================== 3 秒自动刷新（v1.6.7 第 ② 条） ==================== */
+
+    const ACCOUNT_REFRESH_MS = 3000;
+
+    function startAutoRefresh() {
+        stopAutoRefresh();
+        refreshTimer = setInterval(tickAutoRefresh, ACCOUNT_REFRESH_MS);
+    }
+
+    function stopAutoRefresh() {
+        if (refreshTimer) {
+            clearInterval(refreshTimer);
+            refreshTimer = null;
+        }
+        refreshBusy = false;
+        refreshTick = 0;
+    }
+
+    /** 有弹窗开着就不动底下的数据：用户在填表单，别让表格在他眼皮底下重排 */
+    function anyModalOpen() {
+        return !!document.querySelector('.mask.show');
+    }
+
+    /**
+     * 3 秒一跳：只取 summary 就地重画数字区，<b>不整页 reload</b>。
+     *
+     * <p>三个「不做」都是有意的：弹窗开着不刷、页面在后台不刷、失败不弹提示 ——
+     * 轮询失败下一跳自然会重试，弹 toast 只会刷屏，还会让人以为账户出了大问题。
+     */
+    async function tickAutoRefresh() {
+        const accountId = curId;
+        if (!accountId || document.hidden || refreshBusy || anyModalOpen()) {
+            return;
+        }
+        refreshBusy = true;
+        try {
+            const headers = {};
+            const at = authToken();
+            if (at) {
+                headers['X-Auth-Token'] = at;
+            }
+            const res = await fetch('/api/account/summary?accountId=' + accountId, {headers});
+            if (res.status === 401) {
+                stopAutoRefresh();
+                return onUnauthorized();
+            }
+            if (!res.ok) return;
+            const json = await res.json();
+            if (!json || !json.success || !json.data || curId !== accountId) return;
+            summary = json.data;
+            // 可用金额会随买卖变化，账户资金卡跟着一起动，别让两张卡说的不是一回事
+            cfg = Object.assign({}, cfg, {cash: summary.cash, initValue: summary.initValue});
+            renderFund();
+            renderSummary(summary);
+            renderPositions(summary.positions || []);
+            renderSummaryChips(summary);
+            renderQuoteTip(summary);
+            refreshTick++;
+            // 走势一分钟只有一个点，30 秒刷一次足够；只刷「今天」那张
+            if (refreshTick % 10 === 0) {
+                refreshTrendIfToday();
+            }
+        } catch (e) {
+            // 静默：轮询失败不打扰用户
+        } finally {
+            refreshBusy = false;
+        }
+    }
+
+    /* ==================== 账户 1 分钟走势（v1.6.7 第 ③ 条） ==================== */
+
+    /** 交易时段：轴上的分钟点就按这两段铺（与后端采样窗口一致） */
+    const TREND_SESSIONS = [[9, 30, 11, 30], [13, 0, 15, 0]];
+
+    let trendAxisCache = null;
+    let trendChart = null;
+    let trendDate = '';          // 当前查看的日期（yyyy-MM-dd）
+    let trendMap = new Map();    // minute → 原始采样点，tooltip 用它补「当日收益」
+
+    function pad2(n) {
+        return n < 10 ? '0' + n : String(n);
+    }
+
+    function minuteOf(totalMinutes) {
+        return pad2(Math.floor(totalMinutes / 60)) + ':' + pad2(totalMinutes % 60);
+    }
+
+    /** 全天分钟轴：09:30–11:30 + 13:00–15:00，共 242 个点 */
+    function trendAxis() {
+        if (trendAxisCache) return trendAxisCache;
+        const out = [];
+        TREND_SESSIONS.forEach(function (s) {
+            for (let t = s[0] * 60 + s[1]; t <= s[2] * 60 + s[3]; t++) {
+                out.push(minuteOf(t));
+            }
+        });
+        trendAxisCache = out;
+        return out;
+    }
+
+    /**
+     * 轴画到哪为止：往日画全天；今天按「现在」截断（开盘前没有点，午休停在 11:30，收盘后画满）。
+     */
+    function trendEndIndex(date) {
+        const axis = trendAxis();
+        if (date !== today()) return axis.length - 1;
+        const now = new Date();
+        const cur = now.getHours() * 60 + now.getMinutes();
+        if (cur < 9 * 60 + 30) return -1;
+        if (cur > 15 * 60) return axis.length - 1;
+        const stop = (cur > 11 * 60 + 30 && cur < 13 * 60) ? '11:30' : minuteOf(cur);
+        const idx = axis.indexOf(stop);
+        return idx >= 0 ? idx : axis.length - 1;
+    }
+
+    /**
+     * 把稀疏的采样点铺到分钟轴上：<b>缺失的分钟一律用前一个值补</b>（画成横线），
+     * 头部缺失（服务中途才起来）用第一个有值的点往前补。
+     *
+     * @return 与轴等长的数值数组；一个点都没有时返回 null
+     */
+    function trendValues(points, endIdx) {
+        const axis = trendAxis();
+        trendMap = new Map();
+        (points || []).forEach(function (p) {
+            if (p && p.minute) trendMap.set(p.minute, p);
+        });
+        const values = [];
+        let last = null;
+        for (let i = 0; i <= endIdx; i++) {
+            const p = trendMap.get(axis[i]);
+            if (p && p.totalValue !== null && p.totalValue !== undefined) {
+                last = Number(p.totalValue);
+            }
+            values.push(last);
+        }
+        const firstIdx = values.findIndex(function (v) { return v !== null; });
+        if (firstIdx < 0) return null;
+        for (let i = 0; i < firstIdx; i++) {
+            values[i] = values[firstIdx];
+        }
+        return values;
+    }
+
+    function themeVar(name, fallback) {
+        const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return v || fallback;
+    }
+
+    /** #rrggbb → 带透明度的颜色（CSS 给的是 rgb() 时不加透明度，退回原色） */
+    function withAlpha(color, alpha) {
+        const c = String(color || '').trim();
+        if (/^#[0-9a-f]{6}$/i.test(c)) {
+            return c + Math.round(alpha * 255).toString(16).padStart(2, '0');
+        }
+        return c;
+    }
+
+    function shortMoney(v) {
+        const n = Number(v);
+        if (!isFinite(n)) return '—';
+        return Math.abs(n) >= 10000 ? (n / 10000).toFixed(2) + '万' : n.toFixed(2);
+    }
+
+    function renderTrend(data) {
+        const box = document.getElementById('trendChart');
+        const empty = document.getElementById('trendEmpty');
+        const note = document.getElementById('trendNote');
+        const date = (data && data.date) || trendDate || today();
+        const endIdx = trendEndIndex(date);
+        const axis = trendAxis().slice(0, endIdx + 1);
+        const values = endIdx >= 0 ? trendValues((data && data.points) || [], endIdx) : null;
+
+        if (!values || !values.length) {
+            if (trendChart) trendChart.clear();
+            box.style.display = 'none';
+            empty.style.display = '';
+            empty.textContent = date === today()
+                ? '今天还没有走势数据：开盘后每分钟记一个点'
+                : '这一天没有走势数据（走势自 v1.6.7 起按分钟采集，只保留最近 45 天）';
+            note.textContent = date + ' · 1 分钟 · 总市值';
+            return;
+        }
+
+        box.style.display = '';
+        empty.style.display = 'none';
+        if (!trendChart) {
+            trendChart = echarts.init(box);
+        }
+        trendChart.resize();
+
+        const up = themeVar('--up', '#d32029');
+        const down = themeVar('--down', '#0f8a4d');
+        const first = values.find(function (v) { return v !== null; });
+        const last = values[values.length - 1];
+        const color = last >= first ? up : down;
+
+        trendChart.setOption({
+            animation: false,
+            grid: {left: 6, right: 14, top: 18, bottom: 4, containLabel: true},
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: themeVar('--bg-panel', '#fff'),
+                borderColor: themeVar('--border-soft', '#e8ebf0'),
+                textStyle: {color: themeVar('--text-strong', '#0b0f18'), fontSize: 12},
+                formatter: function (ps) {
+                    if (!ps || !ps.length) return '';
+                    const i = ps[0].dataIndex;
+                    const minute = axis[i];
+                    const p = trendMap.get(minute);
+                    let html = '<div style="font-variant-numeric:tabular-nums">' + esc(minute)
+                        + '　总市值 <b>' + money(ps[0].value) + '</b></div>';
+                    if (p && p.dayProfit !== null && p.dayProfit !== undefined) {
+                        const d = Number(p.dayProfit);
+                        html += '<div style="margin-top:2px;color:' + (d >= 0 ? up : down)
+                            + '">当日收益 ' + moneySigned(p.dayProfit) + '</div>';
+                    }
+                    return html;
+                }
+            },
+            xAxis: {
+                type: 'category',
+                data: axis,
+                boundaryGap: false,
+                axisLine: {lineStyle: {color: themeVar('--border-soft', '#e8ebf0')}},
+                axisTick: {show: false},
+                axisLabel: {
+                    color: themeVar('--text-dim', '#6b7280'),
+                    fontSize: 11,
+                    interval: function (index, value) {
+                        return ['09:30', '10:30', '11:30', '13:30', '14:30', '15:00'].indexOf(value) >= 0;
+                    }
+                }
+            },
+            yAxis: {
+                type: 'value',
+                scale: true,
+                splitLine: {lineStyle: {color: themeVar('--border-soft', '#e8ebf0')}},
+                axisLabel: {
+                    color: themeVar('--text-dim', '#6b7280'),
+                    fontSize: 11,
+                    formatter: shortMoney
+                }
+            },
+            series: [{
+                type: 'line',
+                data: values,
+                showSymbol: false,
+                symbol: 'none',
+                lineStyle: {width: 2, color: color},
+                itemStyle: {color: color},
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        {offset: 0, color: withAlpha(color, 0.26)},
+                        {offset: 1, color: withAlpha(color, 0)}
+                    ])
+                }
+            }]
+        }, true);
+
+        note.textContent = date + ' · ' + values.length + ' 分钟 · 总市值';
+    }
+
+    /** 拉某一天的走势；失败静默（图留着上一次的样子，比清空更不容易误导） */
+    async function loadTrend() {
+        if (!curId) return;
+        const date = trendDate || today();
+        let r = null;
+        try {
+            r = await get('/api/account/trend?accountId=' + curId + '&date=' + encodeURIComponent(date));
+        } catch (e) {
+            return;
+        }
+        if (!r || !r.success || !r.data) return;
+        trendDate = r.data.date || date;
+        const input = document.getElementById('trendDate');
+        if (input && input.value !== trendDate) input.value = trendDate;
+        renderTrend(r.data);
+    }
+
+    /** 进入账户时先把走势复位到「今天」 */
+    function openTrend() {
+        const input = document.getElementById('trendDate');
+        trendDate = today();
+        if (input) {
+            input.max = trendDate;
+            input.value = trendDate;
+        }
+        loadTrend();
+    }
+
+    function refreshTrendIfToday() {
+        if (curId && (!trendDate || trendDate === today())) {
+            loadTrend();
+        }
+    }
+
+    function onTrendDateChange(value) {
+        const picked = String(value || '').trim();
+        if (!picked) {
+            return;
+        }
+        if (picked > today()) {
+            toast('还不能看未来日期的走势', 'err');
+            const input = document.getElementById('trendDate');
+            if (input) input.value = trendDate || today();
+            return;
+        }
+        trendDate = picked;
+        loadTrend();
+    }
+
+    function pickTrendToday() {
+        const input = document.getElementById('trendDate');
+        if (input) input.value = today();
+        trendDate = today();
+        loadTrend();
     }
 
     /* ==================== 账户弹窗（新建 / 重命名） ==================== */
@@ -1167,6 +1533,10 @@
         }
         // 持仓与操作记录里的标的要渲染成跳转链接，配置先拿到
         await loadStockLink();
+        // 走势图跟着窗口缩放；页面切换主题会重载，这里只处理尺寸
+        window.addEventListener('resize', function () {
+            if (trendChart) trendChart.resize();
+        });
         const lr = await get('/api/account/limits');
         if (lr && lr.success) {
             limits = lr.data;

@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 我的账户：账户 / 持仓 / 操作记录的业务核心（需求 v1.5.1 第 ③ 条、v1.5.2 第 ④ 条）。
@@ -68,6 +69,21 @@ import java.util.Map;
  * 代价是卖出价恒等于成本价、已实现盈亏恒为 0，当日盈亏根本算不出卖出那部分。
  * 现在：买入按成交价扣减可用金额并按<b>加权平均</b>重算成本价，卖出按成交价加回，
  * 于是「买入瞬间账户总市值不变」「卖出瞬间的差额正好是已实现盈亏」两条都成立。
+ *
+ * <h3>v1.6.7：未开盘的市值口径（重要）</h3>
+ *
+ * <p>新浪在集合竞价前与停牌时把现价字段写成 0。旧逻辑把这当成「没有行情」，
+ * 于是一律回落到<b>成本价</b>算市值 —— 每天开盘前看到的持仓市值都是成本市值，
+ * 当日收益恒为 0，看起来像「页面没刷新」。现在估值价按
+ * <b>现价 → 昨收 → 进程内最近一次有效价 → 成本价</b> 依次取第一个能用的，
+ * 并把口径(`priceBasis`)一起下发，页面据此打标。
+ *
+ * <p>做法上分两层：{@link SinaQuoteClient#fetchForValuation} 负责「现价为 0 时用昨收顶上」，
+ * 本类负责「连接口都没通时用最近价兜底」。盯盘链路仍走 {@code fetch}，
+ * 语义不变 —— 那里要的是「现在有没有有效成交价」，不是「值多少钱」。
+ *
+ * <p>分钟走势（{@link AccountTrendService}）刻意只调用本类的 {@link #summary(long, long)}：
+ * 曲线上的每个点都必须等于「那一刻打开页面看到的总市值」，口径只有一处，不会各算各的。
  */
 @Service
 public class AccountService {
@@ -105,16 +121,34 @@ public class AccountService {
     /** 建仓日的输入只认 yyyy-MM-dd / yyyyMMdd / yyyy/MM/dd / yyyy.MM.dd */
     private static final DateTimeFormatter YMD_COMPACT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
+    /** 现价口径说明（v1.6.7）：页面按它打标，用户一眼能看出市值这个数字是怎么来的 */
+    private static final String PRICE_LIVE = "现价";
+    private static final String PRICE_PRE_CLOSE = "昨收";
+    private static final String PRICE_LAST = "最近价";
+    private static final String PRICE_COST = "成本价";
+
     private final AccountRepository repository;
+    private final AccountTrendRepository trendRepository;
     private final ObjectProvider<SinaQuoteClient> quoteClientProvider;
     private final ObjectProvider<WatchConfigStore> watchStoreProvider;
     private final ObjectProvider<StockDirectory> directoryProvider;
 
+    /**
+     * 最近一次拿到的有效现价（代码 → 价格）。
+     *
+     * <p>只作估值兜底用：新浪偶发超时 / 限流时，账户市值不该一脚踹回成本价 ——
+     * 那等于把「行情断了一秒」显示成「持仓亏了一大截」。进程内缓存，重启即空，
+     * 空着时才最后退回成本价。
+     */
+    private final Map<String, BigDecimal> lastPriceCache = new ConcurrentHashMap<>();
+
     public AccountService(AccountRepository repository,
+                          AccountTrendRepository trendRepository,
                           ObjectProvider<SinaQuoteClient> quoteClientProvider,
                           ObjectProvider<WatchConfigStore> watchStoreProvider,
                           ObjectProvider<StockDirectory> directoryProvider) {
         this.repository = repository;
+        this.trendRepository = trendRepository;
         this.quoteClientProvider = quoteClientProvider;
         this.watchStoreProvider = watchStoreProvider;
         this.directoryProvider = directoryProvider;
@@ -359,6 +393,14 @@ public class AccountService {
         }
         List<Position> positions = repository.listPositions(userId, accountId);
         repository.deleteAccount(userId, accountId);
+        // 走势不跟着账户走会留下永远读不到的孤儿数据（文件模式下还会让文件一直变大）
+        if (trendRepository != null) {
+            try {
+                trendRepository.deleteAccount(userId, accountId);
+            } catch (Exception e) {
+                log.warn("[account] 账户 {} 的走势清理失败：{}", accountId, e.getMessage());
+            }
+        }
         for (Position p : positions) {
             watchPruneIfUnheld(userId, p.getCode());
         }
@@ -744,7 +786,8 @@ public class AccountService {
         SinaQuoteClient client = quoteClientProvider.getIfAvailable();
         if (client != null) {
             try {
-                Quote q = client.fetch(new WatchTarget(c, c));
+                // 估值口径：未开盘时现价是 0，这里要的是昨收，别让预填价退回成本价
+                Quote q = client.fetchForValuation(new WatchTarget(c, c));
                 if (q != null && q.getPrice() != null && q.getPrice().signum() > 0) {
                     return q.getPrice();
                 }
@@ -907,11 +950,17 @@ public class AccountService {
     /**
      * 算一本账的收益。
      *
-     * <p>行情取不到的持仓按成本价兜底并标记 {@code quoted=false}，
-     * 这样页面既能看到数字（不空），也知道哪个是兜底值。
+     * <p>现价取不到时不再一律回落到成本价（v1.6.7）：按
+     * <b>现价 → 昨收 → 进程内最近一次有效价 → 成本价</b> 的顺序取第一个能用的，
+     * 并把口径写进 {@code priceBasis}。
      *
-     * <p>当日盈亏按 {@link #dayBasisOf} 给出的当量基准价算 —— 这是 v1.5.5 修正的核心：
-     * 当天买入的份额从买入均价起算、隔夜份额从昨收起算，而不是一律拿昨收。
+     * <p>为什么必须这么改：新浪在集合竞价前、停牌时把现价写成 0，旧逻辑按「没有行情」处理，
+     * 于是「我的账户」每天开盘前看到的持仓市值全是成本市值、当日收益恒为 0 ——
+     * 用户原话是「用成本价算，太傻逼了」。昨收与最近价都是真实成交过的价格，
+     * 未开盘时用它算市值才是各家的通行做法；只有连这些都没有（进程刚起来、行情全挂）才退回成本价。
+     *
+     * <p>当日盈亏仍按 {@link #dayBasisOf} 给出的当量基准价算 —— 未开盘时现价 = 昨收，
+     * 当日收益自然是 0，不会凭空多出一段盈亏。
      */
     private Calc calc(List<Position> positions, Map<String, Quote> quotes, String today) {
         Calc c = new Calc();
@@ -930,16 +979,18 @@ public class AccountService {
             BigDecimal cost = nz(p.getCostPrice());
             BigDecimal qty = BigDecimal.valueOf(p.getQuantity());
             BigDecimal costValue = cost.multiply(qty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-            BigDecimal price = q != null && q.getPrice() != null ? q.getPrice() : cost;
+            PricePick pick = pickPrice(p, q, cost);
+            BigDecimal price = pick.price;
             BigDecimal marketValue = price.multiply(qty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             BigDecimal profit = marketValue.subtract(costValue);
 
             v.setPrice(price);
+            v.setPriceBasis(pick.label);
             v.setCostValue(costValue);
             v.setMarketValue(marketValue);
             v.setTotalProfit(profit);
             v.setTotalProfitPercent(percent(profit, costValue));
-            if (q != null) {
+            if (q != null && !PRICE_COST.equals(pick.label)) {
                 v.setQuoted(true);
                 v.setPreClose(q.getPreClose());
                 v.setQuoteTime(q.getTimeText());
@@ -969,6 +1020,39 @@ public class AccountService {
             c.views.add(v);
         }
         return c;
+    }
+
+    /**
+     * 一条持仓的现价取值结果：价格 + 口径说明。
+     *
+     * <p>口径必须跟着价格一起下发 —— 页面要能说清楚「这个市值是按昨收算的」，
+     * 否则用户看到开盘前市值与昨天收盘一样、当日收益 0.00，会以为是没刷新。
+     */
+    private static final class PricePick {
+        final BigDecimal price;
+        final String label;
+
+        PricePick(BigDecimal price, String label) {
+            this.price = price;
+            this.label = label;
+        }
+    }
+
+    /**
+     * 取一条持仓的估值价：现价 → 昨收（已在客户端回落）→ 进程内最近价 → 成本价。
+     *
+     * <p>只有最后一档才是成本价，而且要如实标成「成本价」—— 它是所有来源都没有时的
+     * 最后兜底，不该被当成正常估值口径。
+     */
+    private PricePick pickPrice(Position p, Quote q, BigDecimal cost) {
+        if (q != null && q.getPrice() != null && q.getPrice().signum() > 0) {
+            return new PricePick(q.getPrice(), q.isPriceFromPreClose() ? PRICE_PRE_CLOSE : PRICE_LIVE);
+        }
+        BigDecimal last = p.getCode() == null ? null : lastPriceCache.get(p.getCode());
+        if (last != null && last.signum() > 0) {
+            return new PricePick(last, PRICE_LAST);
+        }
+        return new PricePick(cost, PRICE_COST);
     }
 
     /**
@@ -1126,7 +1210,8 @@ public class AccountService {
             return null;
         }
         try {
-            Quote q = client.fetch(new WatchTarget(code, code));
+            // 用估值口径取：未开盘时现价字段是 0，但昨收仍是有效的比较基准
+            Quote q = client.fetchForValuation(new WatchTarget(code, code));
             return q == null ? null : q.getPreClose();
         } catch (Exception e) {
             log.warn("[account] 取昨收失败 {}: {}", code, e.getMessage());
@@ -1232,7 +1317,13 @@ public class AccountService {
         return wanted;
     }
 
-    /** 批量取现价：有行情客户端时逐个取，取不到的标的直接缺省（调用侧按成本价兜底） */
+    /**
+     * 批量取现价：<b>走估值口径</b>（未开盘时现价回落到昨收），逐只取，
+     * 取不到的标的直接缺省（调用侧按 {@link #pickPrice} 的兜底链处理）。
+     *
+     * <p>取到有效现价就顺手塞进 {@link #lastPriceCache}：下一轮某只标的请求失败时，
+     * 用它顶上，市值不会因为一次超时跳到成本价。
+     */
     private Map<String, Quote> fetchQuotes(Map<String, String> wanted) {
         Map<String, Quote> out = new LinkedHashMap<>();
         SinaQuoteClient client = quoteClientProvider.getIfAvailable();
@@ -1241,9 +1332,12 @@ public class AccountService {
         }
         for (Map.Entry<String, String> e : wanted.entrySet()) {
             try {
-                Quote q = client.fetch(new WatchTarget(e.getValue(), e.getKey()));
+                Quote q = client.fetchForValuation(new WatchTarget(e.getValue(), e.getKey()));
                 if (q != null) {
                     out.put(e.getKey(), q);
+                    if (q.getPrice() != null && q.getPrice().signum() > 0 && !q.isPriceFromPreClose()) {
+                        lastPriceCache.put(e.getKey(), q.getPrice());
+                    }
                 }
             } catch (Exception ex) {
                 // 单只取不到不影响其它持仓的收益展示

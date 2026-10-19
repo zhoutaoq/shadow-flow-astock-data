@@ -165,6 +165,24 @@ CREATE TABLE IF NOT EXISTS shadowflow_trade_record (
     KEY idx_shadowflow_trade_record_account (user_id, account_id, id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '操作记录（买卖流水）';
 
+-- 账户分钟走势（v1.6.7 建立）：详情页 1 分钟曲线的数据源
+-- 一行 = 一本账在某天某一分钟的总市值快照；唯一键保证同一分钟只留一条（定时采样与页面补点会重复写）
+-- 只保留最近 45 天（AccountTrendService.KEEP_DAYS），走势是展示数据、不是审计留痕
+CREATE TABLE IF NOT EXISTS shadowflow_account_trend (
+    id             BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+    user_id        BIGINT         NOT NULL                COMMENT '归属用户 id',
+    account_id     BIGINT         NOT NULL                COMMENT '归属账户 id',
+    trade_date     VARCHAR(10)    NOT NULL                COMMENT '交易日 yyyy-MM-dd',
+    minute         VARCHAR(5)     NOT NULL                COMMENT '分钟 HH:mm',
+    total_value    DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '账户总市值（元）',
+    position_value DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '持仓市值（元）',
+    day_profit     DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '当日收益（元）',
+    create_time    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_shadowflow_account_trend (account_id, trade_date, minute),
+    KEY idx_shadowflow_account_trend_user (user_id, trade_date)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '账户分钟走势';
+
 -- ============================================================
 -- 回测（数据源固定：行情数据服务 + 日K表 shadowflow_stock_kline_daily）
 -- 费率一律以小数存储：页面按 % 录入，0.01% 存 0.0001

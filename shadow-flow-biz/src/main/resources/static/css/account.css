@@ -715,6 +715,51 @@ a.acct-hold-item.acct-more:hover { background: var(--bg-tint); }
 /* 新建 / 重命名共用同一个弹窗：重命名时只留名字，金额字段整体收起 */
 .mask.rename .acc-only-create { display: none; }
 
+/* ============ 账户走势（v1.6.7 第 ③ 条） ============ */
+/* 图本身给固定高度：ECharts 在 display:none 的容器里初始化会拿到 0 宽，
+   高度由 CSS 定死，宽度随卡片，进入二级视图后再 resize 一次即可 */
+.atrend {
+    width: 100%;
+    height: 264px;
+}
+
+.atrend-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 264px;
+    padding: 0 16px;
+    border-radius: var(--r-md);
+    background: var(--bg-tint);
+    color: var(--text-dim);
+    font-size: var(--fs-12);
+    line-height: 1.7;
+    text-align: center;
+}
+
+/* 卡头里的日期控件：原生 date input，宽度固定，别让 flex 把它拉满 */
+.atrend-date {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--bg-input);
+    color: var(--text);
+    font-family: inherit;
+    font-size: var(--fs-12);
+}
+
+.atrend-date:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+/* 深色主题下原生日期图标的对比度：默认图标是黑的，几乎看不见 */
+[data-theme="dark"] .atrend-date::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+}
+
 /* =========================================================================
  * v1.5.9 移动端收口（账户页）
  *
@@ -745,4 +790,7 @@ a.acct-hold-item.acct-more:hover { background: var(--bg-tint); }
     .acard-note { margin-left: auto; }
     .acard-acts { margin-left: 0; flex: 1 1 100%; }
     .acard-acts > button { flex: 1 1 auto; justify-content: center; }
+    /* 走势卡头：日期控件占满、按钮跟在后面，别挤成一条缝 */
+    .acard-acts > .atrend-date { flex: 1 1 auto; width: auto; min-width: 0; }
+    .atrend, .atrend-empty { height: 220px; }
 }
