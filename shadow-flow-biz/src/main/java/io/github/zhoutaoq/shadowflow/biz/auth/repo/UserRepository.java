@@ -18,12 +18,23 @@ public interface UserRepository {
     /** 按主键查；不存在返回 null */
     User findById(long id);
 
+    /** 按 GitHub 用户 id 查（三方登录绑定后非空）；不存在返回 null */
+    User findByGithubId(String githubId);
+
     /**
      * 新增或更新用户资料（不含密码）。
      *
      * @return 落库后的用户（带主键）
      */
     User save(User user);
+
+    /**
+     * 绑定 / 更新 GitHub 三方身份（OAuth 登录成功后调）。
+     *
+     * <p>只写 github_id 与 github_login 两列，不动密码与角色 ——
+     * 绑定是「把已有账号接到 GitHub 上」，不是改账号。
+     */
+    void bindGithub(long id, String githubId, String githubLogin);
 
     /** 只改密码：换 salt 与 hash，不动其它字段 */
     void updatePassword(long id, String hash, String salt);

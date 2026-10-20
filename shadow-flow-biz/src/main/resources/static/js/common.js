@@ -94,6 +94,8 @@ const ME = {
     /** 代理登录中：{id, username} 是坐在后面的那个超管；不在代理中为 null */
     impersonator: null,
     registrationEnabled: true,
+    /** GitHub 三方登录是否开通（服务端凭据齐才 true），登录弹窗据此显隐 GitHub 按钮 */
+    githubLoginEnabled: false,
     rules: {minPasswordLength: 6, requireLetterAndDigit: true, usernamePattern: 'email'}
 };
 
@@ -147,6 +149,7 @@ function loadMe(force) {
                     ME.user = json.data.user || null;
                     ME.impersonator = json.data.impersonator || null;
                     ME.registrationEnabled = json.data.registrationEnabled !== false;
+                    ME.githubLoginEnabled = json.data.githubLoginEnabled === true;
                     if (json.data.rules) {
                         ME.rules = json.data.rules;
                     }
@@ -260,12 +263,17 @@ function openAuthModal(opt) {
             + '</div>'
             + '</div>'
             + '<button class="auth-submit" id="amSubmit" type="button">登录</button>'
+            + '<div class="auth-oauth" id="amOauth" hidden>'
+            + '<div class="auth-oauth-sep"><i></i><span>或</span><i></i></div>'
+            + '<button class="auth-github" id="amGithub" type="button">' + ICON.github + '使用 GitHub 登录</button>'
+            + '</div>'
             + '</div>';
         document.body.appendChild(mask);
 
         mask.querySelector('#amTabLogin').addEventListener('click', () => switchAuthMode('login'));
         mask.querySelector('#amTabReg').addEventListener('click', () => switchAuthMode('register'));
         mask.querySelector('#amSubmit').addEventListener('click', submitAuthModal);
+        mask.querySelector('#amGithub').addEventListener('click', startGithubLogin);
         mask.querySelectorAll('.auth-eye').forEach(btn => {
             btn.addEventListener('click', () => togglePwdVisible(btn.getAttribute('data-for')));
         });
@@ -296,8 +304,51 @@ function openAuthModal(opt) {
         mask.querySelector('#' + id).value = '';
     });
     switchAuthMode(o.mode === 'register' ? 'register' : 'login');
+    // GitHub 按钮只在服务端开通了三方登录时出现（未配 OAuth 凭据就别给用户一个点了报错的按钮）
+    mask.querySelector('#amOauth').hidden = !ME.githubLoginEnabled;
     mask.classList.add('show');
     setTimeout(() => mask.querySelector('#amUser').focus(), 60);
+}
+
+/**
+ * 跳 GitHub 授权页。
+ *
+ * <p>returnTo 记下当前页路径，授权完成回来还落在原地（服务端只认站内相对路径）。
+ * 整页跳转离开是 OAuth 授权码流程的常态，回来时走 fragment 收令牌（见 handleAuthFragment）。
+ */
+function startGithubLogin() {
+    const back = location.pathname + location.search;
+    location.href = '/api/auth/github/login?returnTo=' + encodeURIComponent(back);
+}
+
+/**
+ * 收 OAuth 回跳：地址栏 fragment 里的 {@code #token=}（成功）或 {@code #authError=}（失败）。
+ *
+ * <p>令牌走 fragment 不走 query —— 不进服务端访问日志、不进 Referer。
+ * 收到就写 cookie 并清掉 fragment，页面随后按正常登录态渲染；
+ * 失败原因弹一次提示后同样清掉，不留脏地址。
+ *
+ * @returns {boolean} 本次是否处理了一个回跳
+ */
+function handleAuthFragment() {
+    const h = location.hash || '';
+    if (h.indexOf('#token=') === 0) {
+        const token = decodeURIComponent(h.slice('#token='.length));
+        // 清地址栏在前：token 不该在历史记录里多待一秒
+        history.replaceState(null, '', location.pathname + location.search);
+        if (token) {
+            setAuthToken(token);
+            return true;
+        }
+        return false;
+    }
+    if (h.indexOf('#authError=') === 0) {
+        const msg = decodeURIComponent(h.slice('#authError='.length)) || 'GitHub 登录失败，请稍后再试';
+        history.replaceState(null, '', location.pathname + location.search);
+        toast(msg, 'err');
+        return false;
+    }
+    return false;
 }
 
 /** 登录 / 注册标签页切换；注册被关掉时不给切过去 */
@@ -792,7 +843,8 @@ const ICON = {
     pwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2.5"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/></svg>',
     out: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 8.5V6.2A2.2 2.2 0 0 0 13.3 4H6.7a2.2 2.2 0 0 0-2.2 2.2v11.6A2.2 2.2 0 0 0 6.7 20h6.6a2.2 2.2 0 0 0 2.2-2.2v-2.3"/><path d="M10 12h10M17.4 9.2L20 12l-2.6 2.8"/></svg>',
     spade: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.6c3.4 3.5 7.3 6.3 7.3 10.1 0 2.5-1.9 4.4-4.2 4.4-1 0-1.9-.3-2.6-.9.3 1.9 1.2 3.5 2.5 4.8H9c1.3-1.3 2.2-2.9 2.5-4.8-.7.6-1.6.9-2.6.9-2.3 0-4.2-1.9-4.2-4.4C4.7 8.9 8.6 6.1 12 2.6z"/></svg>',
-    swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13M14 4.8L17.2 8 14 11.2"/><path d="M20 16H7M10 12.8L6.8 16 10 19.2"/></svg>'
+    swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13M14 4.8L17.2 8 14 11.2"/><path d="M20 16H7M10 12.8L6.8 16 10 19.2"/></svg>',
+    github: '<svg viewBox="0 0 16 16" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>'
 };
 
 /** 顶部提示条：类型决定图标与配色；文本一律转义后插入 */
@@ -1812,7 +1864,9 @@ function scheduleLabelGridTables() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[影流数据] 前端版本 20261011a（v1.6.2：菜单名称与顺序可配 / 系统 logo 可上传 / 反馈入口统一改名）');
+    console.info('[影流数据] 前端版本 20261020a（v1.6.8：GitHub 三方登录）');
+    // OAuth 回跳先收令牌（fragment 里的 #token=），再拉登录态才拉得到自己
+    const oauthBack = handleAuthFragment();
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮
     applyTheme(currentTheme());
     renderThemeToggle();
@@ -1855,6 +1909,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         q.delete('auth');
         const rest = q.toString();
         history.replaceState(null, '', location.pathname + (rest ? '?' + rest : ''));
+    }
+    // GitHub OAuth 回跳成功：令牌已收进 cookie、登录态已拉到，给个落地提示
+    if (oauthBack) {
+        toast('GitHub 登录成功', 'ok');
     }
 });
 

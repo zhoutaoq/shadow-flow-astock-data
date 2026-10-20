@@ -30,10 +30,12 @@ public class AuthController {
 
     private final AuthService authService;
     private final SessionService sessions;
+    private final GitHubOAuthService github;
 
-    public AuthController(AuthService authService, SessionService sessions) {
+    public AuthController(AuthService authService, SessionService sessions, GitHubOAuthService github) {
         this.authService = authService;
         this.sessions = sessions;
+        this.github = github;
     }
 
     /** 注册：用户名必须是邮箱且唯一，密码 ≥6 位且含字母和数字 */
@@ -98,6 +100,8 @@ public class AuthController {
             }
         }
         data.put("registrationEnabled", authService.registrationEnabled());
+        // GitHub 三方登录是否开通：登录弹窗据此决定显不显示 GitHub 按钮
+        data.put("githubLoginEnabled", github.isConfigured());
         data.put("rules", AuthService.rules());
         return ApiResponse.ok(data);
     }

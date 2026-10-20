@@ -71,6 +71,20 @@ public class FileUserRepository implements UserRepository {
     }
 
     @Override
+    public synchronized User findByGithubId(String githubId) {
+        if (!StringUtils.hasText(githubId)) {
+            return null;
+        }
+        String gid = githubId.trim();
+        for (User u : rows.values()) {
+            if (gid.equals(u.getGithubId())) {
+                return copy(u);
+            }
+        }
+        return null;
+    }
+
+    @Override
     public synchronized User save(User user) {
         if (user == null) {
             throw new IllegalArgumentException("用户不能为空");
@@ -89,6 +103,9 @@ public class FileUserRepository implements UserRepository {
             exist.setRole(user.getRole() == null ? User.ROLE_USER : user.getRole());
             exist.setEnabled(true);
             exist.setCreateTime(now);
+            // 新建时带上三方绑定（OAuth 首次登录建号会用到）；已有用户的绑定只走 bindGithub
+            exist.setGithubId(user.getGithubId());
+            exist.setGithubLogin(user.getGithubLogin());
         }
         if (StringUtils.hasText(user.getPasswordHash())) {
             exist.setPasswordHash(user.getPasswordHash());
@@ -103,6 +120,22 @@ public class FileUserRepository implements UserRepository {
         rows = fresh;
         persist();
         return copy(exist);
+    }
+
+    @Override
+    public synchronized void bindGithub(long id, String githubId, String githubLogin) {
+        String now = LocalDateTime.now().format(DF);
+        Map<String, User> fresh = new LinkedHashMap<>(rows);
+        for (Map.Entry<String, User> e : fresh.entrySet()) {
+            User u = e.getValue();
+            if (u.getId() != null && u.getId() == id) {
+                u.setGithubId(githubId);
+                u.setGithubLogin(githubLogin);
+                u.setUpdateTime(now);
+            }
+        }
+        rows = fresh;
+        persist();
     }
 
     @Override
@@ -190,6 +223,8 @@ public class FileUserRepository implements UserRepository {
         c.setUsername(u.getUsername());
         c.setPasswordHash(u.getPasswordHash());
         c.setPasswordSalt(u.getPasswordSalt());
+        c.setGithubId(u.getGithubId());
+        c.setGithubLogin(u.getGithubLogin());
         c.setRole(u.getRole());
         c.setEnabled(u.isEnabled());
         c.setCreateTime(u.getCreateTime());

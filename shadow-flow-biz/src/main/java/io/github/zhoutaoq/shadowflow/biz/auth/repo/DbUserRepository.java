@@ -37,6 +37,10 @@ public class DbUserRepository implements UserRepository {
     private static final Logger log = LoggerFactory.getLogger(DbUserRepository.class);
 
     private static final String TABLE = "shadowflow_user";
+    /** 老库升级（init 里的 ALTER）跑完后这两列一定在，统一列名免得各查询写散了 */
+    private static final String COLUMNS = "id, username, password_hash, password_salt,"
+            + " github_id, github_login, role, enabled,"
+            + " create_time, update_time, last_login_time";
     private static final DateTimeFormatter DF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final JdbcTemplate jdbcTemplate;
@@ -47,8 +51,25 @@ public class DbUserRepository implements UserRepository {
 
     @PostConstruct
     public void init() {
+        // 老库补列：github_id / github_login 缺失时加上（v1.6.8 三方登录）。
+        // 幂等 —— 新库由 schema.sql 建表时就带着这两列，这里的 ALTER 必然报「列已存在」，
+        // 属于正常情况，只记 debug（与 DbBacktestRepository 同一套路）。
+        exec("ALTER TABLE " + TABLE + " ADD COLUMN github_id VARCHAR(32) NULL"
+                + " COMMENT 'GitHub 用户 id（OAuth 绑定后非空）' AFTER password_salt");
+        exec("ALTER TABLE " + TABLE + " ADD COLUMN github_login VARCHAR(64) NULL"
+                + " COMMENT 'GitHub 登录名，纯展示' AFTER github_id");
+        exec("ALTER TABLE " + TABLE + " ADD UNIQUE KEY uk_shadowflow_user_github (github_id)");
         Long n = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + TABLE, Long.class);
         log.info("[auth] 数据库模式：{} 现有 {} 个用户", TABLE, n);
+    }
+
+    private void exec(String sql) {
+        try {
+            jdbcTemplate.execute(sql);
+        } catch (Exception e) {
+            // 列/索引已存在是常态，不打扰日志
+            log.debug("[auth] 迁移跳过：{}", e.getMessage());
+        }
     }
 
     @Override
@@ -57,8 +78,7 @@ public class DbUserRepository implements UserRepository {
             return null;
         }
         List<User> list = jdbcTemplate.query(
-                "SELECT id, username, password_hash, password_salt, role, enabled,"
-                        + " create_time, update_time, last_login_time FROM " + TABLE
+                "SELECT " + COLUMNS + " FROM " + TABLE
                         + " WHERE username = ? LIMIT 1",
                 new Object[]{username.trim()}, this::map);
         return list.isEmpty() ? null : list.get(0);
@@ -67,10 +87,21 @@ public class DbUserRepository implements UserRepository {
     @Override
     public User findById(long id) {
         List<User> list = jdbcTemplate.query(
-                "SELECT id, username, password_hash, password_salt, role, enabled,"
-                        + " create_time, update_time, last_login_time FROM " + TABLE
+                "SELECT " + COLUMNS + " FROM " + TABLE
                         + " WHERE id = ? LIMIT 1",
                 new Object[]{id}, this::map);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    @Override
+    public User findByGithubId(String githubId) {
+        if (!StringUtils.hasText(githubId)) {
+            return null;
+        }
+        List<User> list = jdbcTemplate.query(
+                "SELECT " + COLUMNS + " FROM " + TABLE
+                        + " WHERE github_id = ? LIMIT 1",
+                new Object[]{githubId.trim()}, this::map);
         return list.isEmpty() ? null : list.get(0);
     }
 
@@ -89,17 +120,19 @@ public class DbUserRepository implements UserRepository {
         if (user.getId() == null) {
             KeyHolder holder = new GeneratedKeyHolder();
             final String insert = "INSERT INTO " + TABLE
-                    + " (username, password_hash, password_salt, role, enabled, create_time, update_time)"
-                    + " VALUES (?, ?, ?, ?, ?, ?, ?)";
+                    + " (username, password_hash, password_salt, github_id, github_login, role, enabled, create_time, update_time)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
             jdbcTemplate.update(con -> {
                 PreparedStatement ps = con.prepareStatement(insert, Statement.RETURN_GENERATED_KEYS);
                 ps.setString(1, name);
                 ps.setString(2, user.getPasswordHash());
                 ps.setString(3, user.getPasswordSalt());
-                ps.setString(4, role);
-                ps.setInt(5, user.isEnabled() ? 1 : 0);
-                ps.setString(6, now);
-                ps.setString(7, now);
+                ps.setString(4, user.getGithubId());
+                ps.setString(5, user.getGithubLogin());
+                ps.setString(6, role);
+                ps.setInt(7, user.isEnabled() ? 1 : 0);
+                ps.setString(8, now);
+                ps.setString(9, now);
                 return ps;
             }, holder);
             Number key = holder.getKey();
@@ -115,6 +148,13 @@ public class DbUserRepository implements UserRepository {
                 name, role, user.isEnabled() ? 1 : 0, now, user.getId());
         user.setUpdateTime(now);
         return user;
+    }
+
+    @Override
+    public void bindGithub(long id, String githubId, String githubLogin) {
+        jdbcTemplate.update("UPDATE " + TABLE
+                        + " SET github_id = ?, github_login = ?, update_time = ? WHERE id = ?",
+                githubId, githubLogin, LocalDateTime.now().format(DF), id);
     }
 
     @Override
@@ -149,8 +189,7 @@ public class DbUserRepository implements UserRepository {
         }
 
         List<User> rows;
-        String sql = "SELECT id, username, password_hash, password_salt, role, enabled,"
-                + " create_time, update_time, last_login_time FROM " + TABLE + where
+        String sql = "SELECT " + COLUMNS + " FROM " + TABLE + where
                 + " ORDER BY id ASC LIMIT ? OFFSET ?";
         if (filtered) {
             rows = jdbcTemplate.query(sql, new Object[]{like, s, (p - 1) * s}, this::map);
@@ -171,6 +210,8 @@ public class DbUserRepository implements UserRepository {
         u.setUsername(rs.getString("username"));
         u.setPasswordHash(rs.getString("password_hash"));
         u.setPasswordSalt(rs.getString("password_salt"));
+        u.setGithubId(rs.getString("github_id"));
+        u.setGithubLogin(rs.getString("github_login"));
         u.setRole(rs.getString("role"));
         u.setEnabled(rs.getInt("enabled") == 1);
         u.setCreateTime(time(rs.getTimestamp("create_time")));

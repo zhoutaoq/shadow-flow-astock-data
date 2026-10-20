@@ -62,7 +62,7 @@ git config ai.model dsv4.1flash      # 每位使用者按自己用的模型改
 
 ## 2. 密钥与敏感信息（强制）
 
-**绝不入库**：数据库口令、超管初始口令、行情服务令牌、钉钉 webhook（含 `access_token`）、服务器 IP + 账号 + 口令 + 主机指纹、任何 `secret` / `apikey`。
+**绝不入库**：数据库口令、超管初始口令、行情服务令牌、钉钉 webhook（含 `access_token`）、GitHub OAuth Client Secret（含 Client ID）、服务器 IP + 账号 + 口令 + 主机指纹、任何 `secret` / `apikey`。
 
 落地方式：
 

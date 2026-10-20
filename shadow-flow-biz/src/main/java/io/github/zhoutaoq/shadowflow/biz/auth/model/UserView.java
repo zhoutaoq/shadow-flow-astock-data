@@ -13,6 +13,10 @@ public class UserView {
     private String role;
     private boolean enabled;
     private boolean admin;
+    /** GitHub 登录名；未绑定三方账号时为 null */
+    private String githubLogin;
+    /** 是否已绑定 GitHub（按 githubId 判，登录名可能为空串） */
+    private boolean githubBound;
     private String createTime;
     private String updateTime;
     private String lastLoginTime;
@@ -27,6 +31,8 @@ public class UserView {
         v.setRole(u.getRole());
         v.setEnabled(u.isEnabled());
         v.setAdmin(u.isAdmin());
+        v.setGithubLogin(u.getGithubLogin());
+        v.setGithubBound(u.getGithubId() != null && !u.getGithubId().trim().isEmpty());
         v.setCreateTime(u.getCreateTime());
         v.setUpdateTime(u.getUpdateTime());
         v.setLastLoginTime(u.getLastLoginTime());
@@ -71,6 +77,22 @@ public class UserView {
 
     public void setAdmin(boolean admin) {
         this.admin = admin;
+    }
+
+    public String getGithubLogin() {
+        return githubLogin;
+    }
+
+    public void setGithubLogin(String githubLogin) {
+        this.githubLogin = githubLogin;
+    }
+
+    public boolean isGithubBound() {
+        return githubBound;
+    }
+
+    public void setGithubBound(boolean githubBound) {
+        this.githubBound = githubBound;
     }
 
     public String getCreateTime() {

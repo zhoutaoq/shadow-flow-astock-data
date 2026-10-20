@@ -26,6 +26,15 @@ public class User {
     private String passwordHash;
     /** 密码盐（hex），每个用户独立随机生成 */
     private String passwordSalt;
+    /**
+     * GitHub 用户 id（OAuth 绑定后非空）。
+     *
+     * <p>用字符串而不是数字：GitHub id 是纯数字但位数无承诺，字符串免溢出之忧；
+     * 它是「这个系统用户对应哪个 GitHub 账号」的唯一判据，登录时先按它找人。
+     */
+    private String githubId;
+    /** GitHub 登录名，纯展示用；改名后下次 OAuth 登录会刷新 */
+    private String githubLogin;
     private String role = ROLE_USER;
     private boolean enabled = true;
     private String createTime;
@@ -62,6 +71,22 @@ public class User {
 
     public void setPasswordSalt(String passwordSalt) {
         this.passwordSalt = passwordSalt;
+    }
+
+    public String getGithubId() {
+        return githubId;
+    }
+
+    public void setGithubId(String githubId) {
+        this.githubId = githubId;
+    }
+
+    public String getGithubLogin() {
+        return githubLogin;
+    }
+
+    public void setGithubLogin(String githubLogin) {
+        this.githubLogin = githubLogin;
     }
 
     public String getRole() {

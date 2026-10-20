@@ -1,5 +1,6 @@
 package io.github.zhoutaoq.shadowflow.biz.auth;
 
+import io.github.zhoutaoq.shadowflow.biz.auth.model.GitHubProfile;
 import io.github.zhoutaoq.shadowflow.biz.auth.model.User;
 import io.github.zhoutaoq.shadowflow.biz.auth.model.UserView;
 import io.github.zhoutaoq.shadowflow.biz.auth.repo.UserRepository;
@@ -14,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -146,6 +148,86 @@ public class AuthService {
     /** 退出登录 */
     public void logout(String token) {
         sessions.remove(token);
+    }
+
+    /**
+     * GitHub 三方登录：按 GitHub 身份找到或建出系统用户，签发登录态。
+     *
+     * <p>匹配顺序（先绑后建，绝不覆盖已有口令账号）：
+     * <ol>
+     *   <li>按 {@code github_id} 找 —— 绑定过的直接进；</li>
+     *   <li>按邮箱找 —— 邮箱注册过的人点 GitHub 登录就是「补绑」，
+     *       把 GitHub 身份挂到老账号上，历史数据一点不丢；</li>
+     *   <li>都没有才建新号 —— 新号沿用注册规则（注册开关 / 邮箱用户名），
+     *       口令是随机生成的<strong>不可用口令</strong>：三方登录的用户不该有「一个大家都猜不到但确实存在」的口令，
+     *       他要设口令得走改密（先由超管重置）。</li>
+     * </ol>
+     *
+     * <p>用户被停用时拒绝登录 —— 与口令登录同一口径，超管停号就是要把他挡在门外。
+     */
+    public SessionService.Session loginByGithub(GitHubProfile profile) {
+        if (profile == null || profile.getId() == null || profile.getId().trim().isEmpty()) {
+            throw new IllegalArgumentException("GitHub 账号信息不完整，请重新登录");
+        }
+        String gid = profile.getId().trim();
+        String glogin = profile.getLogin() == null ? "" : profile.getLogin().trim();
+
+        User u = users.findByGithubId(gid);
+        if (u == null) {
+            // 没绑过：邮箱撞上已有账号就补绑，否则建新号
+            String email = profile.resolveUsername();
+            User byMail = users.findByUsername(email);
+            if (byMail != null) {
+                users.bindGithub(byMail.getId(), gid, glogin);
+                log.info("[auth] {} 补绑 GitHub 账号 {}（{}）", byMail.getUsername(), glogin, gid);
+                u = byMail;
+            } else {
+                u = registerByGithub(profile, email);
+            }
+        } else if (!u.isEnabled()) {
+            throw new IllegalArgumentException("账号已停用，请联系管理员");
+        }
+        if (!u.isEnabled()) {
+            throw new IllegalArgumentException("账号已停用，请联系管理员");
+        }
+        // GitHub 登录名可能改过，顺手刷新展示值（绑定关系以 id 为准，不动）
+        if (!glogin.isEmpty() && !glogin.equals(u.getGithubLogin())) {
+            users.bindGithub(u.getId(), gid, glogin);
+        }
+        String now = LocalDateTime.now().format(DF);
+        users.touchLogin(u.getId(), now);
+        SessionService.Session s = sessions.create(u);
+        log.info("[auth] {} 通过 GitHub 登录成功（{}）", u.getUsername(), glogin);
+        return s;
+    }
+
+    /** 三方登录首次建号：走与邮箱注册一样的开关与用户名规则，口令随机（只走 GitHub） */
+    private User registerByGithub(GitHubProfile profile, String email) {
+        if (!props.getAuth().isRegistrationEnabled()) {
+            throw new IllegalArgumentException("注册入口已关闭，且该 GitHub 账号尚未绑定系统账号，请联系管理员");
+        }
+        String name = checkUsername(email);
+        if (users.findByUsername(name) != null) {
+            // 并发下两边同时注册，后到的走补绑而不是建号
+            User exist = users.findByUsername(name);
+            users.bindGithub(exist.getId(), profile.getId().trim(),
+                    profile.getLogin() == null ? "" : profile.getLogin().trim());
+            return exist;
+        }
+        User nu = new User();
+        nu.setUsername(name);
+        nu.setRole(User.ROLE_USER);
+        nu.setEnabled(true);
+        String salt = PasswordHasher.newSalt();
+        nu.setPasswordSalt(salt);
+        // 随机不可用口令：三方登录用户不设口令，避免留下「没人知道但能爆破」的口令面
+        nu.setPasswordHash(PasswordHasher.hash(UUID.randomUUID().toString(), salt));
+        nu.setGithubId(profile.getId().trim());
+        nu.setGithubLogin(profile.getLogin() == null ? "" : profile.getLogin().trim());
+        users.save(nu);
+        log.info("[auth] 新用户经 GitHub 注册 {}（GitHub: {}）", name, nu.getGithubLogin());
+        registrationNotifier.notifyRegistered(nu);
+        return nu;
     }
 
     /** 本人改密：必须验证旧密码 */

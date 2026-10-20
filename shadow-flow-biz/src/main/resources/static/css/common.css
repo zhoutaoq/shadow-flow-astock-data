@@ -1436,6 +1436,33 @@ button:disabled { box-shadow: none; }
     animation: auth-spin .7s linear infinite;
 }
 @keyframes auth-spin { to { transform: rotate(360deg); } }
+
+/* GitHub 三方登录：或字分隔线 + 整宽描边按钮（token 进 cookie，与口令登录同一条路） */
+.auth-oauth { margin-top: 14px; }
+.auth-oauth[hidden] { display: none; }
+.auth-oauth-sep {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 12px;
+    font-size: var(--fs-12); color: var(--text-dim);
+}
+.auth-oauth-sep i { flex: 1; height: 1px; background: var(--border); }
+.auth-github {
+    width: 100%;
+    height: 40px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border-radius: var(--r-ctl);
+    font-size: var(--fs-14);
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    box-shadow: none;
+}
+.auth-github:hover {
+    background: var(--bg-hover);
+    border-color: var(--text-dim);
+    transform: none;
+}
+.auth-github svg { width: 17px; height: 17px; }
 .auth-foot {
     margin-top: 14px;
     text-align: center;

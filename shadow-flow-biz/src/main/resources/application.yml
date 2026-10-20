@@ -77,6 +77,29 @@ app:
     session-hours: 12
     # 是否开放注册；false 时只能由超管建账号
     registration-enabled: true
+    # ============================================================
+    # GitHub 三方登录（OAuth 授权码流程）。
+    # 是否生效不看这里看 app.env：GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET
+    # 有一个没配，前端就不显示 GitHub 按钮、接口直接拒绝。
+    # enabled 是给运维的总闸 —— 临时下线三方登录拨 false 即可，不用动凭据。
+    # ============================================================
+    github:
+      enabled: true
+      # OAuth App 的 Client ID / Secret：真实值放 classpath 的 app.env（不入库），
+      # 由启动类 AppEnv.load() 装载成系统属性，这里只留占位符。
+      client-id: ${GITHUB_CLIENT_ID:}
+      client-secret: ${GITHUB_CLIENT_SECRET:}
+      # 回调地址。留空 = 按当前请求动态推导（<当前站点>/api/auth/github/callback）。
+      # 必须与 GitHub 后台登记的 Authorization callback URL 逐字符一致；
+      # 反代后推导出的 scheme/host 不准时，在这里写死绝对地址。
+      redirect-uri: ""
+      # 申请的授权范围：用户资料 + 邮箱（邮箱用于匹配/建号，公开邮箱拿不到时用 noreply 兜底）
+      scope: "read:user user:email"
+      # GitHub 站点与 API 地址；GitHub Enterprise 换成自己的域名
+      web-base-url: "https://github.com"
+      api-base-url: "https://api.github.com"
+      connect-timeout-ms: 10000
+      read-timeout-ms: 10000
   # ============================================================
   # 股票名称跳转：全站股票名称加超链接，点击开新窗口
   #
