@@ -364,6 +364,26 @@ table.atable tbody tr:last-child td { border-bottom: none; }
     font-size: var(--fs-11);
 }
 
+/* 历史视图的日期分组头：日期 + 当天笔数 / 已实现小计 */
+.arec-day {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+    padding: 6px 0 5px;
+    border-bottom: 1px dashed var(--border-soft);
+    font-size: var(--fs-11);
+    color: var(--text-dim);
+}
+
+.arec-day:first-child { margin-top: 0; }
+
+.arec-day-d {
+    color: var(--text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 760px) {
     .arec-head { display: none; }
 }
@@ -395,6 +415,10 @@ table.atable tbody tr:last-child td { border-bottom: none; }
 
 .aseg button.on.buy { background: var(--up); }
 .aseg button.on.sell { background: var(--down); }
+
+/* 卡片页头里的小号分段控件（操作记录「当天 / 历史」）：跟按钮一档高度，不撑高页头 */
+.aseg-sm { height: 28px; }
+.aseg-sm button { padding: 0 12px; font-size: var(--fs-12); }
 
 .arec-list { display: flex; flex-direction: column; gap: 0; }
 

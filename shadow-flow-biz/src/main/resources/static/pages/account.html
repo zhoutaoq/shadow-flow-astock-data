@@ -6,7 +6,7 @@
     <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
     <title>我的账户</title>
     <link rel="stylesheet" href="/css/common.css?v=20261020a">
-    <link rel="stylesheet" href="/css/account.css?v=20261019a">
+    <link rel="stylesheet" href="/css/account.css?v=20261020b">
 </head>
 <body>
 <header class="topbar">
@@ -112,12 +112,14 @@
                 </div>
             </section>
 
-            <!-- ③ 账户走势（v1.6.7）：1 分钟总市值曲线；缺失分钟按前值补平成横线 -->
+            <!-- ③ 账户走势（v1.6.7）：1 分钟盈亏曲线；缺失分钟按前值补平成横线。
+                 纵轴看的是「今天赚了多少」，不是市值本身 —— 市值万位数上下跳几十块，
+                 屏幕上根本看不出盈亏往哪走 -->
             <section class="acard">
                 <header class="acard-hd">
                     <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3.5-4.5L14 12l4-5.5"/></svg></span>
                     <h2>账户走势</h2>
-                    <span class="acard-note" id="trendNote">1 分钟 · 总市值</span>
+                    <span class="acard-note" id="trendNote">1 分钟 · 当日盈亏</span>
                     <div class="acard-acts">
                         <input type="date" id="trendDate" class="atrend-date" onchange="onTrendDateChange(this.value)">
                         <button class="btn-ghost btn-sm" id="trendTodayBtn" onclick="pickTrendToday()">今天</button>
@@ -165,12 +167,19 @@
                 </div>
             </section>
 
-            <!-- ⑤ 操作记录：随账户一起落盘。录入走「＋ 添加操作记录」弹窗（按钮在持仓列表卡头） -->
+            <!-- ⑤ 操作记录：随账户一起落盘。录入走「＋ 添加操作记录」弹窗（按钮在持仓列表卡头）。
+                 默认只列当天（盘中最常看的就是今天做了哪几笔），往期要按「历史」才铺开 -->
             <section class="acard">
                 <header class="acard-hd">
                     <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span>
                     <h2>操作记录</h2>
                     <span class="acard-note" id="recCount"></span>
+                    <div class="acard-acts">
+                        <div class="aseg aseg-sm" id="recScope">
+                            <button type="button" data-scope="today" class="on" onclick="setRecScope('today')">当天</button>
+                            <button type="button" data-scope="all" onclick="setRecScope('all')">历史</button>
+                        </div>
+                    </div>
                 </header>
                 <div class="acard-bd">
                     <div class="arec-head">
@@ -179,7 +188,7 @@
                         <span>成交价</span>
                         <span>数量</span>
                         <span>当日已实现</span>
-                        <span>日期</span>
+                        <span id="recDateHead">时间</span>
                     </div>
                     <div class="arec-list" id="recList"></div>
                 </div>
@@ -202,6 +211,8 @@
     let recAction = 'buy';   // 「添加操作记录」弹窗里当前选中的方向
     let posPicker = null;    // 持仓弹窗里的选择器
     let recPicker = null;    // 「添加操作记录」弹窗里的选择器
+    let recScope = 'today';  // 操作记录视图：today = 只看当天（默认） / all = 全部历史
+    let recRows = [];        // 最近一次拉到的全量记录（新的在前），切换视图不再重复请求
 
     /** 二级视图的 3 秒自动刷新（v1.6.7 第 ② 条）：句柄 / 在途标记 / 计数（每 10 跳刷一次走势） */
     let refreshTimer = null;
@@ -322,6 +333,8 @@
     }
 
     async function enterAccount(id) {
+        // 换一本账回到「当天」；同一本账重载（重新载入 / 刚记完一笔）保持当前视图
+        if (id !== curId) recScope = 'today';
         curId = id;
         const [accR, sumR] = await Promise.all([
             get('/api/account?accountId=' + id),
@@ -630,10 +643,12 @@
      * 把稀疏的采样点铺到分钟轴上：<b>缺失的分钟一律用前一个值补</b>（画成横线），
      * 头部缺失（服务中途才起来）用第一个有值的点往前补。
      *
+     * @param field 取哪个字段：dayProfit（当日盈亏，纵轴画的就是它）/ totalValue
      * @return 与轴等长的数值数组；一个点都没有时返回 null
      */
-    function trendValues(points, endIdx) {
+    function trendValues(points, endIdx, field) {
         const axis = trendAxis();
+        const key = field || 'dayProfit';
         trendMap = new Map();
         (points || []).forEach(function (p) {
             if (p && p.minute) trendMap.set(p.minute, p);
@@ -642,8 +657,8 @@
         let last = null;
         for (let i = 0; i <= endIdx; i++) {
             const p = trendMap.get(axis[i]);
-            if (p && p.totalValue !== null && p.totalValue !== undefined) {
-                last = Number(p.totalValue);
+            if (p && p[key] !== null && p[key] !== undefined) {
+                last = Number(p[key]);
             }
             values.push(last);
         }
@@ -669,10 +684,15 @@
         return c;
     }
 
-    function shortMoney(v) {
+    /** 纵轴盈亏简写：带正负号（盈亏有方向，轴上的数字不标符号等于没说），万以上折成「万」 */
+    function shortMoneySigned(v) {
         const n = Number(v);
         if (!isFinite(n)) return '—';
-        return Math.abs(n) >= 10000 ? (n / 10000).toFixed(2) + '万' : n.toFixed(2);
+        const sign = n > 0 ? '+' : (n < 0 ? '-' : '');
+        const a = Math.abs(n);
+        if (a >= 10000) return sign + (a / 10000).toFixed(2) + '万';
+        if (a >= 1000) return sign + a.toFixed(0);
+        return sign + a.toFixed(2);
     }
 
     function renderTrend(data) {
@@ -682,7 +702,8 @@
         const date = (data && data.date) || trendDate || today();
         const endIdx = trendEndIndex(date);
         const axis = trendAxis().slice(0, endIdx + 1);
-        const values = endIdx >= 0 ? trendValues((data && data.points) || [], endIdx) : null;
+        // 纵轴画「当日盈亏」（元），不是总市值：市值里万位数上下浮动几十块，涨跌看不出来
+        const values = endIdx >= 0 ? trendValues((data && data.points) || [], endIdx, 'dayProfit') : null;
 
         if (!values || !values.length) {
             if (trendChart) trendChart.clear();
@@ -691,7 +712,7 @@
             empty.textContent = date === today()
                 ? '今天还没有走势数据：开盘后每分钟记一个点'
                 : '这一天没有走势数据（走势自 v1.6.7 起按分钟采集，只保留最近 45 天）';
-            note.textContent = date + ' · 1 分钟 · 总市值';
+            note.textContent = date + ' · 1 分钟 · 当日盈亏';
             return;
         }
 
@@ -704,9 +725,25 @@
 
         const up = themeVar('--up', '#d32029');
         const down = themeVar('--down', '#0f8a4d');
-        const first = values.find(function (v) { return v !== null; });
-        const last = values[values.length - 1];
-        const color = last >= first ? up : down;
+        const last = Number(values[values.length - 1]) || 0;
+        // 盈利红、亏损绿：以 0 为界，跟金额的正负一致（不看首尾差）
+        const color = last >= 0 ? up : down;
+
+        // 轴区间必须含 0（0 就是「不赚不亏」的基准线），上下各留一点余量；
+        // 全天都是 0 的时候区间会塌成一条线，这里兜成 ±1
+        let lo = 0;
+        let hi = 0;
+        values.forEach(function (v) {
+            const n = Number(v);
+            if (!isFinite(n)) return;
+            if (n < lo) lo = n;
+            if (n > hi) hi = n;
+        });
+        if (lo === 0 && hi === 0) {
+            lo = -1;
+            hi = 1;
+        }
+        const pad = (hi - lo) * 0.08;
 
         trendChart.setOption({
             animation: false,
@@ -721,12 +758,13 @@
                     const i = ps[0].dataIndex;
                     const minute = axis[i];
                     const p = trendMap.get(minute);
+                    const v = Number(ps[0].value) || 0;
                     let html = '<div style="font-variant-numeric:tabular-nums">' + esc(minute)
-                        + '　总市值 <b>' + money(ps[0].value) + '</b></div>';
-                    if (p && p.dayProfit !== null && p.dayProfit !== undefined) {
-                        const d = Number(p.dayProfit);
-                        html += '<div style="margin-top:2px;color:' + (d >= 0 ? up : down)
-                            + '">当日收益 ' + moneySigned(p.dayProfit) + '</div>';
+                        + '　当日盈亏 <b style="color:' + (v >= 0 ? up : down) + '">'
+                        + moneySigned(v) + '</b></div>';
+                    if (p && p.totalValue !== null && p.totalValue !== undefined) {
+                        html += '<div style="margin-top:2px;color:' + themeVar('--text-dim', '#6b7280')
+                            + '">总市值 ' + money(p.totalValue) + '</div>';
                     }
                     return html;
                 }
@@ -748,11 +786,13 @@
             yAxis: {
                 type: 'value',
                 scale: true,
+                min: lo - pad,
+                max: hi + pad,
                 splitLine: {lineStyle: {color: themeVar('--border-soft', '#e8ebf0')}},
                 axisLabel: {
                     color: themeVar('--text-dim', '#6b7280'),
                     fontSize: 11,
-                    formatter: shortMoney
+                    formatter: shortMoneySigned
                 }
             },
             series: [{
@@ -767,11 +807,19 @@
                         {offset: 0, color: withAlpha(color, 0.26)},
                         {offset: 1, color: withAlpha(color, 0)}
                     ])
+                },
+                // 0 轴单独描一条：一眼看出现在是赚还是亏
+                markLine: {
+                    silent: true,
+                    symbol: 'none',
+                    label: {show: false},
+                    lineStyle: {color: themeVar('--border', '#d0d5dd'), width: 1, type: 'solid'},
+                    data: [{yAxis: 0}]
                 }
             }]
         }, true);
 
-        note.textContent = date + ' · ' + values.length + ' 分钟 · 总市值';
+        note.textContent = date + ' · ' + values.length + ' 分钟 · 当日盈亏';
     }
 
     /** 拉某一天的走势；失败静默（图留着上一次的样子，比清空更不容易误导） */
@@ -1202,33 +1250,126 @@
         return d || t;
     }
 
-    async function loadRecords() {
-        const r = await get('/api/account/records?accountId=' + curId);
+    /** 这条记录算在哪一天：成交日期优先；v1.5.6 之前的老数据没有 tradeDate，退回录入时刻 */
+    function recDayOf(x) {
+        if (!x) return '';
+        if (x.tradeDate) return String(x.tradeDate).slice(0, 10);
+        return x.time ? String(x.time).slice(0, 10) : '';
+    }
+
+    /** 只要时刻（当天视图里日期列不必每行重复一遍今天） */
+    function recClock(x) {
+        const t = String((x && x.time) || '');
+        return t.length >= 19 ? t.slice(11) : (t || recDayOf(x));
+    }
+
+    /**
+     * 切换「当天 / 历史」。
+     *
+     * <p>过滤放在页面做：每本账的操作记录最多留 200 条（后端 trimRecords），
+     * 全量一次拿回来在手上切，比每换一次视图再发一次请求更快，也省掉给两套仓储加日期条件。
+     */
+    function setRecScope(scope) {
+        recScope = scope === 'all' ? 'all' : 'today';
+        const box = document.getElementById('recScope');
+        if (box) {
+            box.querySelectorAll('button').forEach(function (b) {
+                b.classList.toggle('on', b.getAttribute('data-scope') === recScope);
+            });
+        }
+        const head = document.getElementById('recDateHead');
+        if (head) head.textContent = recScope === 'today' ? '时间' : '日期';
+        renderRecords(recRows);
+    }
+
+    /** 一组记录里卖出的已实现盈亏合计：组头小计，便于回看那天赚亏多少 */
+    function realizedSum(rows) {
+        let sum = 0;
+        let has = false;
+        (rows || []).forEach(function (x) {
+            if (x.action !== 'sell') return;
+            const n = Number(x.realizedProfit);
+            if (x.realizedProfit === null || x.realizedProfit === undefined || isNaN(n)) return;
+            sum += n;
+            has = true;
+        });
+        return has ? ' · 已实现 ' + moneySigned(sum) : '';
+    }
+
+    function recRowHtml(x, onlyClock) {
+        const buy = x.action === 'buy';
+        // 「当天」标记：买入 = 这笔量按买入价算当日盈亏；卖出 = 卖的是当天买入的那部分
+        const same = x.sameDay ? '<span class="arec-tag">当天</span>' : '';
+        return '<div class="arec-row">'
+            + '<span class="arec-act ' + (buy ? 'buy' : 'sell') + '">' + (buy ? '买入' : '卖出') + '</span>'
+            + '<span class="arec-time">'
+            + stockLinkHtml(x.code, x.name, {text: x.name || x.code})
+            + ' · ' + esc(x.code) + same + '</span>'
+            + '<span>' + money(x.price) + ' 元</span>'
+            + '<span>' + fmtNum(x.quantity, 0) + ' 股</span>'
+            + '<span class="' + dir(x.realizedProfit) + '">'
+            + (buy ? '—' : moneySigned(x.realizedProfit)) + '</span>'
+            + '<span class="arec-time">' + esc(onlyClock ? recClock(x) : recordWhen(x)) + '</span>'
+            + '</div>';
+    }
+
+    function renderRecords(rows) {
         const box = document.getElementById('recList');
         if (!box) return;
-        const rows = (r && r.success && r.data) ? r.data : [];
+        const all = rows || [];
+        const day = today();
         const note = document.getElementById('recCount');
-        if (note) note.textContent = rows.length ? rows.length + ' 条' : '';
-        if (!rows.length) {
+
+        if (recScope === 'today') {
+            const todays = all.filter(function (x) { return recDayOf(x) === day; });
+            if (note) note.textContent = all.length ? '当天 ' + todays.length + ' 笔 · 共 ' + all.length + ' 笔' : '';
+            if (!todays.length) {
+                box.innerHTML = '<div class="arec-empty">今天还没有操作记录，切到「历史」可以看往期</div>';
+                return;
+            }
+            box.innerHTML = todays.map(function (x) { return recRowHtml(x, true); }).join('');
+            return;
+        }
+
+        // 历史：按成交日期分组，日期新的在上；组内按录入时刻倒序
+        const sorted = all.slice().sort(function (a, b) {
+            const da = recDayOf(a);
+            const db = recDayOf(b);
+            if (da !== db) return da < db ? 1 : -1;
+            return String(b.time || '').localeCompare(String(a.time || ''));
+        });
+        if (note) {
+            note.textContent = all.length
+                ? '全部 ' + all.length + ' 笔' + (all.length >= 200 ? '（每账户最多留 200 条）' : '')
+                : '';
+        }
+        if (!sorted.length) {
             box.innerHTML = '<div class="arec-empty">这本账户还没有操作记录</div>';
             return;
         }
-        box.innerHTML = rows.map(x => {
-            const buy = x.action === 'buy';
-            // 「当天」标记：买入 = 这笔量按买入价算当日盈亏；卖出 = 卖的是当天买入的那部分
-            const same = x.sameDay ? '<span class="arec-tag">当天</span>' : '';
-            return '<div class="arec-row">'
-                + '<span class="arec-act ' + (buy ? 'buy' : 'sell') + '">' + (buy ? '买入' : '卖出') + '</span>'
-                + '<span class="arec-time">'
-                + stockLinkHtml(x.code, x.name, {text: x.name || x.code})
-                + ' · ' + esc(x.code) + same + '</span>'
-                + '<span>' + money(x.price) + ' 元</span>'
-                + '<span>' + fmtNum(x.quantity, 0) + ' 股</span>'
-                + '<span class="' + dir(x.realizedProfit) + '">'
-                + (buy ? '—' : moneySigned(x.realizedProfit)) + '</span>'
-                + '<span class="arec-time">' + esc(recordWhen(x)) + '</span>'
+
+        let html = '';
+        let i = 0;
+        while (i < sorted.length) {
+            const d = recDayOf(sorted[i]);
+            const group = [];
+            while (i < sorted.length && recDayOf(sorted[i]) === d) {
+                group.push(sorted[i]);
+                i++;
+            }
+            html += '<div class="arec-day">'
+                + '<span class="arec-day-d">' + esc(d || '未标注日期') + (d === day ? ' · 今天' : '') + '</span>'
+                + '<span class="arec-day-n">' + group.length + ' 笔' + realizedSum(group) + '</span>'
                 + '</div>';
-        }).join('');
+            html += group.map(function (x) { return recRowHtml(x, false); }).join('');
+        }
+        box.innerHTML = html;
+    }
+
+    async function loadRecords() {
+        const r = await get('/api/account/records?accountId=' + curId);
+        recRows = (r && r.success && r.data) ? r.data : [];
+        setRecScope(recScope);
     }
 
     /**
@@ -1504,6 +1645,8 @@
             }
             document.getElementById('recMask').classList.remove('show');
             toast(r.message || '已生效', 'ok');
+            // 刚记的这一笔必须能看见：补录的是历史日期就自动切到「历史」，别让用户以为没记上
+            recScope = body.date === today() ? 'today' : 'all';
             await enterAccount(curId);
         } finally {
             btn.disabled = false;
