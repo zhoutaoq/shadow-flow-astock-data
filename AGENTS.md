@@ -68,12 +68,27 @@ git config ai.model dsv4.1flash      # 每位使用者按自己用的模型改
 
 | 场景 | 做法 |
 | --- | --- |
-| 应用密钥 | 只放 `shadow-flow-biz/src/main/resources/app.env`（已 gitignore，随包走） |
+| 应用密钥 | 只放**部署机器部署目录**的 `app.env`（如 `/home/stock-backtesting/app.env`，`chmod 600`）。**严禁打进 jar**：`shadow-flow-biz/pom.xml` 已 `exclude` 该文件，别去掉 |
 | 部署凭据 | 只放 `sh/deploy.env`（已 gitignore） |
 | 配置文件 | 一律用 `${ENV_NAME:}` 空兜底占位符，**不允许**写明文默认值 |
 | 模板文件 | `*.env.example` 只写「在此填写…」类占位符 |
 | 校验/测试脚本 | 真实值从环境变量或本机 `app.env` 读取；取不到就 **SKIP**，禁止把真实值写进源码当「探针」 |
 | 新环境接入 | 由使用者从 `*.example` 复制后自行填写，仓库里永远只有模板 |
+
+**为什么密钥必须留在机器上（v1.7.3 定案）**：`app.env` 曾经打进 jar、由 classpath 装载，
+于是「谁打包谁决定线上凭据」—— GitHub Actions 用仓库 Secret 打一份、本地用本机文件打一份，
+两边互相覆盖，线上凭据随发布方式漂移（2026-10-20 GitHub 三方登录莫名变回未开通就是这么来的）。
+现在：包内不含 `app.env`，`sh/remote.sh` 启动前从部署目录的 `app.env` 逐行 `export`，
+`AppEnv` 也优先读外部文件（`-Dapp.env.file` → `APP_ENV_FILE` → `./app.env` → classpath 兜底）。
+**任何「把密钥写回 resources 再打包」的改动都属于回归，必须驳回。**
+
+因此 Actions 里那步「用 `secrets.APP_ENV` 写 app.env」已删除 —— 流水线不再参与决定凭据。
+首装或换机器时，只做一次：
+
+```bash
+scp shadow-flow-biz/src/main/resources/app.env root@<host>:/home/stock-backtesting/app.env
+ssh root@<host> "chmod 600 /home/stock-backtesting/app.env"
+```
 
 提交前自检：
 

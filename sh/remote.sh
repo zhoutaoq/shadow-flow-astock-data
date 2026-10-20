@@ -9,8 +9,11 @@
 #
 # 配置来源：
 #   server.env  部署目录 / JDK 路径 / JVM 参数 / 启动参数（入库），本脚本解析后 export
-#   app.env     应用密钥（不入库）—— v1.6.4 起打进 jar 随包走，由启动类的
-#               AppEnv.load() 从 classpath 装载成系统属性，与本脚本无关
+#   app.env     应用密钥（不入库，**只存在于部署机器上**）—— 本脚本启动前把它逐行 export 成
+#               进程环境变量，application.yml 里的 ${XXX:} 占位符直接就能解析。
+#               v1.7.3 起 app.env 不再打进 jar：凭据属于机器，不属于构建产物，
+#               否则「谁打包谁决定线上凭据」（Actions 用 Secret 打一份、本地用本机文件打一份，
+#               互相覆盖，2026-10-20 GitHub 三方登录莫名变回未开通就是这么来的）。
 #
 # 职责: 杀旧进程 -> 换新 jar -> setsid 后台启动 -> 探活 -> 打印状态
 #   stop    仅停掉运行中的 java（不换 jar）
@@ -25,24 +28,36 @@ DIR="${REMOTE_DIR:-/home/stock-backtesting}"
 
 # ---- 读取 server.env（cmd 的 set "K=V" 格式，逐行解析；REM / @echo off / 空行忽略）----
 # 解析出的键一律 export 进本进程，start_new 起的 java 进程继承它们。
-# 应用密钥（DB_PASSWORD / ADMIN_PASSWORD / SHADOWFLOW_API_TOKEN / DINGTALK_WEBHOOK）
-# 自 v1.6.4 起不再走环境变量：app.env 在 jar 里，由启动类的 AppEnv.load() 装载。
+# 两种写法都认：set "K=V"（Windows 风格，server.env 与 app.env 都是）与裸 K=V。
+# REM / # / @echo off / 空行一律跳过；容忍 CRLF、BOM、行尾空白。
 load_env_file() {
   local file="$1" line body
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"                       # 容忍 CRLF
+    line="${line#$'\xEF\xBB\xBF'}"             # 容忍 BOM
     case "$line" in
-      'set "'*) ;;                             # 只认 set "K=V"
-      *) continue ;;
+      ''|'#'*|'REM '*|'rem '*|'@echo off'*|'@echo OFF'*) continue ;;
+      'set "'*|'SET "'*)
+        body="${line#set }"                    # -> "K=V"
+        body="${body#SET }"
+        body="${body%\"}"                      # -> "K=V
+        body="${body#\"}"                      # -> K=V
+        ;;
+      *) body="$line" ;;                       # 裸 K=V
     esac
-    body="${line#set }"                        # -> "K=V"
-    body="${body%\"}"                          # -> "K=V
-    body="${body#\"}"                          # -> K=V
     case "$body" in
       *=*) ;;
       *) continue ;;
     esac
-    export "${body%%=*}=${body#*=}"
+    _ek="${body%%=*}"
+    _ev="${body#*=}"
+    # 占位符（「在此填写…」）与空值一律不导出：否则 Spring 拿到的就是
+    # 「在此填写数据库口令」这种废话值，而不是「未配置」——
+    # jar 内那份由 AppEnv 解析时有同样的过滤，这里必须保持同一口径。
+    case "$_ev" in
+      ''|'在此填写'*) continue ;;
+    esac
+    export "${_ek}=${_ev}"
   done < "$file"
 }
 
@@ -53,7 +68,21 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 load_env_file "$ENV_FILE"
-echo "[env] 已载入 server.env（app.env 在 jar 内由启动类装载，不经这里）"
+echo "[env] 已载入 server.env"
+
+# ---- 读取 app.env：应用密钥，只存在这台机器上，不进 jar ----
+# 导出的变量会被 java 进程继承，application.yml 的 ${XXX:} 占位符直接解析。
+# 同时也告诉 AppEnv 去哪里找同一个文件（它还会从文件读一遍，值同源，不冲突）。
+APP_ENV_FILE="$DIR/app.env"
+if [ -f "$APP_ENV_FILE" ]; then
+  load_env_file "$APP_ENV_FILE"
+  export APP_ENV_FILE
+  echo "[env] 已载入 app.env（密钥来自本机文件，不随 jar 发布）"
+else
+  echo "[env] [WARN] 缺少 $APP_ENV_FILE"
+  echo "        密钥文件应当单独放在服务器上（chmod 600），不随 jar 发布。"
+  echo "        首次部署请把 app.env 放到该路径，否则服务会因缺密钥启动失败。"
+fi
 
 # ---- 必需参数：缺了直接报错退出，避免用空值启出一个坏进程 ----
 : "${JAVA:?server.env 里缺少 JAVA}"

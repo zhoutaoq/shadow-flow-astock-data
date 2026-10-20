@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.zhoutaoq</groupId>
         <artifactId>shadow-flow-parent</artifactId>
-        <version>1.7.2</version>
+        <version>1.7.3</version>
     </parent>
 
     <artifactId>shadow-flow-biz</artifactId>
@@ -63,6 +63,11 @@
                 <filtering>false</filtering>
                 <excludes>
                     <exclude>build-info.properties</exclude>
+                    <!-- app.env 是密钥，不进构建产物：谁打包谁决定凭据的老毛病就是它造成的
+                         （GitHub Actions 用 Secret 打一份、本地用本机文件打一份，两边互相覆盖）。
+                         运行期由 remote.sh 从部署目录的 app.env 注入环境变量，
+                         本地开发则由 AppEnv 从工作目录的 ./app.env 读。 -->
+                    <exclude>app.env</exclude>
                 </excludes>
             </resource>
             <!-- 只有这一个文件做变量替换：版本号取 project.version，构建时间取

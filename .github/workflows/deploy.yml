@@ -44,18 +44,9 @@ jobs:
           java-version: '8'
           cache: maven
 
-      - name: 写入 app.env
-        env:
-          APP_ENV: ${{ secrets.APP_ENV }}
-        run: |
-          set -e
-          if [ -z "$APP_ENV" ]; then
-            echo "::error::缺少仓库 Secret APP_ENV"
-            exit 1
-          fi
-          printf '%s' "$APP_ENV" > shadow-flow-biz/src/main/resources/app.env
-          echo "app.env 已写入，键值行数: $(grep -c '^set \"' shadow-flow-biz/src/main/resources/app.env)"
-
+      # v1.7.3 起不再往包里写 app.env：密钥属于部署机器，不属于构建产物。
+      # 跳过这一步后，Actions 发版和本地发布产出的包完全一致，
+      # 谁发都不会把线上凭据冲掉（服务器上的 app.env 由 remote.sh 在启动前注入）。
       - name: Maven 打包
         run: mvn -B clean package -DskipTests
 
