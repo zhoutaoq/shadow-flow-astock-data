@@ -169,6 +169,8 @@ sh/deploy.env
 sh/plink.exe
 sh/pscp.exe
 shadow-flow-biz/src/main/resources/app.env
+# 本地开发用的密钥文件（放在项目根，AppEnv 从工作目录读）：含数据库口令/超管口令/发信授权码，绝不入库
+/app.env
 
 # 构建产物 / 日志
 target/

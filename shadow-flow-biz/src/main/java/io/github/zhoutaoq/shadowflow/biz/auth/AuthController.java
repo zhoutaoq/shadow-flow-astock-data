@@ -1,5 +1,6 @@
 package io.github.zhoutaoq.shadowflow.biz.auth;
 
+import io.github.zhoutaoq.shadowflow.biz.auth.mail.EmailCodeService;
 import io.github.zhoutaoq.shadowflow.biz.auth.model.User;
 import io.github.zhoutaoq.shadowflow.biz.auth.model.UserView;
 import io.github.zhoutaoq.shadowflow.biz.model.ApiResponse;
@@ -31,28 +32,51 @@ public class AuthController {
     private final AuthService authService;
     private final SessionService sessions;
     private final GitHubOAuthService github;
+    private final EmailCodeService emailCodes;
 
-    public AuthController(AuthService authService, SessionService sessions, GitHubOAuthService github) {
+    public AuthController(AuthService authService, SessionService sessions, GitHubOAuthService github,
+                          EmailCodeService emailCodes) {
         this.authService = authService;
         this.sessions = sessions;
         this.github = github;
+        this.emailCodes = emailCodes;
     }
 
-    /** 注册：用户名必须是邮箱且唯一，密码 ≥6 位且含字母和数字 */
+    /**
+     * 发送邮箱验证码（v1.7.4）：注册与登录各用一个场景。
+     *
+     * <p>放在匿名可用的清单里 —— 注册本来就发生在登录之前；登录场景对「账号不存在」
+     * 一律回「已发送」且不发信（防探测），限频与试错上限在 {@link EmailCodeService} 里。
+     */
+    @PostMapping("/email-code")
+    public ApiResponse<Map<String, Object>> emailCode(@RequestBody(required = false) Map<String, Object> body) {
+        String username = str(body, "username");
+        String scene = str(body, "scene");
+        String message = authService.sendEmailCode(username,
+                "register".equals(scene) ? EmailCodeService.SCENE_REGISTER : EmailCodeService.SCENE_LOGIN);
+        return ApiResponse.ok(null, message);
+    }
+
+    /** 注册：用户名必须是邮箱且唯一，密码 ≥6 位且含字母和数字，并带邮箱验证码；成功即登录 */
     @PostMapping("/register")
     public ApiResponse<Map<String, Object>> register(@RequestBody(required = false) Map<String, Object> body) {
         String username = str(body, "username");
         String password = str(body, "password");
-        User u = authService.register(username, password);
+        User u = authService.register(username, password, str(body, "code"));
+        // 注册成功直接签发登录态：验证码已经证明邮箱归属，没必要再让他收第二条码登录
+        SessionService.Session s = authService.openSessionAfterRegister(u);
         Map<String, Object> data = new LinkedHashMap<>();
+        data.put("token", s.getToken());
+        data.put("expiresInSeconds", s.expiresInSeconds());
         data.put("user", UserView.of(u));
-        return ApiResponse.ok(data, "注册成功，请登录");
+        return ApiResponse.ok(data, "注册成功");
     }
 
-    /** 登录，成功返回令牌 */
+    /** 登录，成功返回令牌；邮箱账号需同时带上验证码 */
     @PostMapping("/login")
     public ApiResponse<Map<String, Object>> login(@RequestBody(required = false) Map<String, Object> body) {
-        SessionService.Session s = authService.login(str(body, "username"), str(body, "password"));
+        SessionService.Session s = authService.login(str(body, "username"), str(body, "password"),
+                str(body, "code"));
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("token", s.getToken());
         data.put("expiresInSeconds", s.expiresInSeconds());
@@ -102,6 +126,8 @@ public class AuthController {
         data.put("registrationEnabled", authService.registrationEnabled());
         // GitHub 三方登录是否开通：登录弹窗据此决定显不显示 GitHub 按钮
         data.put("githubLoginEnabled", github.isConfigured());
+        // 邮箱验证码规则（是否必填、冷却秒数、有效期）：登录弹窗按它决定显不显示验证码行
+        data.put("emailCode", emailCodes.rules());
         data.put("rules", AuthService.rules());
         return ApiResponse.ok(data);
     }

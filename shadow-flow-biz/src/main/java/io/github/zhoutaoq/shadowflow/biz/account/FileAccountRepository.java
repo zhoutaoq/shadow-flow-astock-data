@@ -9,6 +9,7 @@ import io.github.zhoutaoq.shadowflow.biz.store.DataDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import io.github.zhoutaoq.shadowflow.biz.store.Reloadable;
 import org.springframework.stereotype.Repository;
 
 import javax.annotation.PostConstruct;
@@ -59,7 +60,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Repository
 @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
-public class FileAccountRepository implements AccountRepository {
+public class FileAccountRepository implements AccountRepository, Reloadable {
 
     private static final Logger log = LoggerFactory.getLogger(FileAccountRepository.class);
 
@@ -92,6 +93,37 @@ public class FileAccountRepository implements AccountRepository {
     @PostConstruct
     public void init() {
         log.info("[account] 无数据库模式：账户 / 持仓 / 操作记录落 {}", dataDir.file("account").toAbsolutePath());
+    }
+
+    /**
+     * 数据迁移导入后重载：清掉每个用户的内存快照，再整目录重读一遍。
+     *
+     * <p>三个 id 游标也要重算 —— 导入的账户 / 持仓 / 记录可能带着比现有值更大的 id，
+     * 游标不推过去，下一次「新建账户 / 加一笔」就会跟导入的行撞 id。
+     */
+    @Override
+    public synchronized void reloadData() {
+        byUser.clear();
+        accountSeq.set(0);
+        positionSeq.set(0);
+        recordSeq.set(0);
+        for (Long userId : listUserIds()) {
+            AccountFile f = load(userId);
+            for (Account a : f.accounts) {
+                bump(a.getId(), accountSeq);
+            }
+            for (List<Position> bucket : f.positions.values()) {
+                for (Position p : bucket) {
+                    bump(p.getId() == null ? 0 : p.getId(), positionSeq);
+                }
+            }
+            for (List<TradeRecord> bucket : f.records.values()) {
+                for (TradeRecord r : bucket) {
+                    bump(r.getId(), recordSeq);
+                }
+            }
+        }
+        log.info("[account] 数据迁移后重载账户：{} 个用户", byUser.size());
     }
 
     /* ==================== 账户 ==================== */

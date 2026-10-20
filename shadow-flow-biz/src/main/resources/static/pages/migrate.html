@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+    <title>数据迁移 - 影流数据</title>
+    <link rel="stylesheet" href="/css/common.css?v=20261020c">
+    <style>
+        /* 维度清单：一行一张可选卡片，勾选态靠左边距与边框颜色表达，
+           不用浏览器原生 checkbox —— 原生控件在深浅两套主题下都没法统一。 */
+        .mg-toolbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+        .mg-sum { margin-left: auto; font-size: var(--fs-12); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+        .mg-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+        .mg-row {
+            display: flex; align-items: flex-start; gap: 11px;
+            padding: 11px 13px; cursor: pointer;
+            border: 1px solid var(--border-soft); border-radius: var(--r-lg);
+            background: var(--bg-input);
+            transition: border-color .16s var(--ease-out), background .16s var(--ease-out);
+        }
+        .mg-row:hover { border-color: var(--border); background: var(--bg-hover); }
+        .mg-row.on { border-color: var(--primary); background: var(--bg-tint); }
+        .mg-row.blocked { cursor: not-allowed; opacity: .55; }
+        .mg-row.blocked:hover { border-color: var(--border-soft); background: var(--bg-input); }
+        .mg-box {
+            flex: 0 0 auto; width: 17px; height: 17px; margin-top: 1px;
+            border: 1.5px solid var(--border); border-radius: 5px;
+            display: inline-flex; align-items: center; justify-content: center;
+            color: #fff; background: transparent;
+            transition: background .16s var(--ease-out), border-color .16s var(--ease-out);
+        }
+        .mg-box svg { width: 11px; height: 11px; opacity: 0; transition: opacity .14s var(--ease-out); }
+        .mg-row.on .mg-box { background: var(--primary); border-color: var(--primary); }
+        .mg-row.on .mg-box svg { opacity: 1; }
+        .mg-main { min-width: 0; flex: 1 1 auto; }
+        .mg-name { display: flex; align-items: center; gap: 8px; font-size: var(--fs-13); color: var(--text); }
+        .mg-desc { margin-top: 3px; font-size: var(--fs-11); line-height: 17px; color: var(--text-dim); }
+        .mg-rows { margin-left: auto; flex: 0 0 auto; font-size: var(--fs-12); color: var(--text-dim);
+                   font-variant-numeric: tabular-nums; padding-left: var(--sp-3); }
+        .mg-tag { font-size: var(--fs-11); padding: 1px 7px; border-radius: var(--r-pill);
+                  border: 1px solid var(--border); color: var(--text-dim); white-space: nowrap; }
+        .mg-tag.warn { color: var(--warn); border-color: var(--warn); }
+        .mg-actions { display: flex; gap: var(--sp-2); align-items: center; margin-top: var(--sp-4); flex-wrap: wrap; }
+        /* 导入区：选文件按钮 + 文件名，选中后文件名变正文色 */
+        .mg-pick { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+        .mg-file { font-size: var(--fs-12); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+        .mg-file.on { color: var(--text); }
+        .mg-note {
+            margin-top: var(--sp-3); padding: 10px 12px;
+            border-radius: var(--r-md); font-size: var(--fs-12); line-height: 19px;
+            color: var(--text-dim); background: var(--bg-tint); border: 1px solid var(--border-soft);
+        }
+        .mg-note b { color: var(--text); font-weight: 600; }
+        .mg-result { margin-top: var(--sp-4); }
+        .mg-result[hidden] { display: none; }
+        .mg-sum-line { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--fs-12);
+                       color: var(--text-dim); margin-bottom: var(--sp-2); font-variant-numeric: tabular-nums; }
+        .mg-sum-line b { color: var(--text); font-weight: 600; }
+        .mg-up { color: var(--up); }
+        .mg-empty { padding: 18px; text-align: center; color: var(--text-dim); font-size: var(--fs-12); }
+    </style>
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">影流数据</a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <section class="panel" id="denyPanel" style="display:none">
+        <h2>数据迁移</h2>
+        <div class="msg msg-err" style="display:block" id="denyMsg"></div>
+    </section>
+
+    <div id="mainPanel" style="display:none">
+        <section class="panel">
+            <h2>导出数据</h2>
+            <div class="mg-toolbar">
+                <button class="btn-sm btn-ghost" onclick="selectAll(true)">全选</button>
+                <button class="btn-sm btn-ghost" onclick="selectAll(false)">清空</button>
+                <span class="mg-sum" id="mgSum">已选 0 项</span>
+            </div>
+            <div class="mg-list" id="mgList">
+                <div class="mg-empty">正在读取各维度的数据量…</div>
+            </div>
+            <div class="mg-actions">
+                <button id="btnExport" onclick="doExport()">导出为 zip</button>
+                <span class="mg-file" id="exportHint"></span>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>导入数据</h2>
+            <div class="mg-pick">
+                <input type="file" id="zipInput" accept=".zip,application/zip" style="display:none">
+                <button class="btn-ghost" id="btnPick" onclick="document.getElementById('zipInput').click()">选择 zip 文件</button>
+                <span class="mg-file" id="zipName">未选择文件</span>
+                <button id="btnImport" onclick="doImport()" disabled>开始导入</button>
+            </div>
+            <div class="mg-note">
+                导入是<b>增量</b>的：目标环境没有的数据会新增；主键或唯一键撞上的以<b>包里的数据</b>为准覆盖。
+                包里有、目标环境没有的行不会删任何东西。
+                <br>覆盖会直接改掉现有数据，导入前建议先导出一份当前环境的数据留底。
+            </div>
+            <div class="mg-result" id="mgResult" hidden>
+                <div class="mg-sum-line" id="mgResultSum"></div>
+                <table class="grid">
+                    <thead>
+                    <tr>
+                        <th>维度</th>
+                        <th class="num" style="width:100px">读取</th>
+                        <th class="num" style="width:100px">新增</th>
+                        <th class="num" style="width:100px">覆盖</th>
+                        <th class="num" style="width:100px">未变</th>
+                    </tr>
+                    </thead>
+                    <tbody id="mgResultBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</main>
+
+<script src="/js/common.js?v=20261020c"></script>
+<script>
+    var DIMS = [];
+    var PICKED = {};
+    var ZIP_FILE = null;
+
+    var CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" '
+        + 'stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.6l4.4 4.4L19 7.2"/></svg>';
+
+    function fmt(n) {
+        return (Number(n) || 0).toLocaleString('zh-CN');
+    }
+
+    async function loadDimensions() {
+        var r = await get('/api/admin/migrate/dimensions');
+        if (!r || !r.success) {
+            return;
+        }
+        DIMS = (r.data && r.data.dimensions) || [];
+        // 默认全选可用的维度：多数场景就是「整环境搬一份」，不想搬的再手动去掉
+        DIMS.forEach(function (d) {
+            if (d.available && PICKED[d.key] === undefined) {
+                PICKED[d.key] = true;
+            }
+        });
+        renderDims();
+    }
+
+    function renderDims() {
+        var box = document.getElementById('mgList');
+        if (!DIMS.length) {
+            box.innerHTML = '<div class="mg-empty">没有可迁移的维度</div>';
+            return;
+        }
+        box.innerHTML = DIMS.map(function (d) {
+            var on = !!PICKED[d.key] && d.available;
+            var cls = 'mg-row' + (on ? ' on' : '') + (d.available ? '' : ' blocked');
+            var rows = d.available
+                ? fmt(d.rows) + ' 行'
+                : '<span class="mg-tag warn">当前模式无存量</span>';
+            return '<div class="' + cls + '" data-key="' + esc(d.key) + '"'
+                + (d.available ? '' : ' aria-disabled="true"') + '>'
+                + '<span class="mg-box">' + CHECK_SVG + '</span>'
+                + '<span class="mg-main">'
+                + '<span class="mg-name">' + esc(d.label) + '</span>'
+                + '<span class="mg-desc">' + esc(d.description) + '</span>'
+                + '</span>'
+                + '<span class="mg-rows">' + rows + '</span>'
+                + '</div>';
+        }).join('');
+
+        box.querySelectorAll('.mg-row').forEach(function (row) {
+            row.addEventListener('click', function () {
+                var key = row.getAttribute('data-key');
+                var dim = DIMS.filter(function (x) { return x.key === key; })[0];
+                if (!dim || !dim.available) {
+                    return;
+                }
+                PICKED[key] = !PICKED[key];
+                renderDims();
+            });
+        });
+        paintSum();
+    }
+
+    function paintSum() {
+        var n = 0, rows = 0;
+        DIMS.forEach(function (d) {
+            if (PICKED[d.key] && d.available) {
+                n++;
+                rows += Number(d.rows) || 0;
+            }
+        });
+        document.getElementById('mgSum').textContent = '已选 ' + n + ' 项 · 共 ' + fmt(rows) + ' 行';
+        document.getElementById('btnExport').disabled = n === 0;
+    }
+
+    function selectAll(on) {
+        DIMS.forEach(function (d) {
+            if (d.available) {
+                PICKED[d.key] = on;
+            }
+        });
+        renderDims();
+    }
+
+    /** 从 Content-Disposition 里取文件名（服务端按 RFC 5987 编过码） */
+    function fileNameOf(res) {
+        var cd = res.headers.get('Content-Disposition') || '';
+        var m = /filename\*=UTF-8''([^;]+)/i.exec(cd) || /filename="?([^";]+)"?/i.exec(cd);
+        if (m && m[1]) {
+            try {
+                return decodeURIComponent(m[1]);
+            } catch (e) {
+                return m[1];
+            }
+        }
+        return 'shadowflow-data.zip';
+    }
+
+    async function doExport() {
+        var keys = DIMS.filter(function (d) { return PICKED[d.key] && d.available; })
+            .map(function (d) { return d.key; });
+        if (!keys.length) {
+            return toast('请先选择要导出的数据维度', 'err');
+        }
+        var btn = document.getElementById('btnExport');
+        var hint = document.getElementById('exportHint');
+        btn.disabled = true;
+        btn.classList.add('loading');
+        btn.innerHTML = '<span class="spinner"></span> 打包中…';
+        hint.textContent = '正在读取数据，数据量大时需要等一会儿';
+        hint.classList.add('on');
+        try {
+            var res = await fetch('/api/admin/migrate/export?keys=' + encodeURIComponent(keys.join(',')),
+                {headers: authHeaders()});
+            var type = res.headers.get('Content-Type') || '';
+            if (!res.ok || type.indexOf('zip') < 0) {
+                // 出错时后端回的是 JSON；这里读出来提示，别让用户拿到一个坏文件
+                var msg = '导出失败';
+                try {
+                    var j = await res.json();
+                    msg = (j && j.message) || msg;
+                } catch (e) { /* 非 JSON 就按默认文案 */ }
+                toast(msg, 'err');
+                return;
+            }
+            var blob = await res.blob();
+            var name = fileNameOf(res);
+            var a = document.createElement('a');
+            var url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+            hint.textContent = '已开始下载 ' + name + '（' + (blob.size / 1024 / 1024).toFixed(2) + ' MB）';
+            toast('数据包已生成，浏览器正在下载', 'ok');
+        } catch (e) {
+            toast('导出失败：' + e.message, 'err');
+        } finally {
+            btn.classList.remove('loading');
+            btn.innerHTML = '导出为 zip';
+            paintSum();
+        }
+    }
+
+    document.getElementById('zipInput').addEventListener('change', function (e) {
+        var f = e.target.files && e.target.files[0];
+        ZIP_FILE = f || null;
+        var name = document.getElementById('zipName');
+        if (!f) {
+            name.textContent = '未选择文件';
+            name.classList.remove('on');
+            document.getElementById('btnImport').disabled = true;
+            return;
+        }
+        name.textContent = f.name + '（' + (f.size / 1024 / 1024).toFixed(2) + ' MB）';
+        name.classList.add('on');
+        document.getElementById('btnImport').disabled = false;
+    });
+
+    async function doImport() {
+        if (!ZIP_FILE) {
+            return toast('请先选择要导入的 zip 文件', 'err');
+        }
+        var btn = document.getElementById('btnImport');
+        btn.disabled = true;
+        btn.classList.add('loading');
+        btn.innerHTML = '<span class="spinner"></span> 导入中…';
+        try {
+            var fd = new FormData();
+            fd.append('file', ZIP_FILE);
+            var res = await fetch('/api/admin/migrate/import', {
+                method: 'POST',
+                headers: authHeaders(),
+                body: fd
+            });
+            if (res.status === 401) {
+                onUnauthorized();
+                return;
+            }
+            var json = await res.json().catch(function () { return null; });
+            if (!json || !json.success) {
+                toast((json && json.message) || '导入失败，请检查数据包', 'err');
+                return;
+            }
+            renderImportResult(json.data || {});
+            toast(json.message || '导入完成', 'ok');
+            // 行数变了，重新读一遍清单
+            await loadDimensions();
+        } catch (e) {
+            toast('导入失败：' + e.message, 'err');
+        } finally {
+            btn.classList.remove('loading');
+            btn.innerHTML = '开始导入';
+            btn.disabled = !ZIP_FILE;
+        }
+    }
+
+    function renderImportResult(data) {
+        var results = data.results || [];
+        var total = data.total || {};
+        var box = document.getElementById('mgResult');
+        box.hidden = false;
+        var src = data.sourceMode === 'db' ? '数据库模式' : (data.sourceMode === 'file' ? '文件模式' : '未知');
+        document.getElementById('mgResultSum').innerHTML =
+            '共读取 <b>' + fmt(total.rows) + '</b> 行 · 新增 <b>' + fmt(total.inserted)
+            + '</b> 行 · 覆盖 <b class="mg-up">' + fmt(total.updated)
+            + '</b> 行 · 未变 <b>' + fmt(total.unchanged) + '</b> 行'
+            + (data.exportedAt ? ' · 包来自 ' + src + '，导出于 ' + esc(data.exportedAt) : '');
+        var body = document.getElementById('mgResultBody');
+        var rows = results.map(function (r) {
+            if (r.skipped) {
+                return '<tr><td>' + esc(r.label) + '</td>'
+                    + '<td class="num" colspan="4" style="text-align:left;color:var(--text-dim)">'
+                    + esc(r.message || '已跳过') + '</td></tr>';
+            }
+            return '<tr><td>' + esc(r.label) + '</td>'
+                + '<td class="num">' + fmt(r.rows) + '</td>'
+                + '<td class="num">' + fmt(r.inserted) + '</td>'
+                + '<td class="num mg-up">' + fmt(r.updated) + '</td>'
+                + '<td class="num">' + fmt(r.unchanged) + '</td></tr>';
+        });
+        body.innerHTML = rows.length ? rows.join('')
+            : '<tr><td class="empty" colspan="5">数据包里没有可识别的数据</td></tr>';
+    }
+
+    (async function init() {
+        var ok = await requireLogin();
+        if (!ok) {
+            return;
+        }
+        if (!isAdmin()) {
+            document.getElementById('mainPanel').style.display = 'none';
+            document.getElementById('denyPanel').style.display = '';
+            document.getElementById('denyMsg').textContent =
+                '只有超管能迁移数据，当前账号是 ' + (ME.user && ME.user.username) + '。';
+            return;
+        }
+        document.getElementById('mainPanel').style.display = '';
+        await loadDimensions();
+    })();
+</script>
+</body>
+</html>

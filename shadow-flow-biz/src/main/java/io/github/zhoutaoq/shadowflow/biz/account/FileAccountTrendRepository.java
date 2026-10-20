@@ -9,6 +9,7 @@ import io.github.zhoutaoq.shadowflow.biz.store.DataDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import io.github.zhoutaoq.shadowflow.biz.store.Reloadable;
 import org.springframework.stereotype.Repository;
 
 import javax.annotation.PostConstruct;
@@ -51,7 +52,7 @@ import java.util.concurrent.ConcurrentMap;
  */
 @Repository
 @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
-public class FileAccountTrendRepository implements AccountTrendRepository {
+public class FileAccountTrendRepository implements AccountTrendRepository, Reloadable {
 
     private static final Logger log = LoggerFactory.getLogger(FileAccountTrendRepository.class);
 
@@ -73,6 +74,13 @@ public class FileAccountTrendRepository implements AccountTrendRepository {
     @PostConstruct
     public void init() {
         log.info("[account] 无数据库模式：账户分钟走势落 {}", dataDir.file("account").toAbsolutePath());
+    }
+
+    /** 数据迁移导入后重载：走势是按需载入的，清掉缓存即可在下次读时重新读盘 */
+    @Override
+    public synchronized void reloadData() {
+        byUser.clear();
+        log.info("[account] 数据迁移后重载账户走势缓存");
     }
 
     @Override

@@ -1,5 +1,6 @@
 package io.github.zhoutaoq.shadowflow.biz.auth;
 
+import io.github.zhoutaoq.shadowflow.biz.auth.mail.EmailCodeService;
 import io.github.zhoutaoq.shadowflow.biz.auth.model.GitHubProfile;
 import io.github.zhoutaoq.shadowflow.biz.auth.model.User;
 import io.github.zhoutaoq.shadowflow.biz.auth.model.UserView;
@@ -54,13 +55,15 @@ public class AuthService {
     private final AuthProperties props;
     private final SessionService sessions;
     private final RegistrationNotifier registrationNotifier;
+    private final EmailCodeService emailCodes;
 
     public AuthService(UserRepository users, AuthProperties props, SessionService sessions,
-                       RegistrationNotifier registrationNotifier) {
+                       RegistrationNotifier registrationNotifier, EmailCodeService emailCodes) {
         this.users = users;
         this.props = props;
         this.sessions = sessions;
         this.registrationNotifier = registrationNotifier;
+        this.emailCodes = emailCodes;
     }
 
     /** 首次启动时把超管账号建出来 */
@@ -94,11 +97,16 @@ public class AuthService {
     /**
      * 注册。
      *
+     * <p>v1.7.4 起<b>必须带邮箱验证码</b>：先证明这个邮箱能收信，再开号。
+     * 校验顺序刻意把「格式 → 口令合规 → 是否已注册」放在验证码之前 ——
+     * 前三条出错时不该白白消耗掉用户手里的那条码。
+     *
      * @param username 邮箱
      * @param password 明文口令
+     * @param code     邮箱验证码（注册场景）
      * @return 新建的用户
      */
-    public User register(String username, String password) {
+    public User register(String username, String password, String code) {
         if (!props.getAuth().isRegistrationEnabled()) {
             throw new IllegalArgumentException("注册入口已关闭，请联系管理员开通账号");
         }
@@ -106,6 +114,14 @@ public class AuthService {
         checkPassword(password);
         if (users.findByUsername(name) != null) {
             throw new IllegalArgumentException("该邮箱已注册");
+        }
+        if (emailCodes.requireOnRegister()) {
+            // 没有发信能力就不能放人注册 —— 放进来等于「随便填个邮箱就能开号」，
+            // 正是这次要堵的口子。报清楚原因，别让用户对着「验证码已失效」发懵。
+            if (!emailCodes.configured()) {
+                throw new IllegalArgumentException("注册需要邮箱验证码，但邮件服务尚未配置，请联系管理员");
+            }
+            emailCodes.verify(name, EmailCodeService.SCENE_REGISTER, code);
         }
         User u = new User();
         u.setUsername(name);
@@ -115,6 +131,7 @@ public class AuthService {
         u.setPasswordSalt(salt);
         u.setPasswordHash(PasswordHasher.hash(password, salt));
         users.save(u);
+        u = reload(u);
         log.info("[auth] 新用户注册 {}", name);
         // 注册埋点：推一条钉钉（注册时间 + 邮箱）。异步 + 内部吞异常，
         // 推送出任何问题都不该让「注册」这件事失败 —— 用户这时候已经建好了
@@ -125,9 +142,20 @@ public class AuthService {
     /**
      * 登录。
      *
+     * <p>v1.7.4 起邮箱账号还要过一次验证码（密码仍是主要凭证，验证码是第二道）：
+     * <ul>
+     *   <li>先验账号与口令 —— 避免「密码本来就错」的人白白消耗一条验证码；</li>
+     *   <li>再验验证码。<b>admin 这类非邮箱用户名豁免</b>：它没有可收信的邮箱，
+     *       强制验证码等于把超管锁在门外；</li>
+     *   <li>GitHub 三方登录不走这里（OAuth 已经证明了邮箱归属）。</li>
+     * </ul>
+     *
+     * @param username 账号（邮箱）
+     * @param password 明文口令
+     * @param code     邮箱验证码（登录场景；非邮箱账号可不填）
      * @return 登录态（含令牌）
      */
-    public SessionService.Session login(String username, String password) {
+    public SessionService.Session login(String username, String password, String code) {
         String name = username == null ? "" : username.trim();
         if (name.isEmpty() || password == null || password.isEmpty()) {
             throw new IllegalArgumentException("用户名与密码都不能为空");
@@ -138,11 +166,64 @@ public class AuthService {
                 || !PasswordHasher.matches(password, u.getPasswordSalt(), u.getPasswordHash())) {
             throw new IllegalArgumentException("用户名或密码不正确");
         }
+        if (emailCodeRequired(u)) {
+            emailCodes.verify(u.getUsername(), EmailCodeService.SCENE_LOGIN, code);
+        }
         String now = LocalDateTime.now().format(DF);
         users.touchLogin(u.getId(), now);
         SessionService.Session s = sessions.create(u);
         log.info("[auth] {} 登录成功（{}）", u.getUsername(), u.isAdmin() ? "超管" : "普通用户");
         return s;
+    }
+
+    /**
+     * 这个账号登录时要不要验证码。
+     *
+     * <p>判据是「用户名是邮箱」而不是「角色是普通用户」：三方登录建的号同样是邮箱用户名，
+     * 也该走验证码；反过来，以后若出现别的非邮箱账号（运维号、机器人号），
+     * 一律不受验证码约束，免得再造出一个「没有邮箱却要求收信」的死账号。
+     */
+    public boolean emailCodeRequired(User u) {
+        return u != null && emailCodes.requireOnLogin() && EMAIL.matcher(u.getUsername()).matches();
+    }
+
+    /**
+     * 下发验证码。
+     *
+     * <p>两个场景的区别：
+     * <ul>
+     *   <li>{@code register} —— 邮箱已注册时直接拒绝（注册本来就会告诉他「已注册」，
+     *       这里不必藏），省一封无用的信；</li>
+     *   <li>{@code login} —— 账号不存在时<b>不告诉调用方</b>，也不真的发信，一律回同一句
+     *       「验证码已发送」。否则这个接口就成了「查某邮箱有没有注册过」的探测工具。</li>
+     * </ul>
+     *
+     * @return 给页面显示的提示
+     */
+    public String sendEmailCode(String username, String scene) {
+        String name = checkUsername(username);
+        boolean login = EmailCodeService.SCENE_LOGIN.equals(scene);
+        if (!login && !props.getAuth().isRegistrationEnabled()) {
+            throw new IllegalArgumentException("注册入口已关闭，请联系管理员开通账号");
+        }
+        User u = users.findByUsername(name);
+        if (!login && u != null) {
+            throw new IllegalArgumentException("该邮箱已注册，直接登录即可");
+        }
+        if (login) {
+            if (!emailCodes.requireOnLogin()) {
+                throw new IllegalArgumentException("当前登录不需要验证码");
+            }
+            if (u == null || !u.isEnabled()) {
+                // 账号不存在 / 已停用：不发信，但对外与「已发送」完全一致（防探测）
+                log.info("[auth] 登录验证码请求：{} 不存在或已停用，按已发送处理（不发信）", name);
+                return "验证码已发送至 " + EmailCodeService.maskEmail(name) + "，"
+                        + emailCodes.ttlMinutes() + " 分钟内有效";
+            }
+        } else if (!emailCodes.requireOnRegister()) {
+            throw new IllegalArgumentException("当前注册不需要验证码");
+        }
+        return emailCodes.send(name, login ? EmailCodeService.SCENE_LOGIN : EmailCodeService.SCENE_REGISTER);
     }
 
     /** 退出登录 */
@@ -225,9 +306,25 @@ public class AuthService {
         nu.setGithubId(profile.getId().trim());
         nu.setGithubLogin(profile.getLogin() == null ? "" : profile.getLogin().trim());
         users.save(nu);
+        nu = reload(nu);
         log.info("[auth] 新用户经 GitHub 注册 {}（GitHub: {}）", name, nu.getGithubLogin());
         registrationNotifier.notifyRegistered(nu);
         return nu;
+    }
+
+    /**
+     * 重新取一次刚写入的用户。
+     *
+     * <p>仓储的 {@code save()} <b>不保证把新分配的 id 回填到入参对象</b>（文件模式是新建一份
+     * User 存进内存，入参那个还是 id=null）。注册完立刻要拿 id 签发登录态，
+     * 不重取就会得到「用户不存在」—— 账号其实已经建好了，用户却看到失败。
+     */
+    private User reload(User u) {
+        if (u == null) {
+            return null;
+        }
+        User fresh = users.findByUsername(u.getUsername());
+        return fresh == null ? u : fresh;
     }
 
     /** 本人改密：必须验证旧密码 */
@@ -331,6 +428,26 @@ public class AuthService {
     /** 是否开放注册 */
     public boolean registrationEnabled() {
         return props.getAuth().isRegistrationEnabled();
+    }
+
+    /**
+     * 注册成功后直接签发登录态。
+     *
+     * <p>注册这条路本来就已经用验证码证明了「邮箱是本人的」，再让用户为了登录
+     * 收第二条验证码纯属折腾；而且注册用的那条码在校验通过时已作废，
+     * 想「拿刚收到的码顺手登录」也做不到。所以注册成功即登录，前端拿到令牌直接进站。
+     */
+    public SessionService.Session openSessionAfterRegister(User u) {
+        if (u == null || u.getId() == null) {
+            throw new IllegalArgumentException("用户不存在");
+        }
+        users.touchLogin(u.getId(), LocalDateTime.now().format(DF));
+        return sessions.create(u);
+    }
+
+    /** 邮箱验证码规则（前端登录弹窗据此决定显不显示、多久能重发） */
+    public java.util.Map<String, Object> emailCodeRules() {
+        return emailCodes.rules();
     }
 
     /** 超管用户名 */

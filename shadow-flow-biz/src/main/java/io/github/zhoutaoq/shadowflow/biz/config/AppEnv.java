@@ -54,7 +54,8 @@ public final class AppEnv {
     /** 约定的密钥键名：仅用于「一份文件都没有、全靠环境变量」时判断是否已配置 */
     private static final String[] KNOWN_KEYS = {
             "DB_PASSWORD", "ADMIN_PASSWORD", "SHADOWFLOW_API_TOKEN",
-            "DINGTALK_WEBHOOK", "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"
+            "DINGTALK_WEBHOOK", "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET",
+            "MAIL_USERNAME", "MAIL_PASSWORD"
     };
 
     private AppEnv() {

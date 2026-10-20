@@ -96,6 +96,19 @@ const ME = {
     registrationEnabled: true,
     /** GitHub 三方登录是否开通（服务端凭据齐才 true），登录弹窗据此显隐 GitHub 按钮 */
     githubLoginEnabled: false,
+    /**
+     * 邮箱验证码规则（v1.7.4）：{configured, requiredOnLogin, requiredOnRegister,
+     * resendSeconds, ttlMinutes, codeLength}。登录弹窗据此决定显不显示验证码行、
+     * 倒计时多少秒 —— 与服务端校验用的是同一份参数，前端不另写死常量。
+     */
+    emailCode: {
+        configured: false,
+        requiredOnLogin: true,
+        requiredOnRegister: true,
+        resendSeconds: 60,
+        ttlMinutes: 10,
+        codeLength: 6
+    },
     rules: {minPasswordLength: 6, requireLetterAndDigit: true, usernamePattern: 'email'}
 };
 
@@ -150,6 +163,9 @@ function loadMe(force) {
                     ME.impersonator = json.data.impersonator || null;
                     ME.registrationEnabled = json.data.registrationEnabled !== false;
                     ME.githubLoginEnabled = json.data.githubLoginEnabled === true;
+                    if (json.data.emailCode) {
+                        ME.emailCode = Object.assign(ME.emailCode, json.data.emailCode);
+                    }
                     if (json.data.rules) {
                         ME.rules = json.data.rules;
                     }
@@ -262,6 +278,16 @@ function openAuthModal(opt) {
             + '<button class="auth-eye" type="button" data-for="amPwd2" aria-label="显示密码">' + ICON.eye + '</button>'
             + '</div>'
             + '</div>'
+            + '<div class="auth-field" id="amCodeField" style="display:none">'
+            + '<label for="amCode">邮箱验证码</label>'
+            + '<div class="auth-code-row">'
+            + '<div class="auth-input-wrap">'
+            + '<input type="text" id="amCode" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" maxlength="6">'
+            + '</div>'
+            + '<button class="auth-code-btn" id="amCodeSend" type="button">获取验证码</button>'
+            + '</div>'
+            + '<div class="auth-code-hint" id="amCodeHint"></div>'
+            + '</div>'
             + '<button class="auth-submit" id="amSubmit" type="button">登录</button>'
             + '<div class="auth-oauth" id="amOauth" hidden>'
             + '<div class="auth-oauth-sep"><i></i><span>或</span><i></i></div>'
@@ -274,6 +300,7 @@ function openAuthModal(opt) {
         mask.querySelector('#amTabReg').addEventListener('click', () => switchAuthMode('register'));
         mask.querySelector('#amSubmit').addEventListener('click', submitAuthModal);
         mask.querySelector('#amGithub').addEventListener('click', startGithubLogin);
+        mask.querySelector('#amCodeSend').addEventListener('click', sendAuthCode);
         mask.querySelectorAll('.auth-eye').forEach(btn => {
             btn.addEventListener('click', () => togglePwdVisible(btn.getAttribute('data-for')));
         });
@@ -282,7 +309,9 @@ function openAuthModal(opt) {
                 closeAuthModal(true);
             }
         });
-        ['amUser', 'amPwd', 'amPwd2'].forEach(id => {
+        // 账号框每敲一个字就重判一次：输入 admin（非邮箱）时验证码行要立刻消失
+        mask.querySelector('#amUser').addEventListener('input', syncCodeField);
+        ['amUser', 'amPwd', 'amPwd2', 'amCode'].forEach(id => {
             const el = mask.querySelector('#' + id);
             el.addEventListener('keydown', e => {
                 if (e.key === 'Enter') {
@@ -300,9 +329,10 @@ function openAuthModal(opt) {
             }
         });
     }
-    ['amUser', 'amPwd', 'amPwd2'].forEach(id => {
+    ['amUser', 'amPwd', 'amPwd2', 'amCode'].forEach(id => {
         mask.querySelector('#' + id).value = '';
     });
+    resetCodeButton();
     switchAuthMode(o.mode === 'register' ? 'register' : 'login');
     // GitHub 按钮只在服务端开通了三方登录时出现（未配 OAuth 凭据就别给用户一个点了报错的按钮）
     mask.querySelector('#amOauth').hidden = !ME.githubLoginEnabled;
@@ -420,6 +450,160 @@ function switchAuthMode(m) {
     mask.querySelector('#amPwd').setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
     setAuthError('');
     renderStrength();
+    syncCodeField();
+}
+
+/** 账号看起来是不是邮箱（含 @ 即可）：登录时只有邮箱账号才需要验证码，admin 不需要 */
+function isEmailish(v) {
+    return /^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/.test(String(v || '').trim());
+}
+
+/** 验证码冷却剩余秒数 / 是否正在发送 / 倒计时句柄（弹窗只有一份，全局一份状态就够） */
+let _codeLeft = 0;
+let _codeSending = false;
+let _codeTimer = null;
+
+/**
+ * 按当前模式与账号形态决定「验证码行显不显示」。
+ *
+ * <p>两处判断都跟后端同口径：
+ * <ul>
+ *   <li>注册 —— 用户名必须是邮箱，所以注册态永远要验证码（除非服务端关了这项）；</li>
+ *   <li>登录 —— 只有邮箱账号才要，admin 这类非邮箱账号不显示、也不校验。</li>
+ * </ul>
+ * 账号框每敲一个字都会重跑本函数，输入 admin 时那一行会立刻消失。
+ */
+function syncCodeField() {
+    const mask = document.getElementById('authMask');
+    if (!mask) {
+        return;
+    }
+    const reg = _authMode === 'register';
+    const user = mask.querySelector('#amUser').value.trim();
+    const need = reg
+        ? ME.emailCode.requiredOnRegister !== false
+        : (ME.emailCode.requiredOnLogin !== false && isEmailish(user));
+    mask.querySelector('#amCodeField').style.display = need ? '' : 'none';
+    if (!need) {
+        _codeLeft = 0;
+        stopCodeTimer();
+        setCodeHint('');
+    } else if (!ME.emailCode.configured) {
+        setCodeHint('邮件服务未配置，暂时无法获取验证码');
+    } else if (_codeLeft === 0) {
+        setCodeHint('');
+    }
+    paintCodeButton();
+}
+
+/** 按钮文案：发送中 / 倒计时 / 可点击，三态只在这一个地方画 */
+function paintCodeButton() {
+    const mask = document.getElementById('authMask');
+    if (!mask) {
+        return;
+    }
+    const btn = mask.querySelector('#amCodeSend');
+    if (!btn) {
+        return;
+    }
+    if (_codeSending) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="auth-spin"></span>发送中…';
+        return;
+    }
+    if (_codeLeft > 0) {
+        btn.disabled = true;
+        btn.textContent = _codeLeft + ' 秒后重发';
+        return;
+    }
+    btn.disabled = !ME.emailCode.configured;
+    btn.textContent = '获取验证码';
+}
+
+function setCodeHint(text) {
+    const mask = document.getElementById('authMask');
+    if (!mask) {
+        return;
+    }
+    const el = mask.querySelector('#amCodeHint');
+    el.textContent = text || '';
+    el.classList.toggle('show', !!text);
+}
+
+function stopCodeTimer() {
+    if (_codeTimer) {
+        clearInterval(_codeTimer);
+        _codeTimer = null;
+    }
+}
+
+/** 发码成功后开始倒计时；秒数取服务端的 resendSeconds，前端不另写一个 60 */
+function startCodeCountdown() {
+    stopCodeTimer();
+    _codeLeft = Math.max(1, Number(ME.emailCode.resendSeconds) || 60);
+    paintCodeButton();
+    _codeTimer = setInterval(() => {
+        _codeLeft = Math.max(0, _codeLeft - 1);
+        if (_codeLeft === 0) {
+            stopCodeTimer();
+            setCodeHint('');
+        }
+        paintCodeButton();
+    }, 1000);
+}
+
+/** 关闭 / 重开弹窗时把按钮与倒计时复位 */
+function resetCodeButton() {
+    stopCodeTimer();
+    _codeLeft = 0;
+    _codeSending = false;
+    paintCodeButton();
+    setCodeHint('');
+}
+
+/**
+ * 发验证码。两个场景共用这一个入口：
+ * 注册场景服务端会先查「这个邮箱有没有注册过」，登录场景则对不存在的账号
+ * 一律回「已发送」（不发信），避免被当成探测工具。
+ */
+async function sendAuthCode() {
+    const mask = document.getElementById('authMask');
+    if (!mask || _codeSending) {
+        return;
+    }
+    const reg = _authMode === 'register';
+    const user = mask.querySelector('#amUser').value.trim();
+    if (!user) {
+        setAuthError(reg ? '请先填写邮箱' : '请先填写账号');
+        markAuthField('amUserField');
+        mask.querySelector('#amUser').focus();
+        return;
+    }
+    if (!isEmailish(user)) {
+        setAuthError('这个邮箱格式不对，检查一下');
+        markAuthField('amUserField');
+        mask.querySelector('#amUser').focus();
+        return;
+    }
+    _codeSending = true;
+    setAuthError('');
+    paintCodeButton();
+    try {
+        const r = await post('/api/auth/email-code', {username: user, scene: reg ? 'register' : 'login'});
+        if (!r || !r.success) {
+            // 失败就复位：服务端有 60 秒冷却，真刷得太快它会自己拦
+            _codeSending = false;
+            paintCodeButton();
+            return;
+        }
+        _codeSending = false;
+        setCodeHint(r.message || '验证码已发送');
+        startCodeCountdown();
+        mask.querySelector('#amCode').focus();
+    } catch (e) {
+        _codeSending = false;
+        paintCodeButton();
+    }
 }
 
 /** 关掉弹窗：cancel 为真表示是用户主动放弃，要回调 onCancel */
@@ -428,6 +612,8 @@ function closeAuthModal(cancel) {
     if (mask) {
         mask.classList.remove('show');
     }
+    // 倒计时跟着弹窗一起停：不留一个对着隐藏 DOM 空转的 interval
+    stopCodeTimer();
     const cb = _authCb;
     _authCb = {};
     if (cancel && cb.onCancel) {
@@ -545,6 +731,17 @@ async function submitAuthModal() {
             return fail('两次输入的密码不一致', 'amPwd2Field');
         }
     }
+    // 验证码：与服务端同口径 —— 注册必填；登录只在邮箱账号时必填
+    const needCode = mask.querySelector('#amCodeField').style.display !== 'none';
+    const code = mask.querySelector('#amCode').value.replace(/\s/g, '');
+    if (needCode) {
+        if (!code) {
+            return fail('请填写邮箱验证码', 'amCodeField');
+        }
+        if (code.length !== (Number(ME.emailCode.codeLength) || 6)) {
+            return fail('验证码是 ' + (Number(ME.emailCode.codeLength) || 6) + ' 位数字', 'amCodeField');
+        }
+    }
 
     setAuthError('');
     markAuthField('');
@@ -553,15 +750,14 @@ async function submitAuthModal() {
     btn.classList.add('loading');
     btn.innerHTML = '<span class="auth-spin"></span>' + (reg ? '注册中…' : '登录中…');
     try {
-        if (reg) {
-            const rr = await post('/api/auth/register', {username: user, password: pwd});
-            if (!rr || !rr.success) {
-                return fail((rr && rr.message) || '注册失败，请稍后再试', 'amUserField');
-            }
-        }
-        const r = await post('/api/auth/login', {username: user, password: pwd});
+        // 注册成功后服务端直接签发令牌（注册用的验证码已作废，不该再让他收一条来登录）
+        const r = reg
+            ? await post('/api/auth/register', {username: user, password: pwd, code: code})
+            : await post('/api/auth/login', {username: user, password: pwd, code: needCode ? code : null});
         if (!r || !r.success) {
-            return fail((r && r.message) || '登录失败，请稍后再试', 'amUserField');
+            // 验证码类的报错把焦点落到验证码框，别让用户对着密码框发呆
+            const msg = (r && r.message) || (reg ? '注册失败，请稍后再试' : '登录失败，请稍后再试');
+            return fail(msg, /验证码/.test(msg) ? 'amCodeField' : 'amUserField');
         }
         setAuthToken(r.data.token);
         ME.loggedIn = true;
@@ -1246,7 +1442,8 @@ const NAV_ITEMS = [
     {key: 'feedback', text: '问题反馈', href: '/pages/feedback.html'},
     {key: 'system', text: '系统配置', href: '/pages/system.html', admin: true},
     {key: 'push', text: '钉钉推送', href: '/pages/push.html', admin: true},
-    {key: 'users', text: '用户管理', href: '/pages/users.html', admin: true}
+    {key: 'users', text: '用户管理', href: '/pages/users.html', admin: true},
+    {key: 'migrate', text: '数据迁移', href: '/pages/migrate.html', admin: true}
 ];
 
 /**
@@ -1914,7 +2111,7 @@ function scheduleLabelGridTables() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[影流数据] 前端版本 20261020b（v1.7.3：标签页图标 / GitHub 登录防连点 / 页脚仓库入口）');
+    console.info('[影流数据] 前端版本 20261020c（v1.7.3：标签页图标 / GitHub 登录防连点 / 页脚仓库入口）');
     // OAuth 回跳先收令牌（fragment 里的 #token=），再拉登录态才拉得到自己
     const oauthBack = handleAuthFragment();
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮

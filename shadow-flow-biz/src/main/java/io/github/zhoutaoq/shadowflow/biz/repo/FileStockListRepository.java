@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ClassPathResource;
+import io.github.zhoutaoq.shadowflow.biz.store.Reloadable;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
@@ -42,7 +43,7 @@ import java.util.Set;
  */
 @Repository
 @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
-public class FileStockListRepository implements StockListRepository {
+public class FileStockListRepository implements StockListRepository, Reloadable {
 
     private static final Logger log = LoggerFactory.getLogger(FileStockListRepository.class);
 
@@ -276,6 +277,13 @@ public class FileStockListRepository implements StockListRepository {
     }
 
     /** 从落盘文件重新载入内存（手工改了文件时调用） */
+    /** 数据迁移导入后重载名录 */
+    @Override
+    public synchronized void reloadData() {
+        reload();
+        log.info("[stock-list] 数据迁移后重载名录：{} 条", rows.size());
+    }
+
     public synchronized void reload() {
         List<StockListItem> loaded = table.load();
         rows = reindex(loaded);

@@ -66,10 +66,14 @@ public class IntegrationConfigService implements TokenProvider {
     private static final String SCENE_FEEDBACK = "feedback";
     /** 场景：注册通知 */
     private static final String SCENE_AUTH_NOTIFY = "auth-notify";
+    /** 场景：发信账号（v1.7.4 邮箱验证码） */
+    private static final String SCENE_MAIL = "mail";
 
     private static final String KEY_TOKEN = "token";
     private static final String KEY_WEBHOOK = "webhook";
     private static final String KEY_KEYWORD = "keyword";
+    private static final String KEY_USERNAME = "username";
+    private static final String KEY_PASSWORD = "password";
 
     /**
      * 页面上要维护的全部对接项。
@@ -90,7 +94,13 @@ public class IntegrationConfigService implements TokenProvider {
             new Field("feedbackKeyword", SCENE_FEEDBACK, KEY_KEYWORD, "反馈消息关键词", false,
                     "钉钉「自定义关键词」模式下必须命中的词，消息首行会拼成 [关键词] 用户反馈。"),
             new Field("registerKeyword", SCENE_AUTH_NOTIFY, KEY_KEYWORD, "注册通知关键词", false,
-                    "同上，用于新用户注册通知；复用同一只机器人时保持与其他消息一致。")
+                    "同上，用于新用户注册通知；复用同一只机器人时保持与其他消息一致。"),
+            // v1.7.4：注册与登录的邮箱验证码都要从这里发信。放在页面上是为了
+            // 「换发信账号不用登服务器改 app.env」，与令牌 / 机器人同一套口径。
+            new Field("mailUsername", SCENE_MAIL, KEY_USERNAME, "发信邮箱", false,
+                    "注册与登录验证码的发出账号（如 you@qq.com）。改完即生效，下一次发码就用新账号。"),
+            new Field("mailPassword", SCENE_MAIL, KEY_PASSWORD, "发信授权码", true,
+                    "该邮箱的 SMTP 授权码，不是邮箱登录密码；QQ 邮箱在「设置 → 账户 → 开启 SMTP 服务」后生成。")
     ));
 
     private final SysConfigRepository repo;
@@ -98,17 +108,20 @@ public class IntegrationConfigService implements TokenProvider {
     private final WatchProperties watchProps;
     private final FeedbackProperties feedbackProps;
     private final RegistrationNotifyProperties notifyProps;
+    private final io.github.zhoutaoq.shadowflow.biz.auth.mail.MailProperties mailProps;
 
     public IntegrationConfigService(SysConfigRepository repo,
                                     MarketDataProperties dataProps,
                                     WatchProperties watchProps,
                                     FeedbackProperties feedbackProps,
-                                    RegistrationNotifyProperties notifyProps) {
+                                    RegistrationNotifyProperties notifyProps,
+                                    io.github.zhoutaoq.shadowflow.biz.auth.mail.MailProperties mailProps) {
         this.repo = repo;
         this.dataProps = dataProps;
         this.watchProps = watchProps;
         this.feedbackProps = feedbackProps;
         this.notifyProps = notifyProps;
+        this.mailProps = mailProps;
     }
 
     @PostConstruct
@@ -146,6 +159,16 @@ public class IntegrationConfigService implements TokenProvider {
     /** 注册通知的关键词前缀 */
     public String registerKeyword() {
         return effective("registerKeyword");
+    }
+
+    /** 发信邮箱账号（验证码邮件用它发出）；空串表示没配 */
+    public String mailUsername() {
+        return effective("mailUsername");
+    }
+
+    /** 发信授权码；空串表示没配 */
+    public String mailPassword() {
+        return effective("mailPassword");
     }
 
     /**
@@ -281,6 +304,10 @@ public class IntegrationConfigService implements TokenProvider {
                 return feedbackProps == null ? "" : nz(feedbackProps.getKeyword());
             case "registerKeyword":
                 return notifyProps == null ? "" : nz(notifyProps.getKeyword());
+            case "mailUsername":
+                return mailProps == null ? "" : nz(mailProps.getUsername());
+            case "mailPassword":
+                return mailProps == null ? "" : nz(mailProps.getPassword());
             default:
                 return "";
         }

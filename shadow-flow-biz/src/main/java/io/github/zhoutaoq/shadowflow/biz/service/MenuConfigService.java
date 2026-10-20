@@ -72,7 +72,9 @@ public class MenuConfigService {
             // 补登记：前端 NAV_ITEMS 早就有「钉钉推送」，后端漏了这一项，
             // 结果是菜单配置页只列 10 项、超管改不了它的名称与顺序
             new BuiltIn("push", "钉钉推送", "/pages/push.html"),
-            new BuiltIn("users", "用户管理", "/pages/users.html")
+            new BuiltIn("users", "用户管理", "/pages/users.html"),
+            // v1.7.4：超管按维度搬数据（导出 zip / 导入覆盖），入口只对超管可见
+            new BuiltIn("migrate", "数据迁移", "/pages/migrate.html")
     ));
 
     private final SysConfigRepository configs;

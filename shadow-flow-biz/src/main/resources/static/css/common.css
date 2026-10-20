@@ -1155,6 +1155,16 @@ button:disabled { box-shadow: none; }
 .btn-ghost { border-radius: var(--r-ctl); border-color: var(--border); }
 .btn-ghost:hover { background: var(--bg-hover); }
 .btn-sm { padding: 5px 11px; font-size: var(--fs-12); border-radius: 8px; }
+/* 禁用态必须压过后面的主按钮底色：`button:not([class])` 与 `button:disabled` 特异性相同、
+   谁在后谁生效，只写一条会被主色渐变盖掉，得到一个「蓝色但点不动」的假按钮。 */
+button:not([class]):disabled, .btn:disabled, .btn-ghost:disabled, .btn-sm:disabled, .btn-danger:disabled {
+    background: var(--disabled-bg);
+    border-color: var(--border-soft);
+    color: var(--disabled-fg);
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+}
 
 /* 全局提示条（#msgBox）固定在页面顶部居中、正好落在顶栏下面：
    保存成功、登录成功这类反馈出现在视线停留的位置，不必再去右下角找。
@@ -1406,6 +1416,44 @@ button:disabled { box-shadow: none; }
 .auth-field.invalid input:focus { box-shadow: 0 0 0 3px rgba(229, 72, 77, .18); }
 .auth-tip { font-size: var(--fs-11); color: var(--text-dim); }
 .auth-field.invalid .auth-tip { color: var(--msg-err-fg); }
+
+/* ---- 邮箱验证码（v1.7.4）：输入框 + 「获取验证码」按钮，两者等高、贴成一条控件 ---- */
+.auth-code-row { display: flex; gap: var(--sp-2); align-items: stretch; }
+.auth-code-row .auth-input-wrap { flex: 1 1 auto; min-width: 0; }
+/* 验证码是定长数字，拉开字距更好读数 */
+.auth-code-row input { letter-spacing: 3px; font-variant-numeric: tabular-nums; }
+.auth-code-btn {
+    flex: 0 0 auto;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    /* 与左侧输入框同圆角、同高：一行里两个控件圆角不一致，看着就是「拼上去的」 */
+    border-radius: var(--r-ctl);
+    background: var(--bg-elev);
+    color: var(--text);
+    font-size: var(--fs-12);
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: none;
+    transition: background .18s var(--ease-out), border-color .18s var(--ease-out), color .18s var(--ease-out);
+}
+.auth-code-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    border-color: var(--primary);
+    color: var(--primary);
+    transform: none;
+}
+/* 倒计时 / 发送中：禁用态要一眼看出「在等，但没坏」 */
+.auth-code-btn:disabled {
+    cursor: not-allowed;
+    color: var(--text-dim);
+    background: var(--bg-tint);
+    border-color: var(--border-soft);
+    opacity: .85;
+}
+.auth-code-btn .auth-spin { width: 11px; height: 11px; margin-right: 4px; }
+/* 验证码下次数的提示行（发送成功 / 冷却中），比错误条轻 */
+.auth-code-hint { font-size: var(--fs-11); color: var(--text-dim); }
+.auth-code-hint.show { color: var(--msg-ok-fg); }
 
 /* 密码强度：三段色条，够直白 */
 .auth-strength { display: flex; gap: 4px; margin-top: 7px; }

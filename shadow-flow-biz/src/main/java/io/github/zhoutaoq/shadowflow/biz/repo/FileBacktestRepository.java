@@ -11,6 +11,7 @@ import io.github.zhoutaoq.shadowflow.biz.store.StoreProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import io.github.zhoutaoq.shadowflow.biz.store.Reloadable;
 import org.springframework.stereotype.Repository;
 
 import javax.annotation.PostConstruct;
@@ -40,7 +41,7 @@ import java.util.TreeMap;
  */
 @Repository
 @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
-public class FileBacktestRepository implements BacktestRepository {
+public class FileBacktestRepository implements BacktestRepository, Reloadable {
 
     private static final Logger log = LoggerFactory.getLogger(FileBacktestRepository.class);
 
@@ -95,6 +96,14 @@ public class FileBacktestRepository implements BacktestRepository {
         }
         trim();
         log.info("[backtest] 无数据库模式：{} 已载入 {} 条历史回测（上限 {} 条）", dir, loaded, keep);
+    }
+
+    /** 数据迁移导入后重载：清空内存再整目录扫一遍（导入可能新增 / 覆盖任意 bt-*.json） */
+    @Override
+    public synchronized void reloadData() {
+        rows.clear();
+        init();
+        log.info("[backtest] 数据迁移后重载回测：{} 条", rows.size());
     }
 
     @Override

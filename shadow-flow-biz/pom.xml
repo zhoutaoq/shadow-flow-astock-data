@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.zhoutaoq</groupId>
         <artifactId>shadow-flow-parent</artifactId>
-        <version>1.7.3</version>
+        <version>1.7.4</version>
     </parent>
 
     <artifactId>shadow-flow-biz</artifactId>
@@ -31,6 +31,14 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <!-- 邮箱验证码（v1.7.4）：注册与登录都要向用户邮箱发一次性验证码。
+             只用 javax.mail 的 SMTP 客户端，不启用 spring.mail 的自动装配 ——
+             发信参数走自己的 app.mail.*（见 MailProperties），与 Spring 的
+             spring.mail.* 不互相干扰。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
         <dependency>
             <groupId>mysql</groupId>

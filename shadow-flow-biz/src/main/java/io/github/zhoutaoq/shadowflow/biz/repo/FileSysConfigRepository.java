@@ -8,6 +8,7 @@ import io.github.zhoutaoq.shadowflow.biz.store.StoreProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import io.github.zhoutaoq.shadowflow.biz.store.Reloadable;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
@@ -31,7 +32,7 @@ import java.util.Map;
  */
 @Repository
 @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
-public class FileSysConfigRepository implements SysConfigRepository {
+public class FileSysConfigRepository implements SysConfigRepository, Reloadable {
 
     private static final Logger log = LoggerFactory.getLogger(FileSysConfigRepository.class);
 
@@ -187,7 +188,15 @@ public class FileSysConfigRepository implements SysConfigRepository {
         persist();
     }
 
+    /** 数据迁移导入后重载：配置行被改写，内存索引与场景值改写都要重跑一遍 */
     @Override
+    public synchronized void reloadData() {
+        reload();
+        migrateLegacyScene();
+        seedToken();
+        log.info("[sys-config] 数据迁移后重载配置：{} 条", rows.size());
+    }
+
     public synchronized void reload() {
         Map<String, SysConfig> fresh = new LinkedHashMap<>();
         long max = 0;

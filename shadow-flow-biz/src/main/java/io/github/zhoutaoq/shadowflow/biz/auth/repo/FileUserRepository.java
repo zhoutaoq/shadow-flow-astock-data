@@ -8,6 +8,7 @@ import io.github.zhoutaoq.shadowflow.biz.store.StoreProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import io.github.zhoutaoq.shadowflow.biz.store.Reloadable;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
@@ -28,7 +29,7 @@ import java.util.Map;
  */
 @Repository
 @ConditionalOnProperty(name = "shadowflow.db.enabled", havingValue = "false", matchIfMissing = true)
-public class FileUserRepository implements UserRepository {
+public class FileUserRepository implements UserRepository, Reloadable {
 
     private static final Logger log = LoggerFactory.getLogger(FileUserRepository.class);
 
@@ -192,6 +193,16 @@ public class FileUserRepository implements UserRepository {
     }
 
     /** 从文件重新载入 */
+    /**
+     * 数据迁移导入后重载：文件已经被迁移服务整份改写过，内存索引必须跟着重建，
+     * 否则页面上的用户列表还是导入前那一份，下一次注册还会拿旧快照盖回去。
+     */
+    @Override
+    public synchronized void reloadData() {
+        reload();
+        log.info("[auth] 数据迁移后重载用户：{} 个", rows.size());
+    }
+
     public synchronized void reload() {
         Map<String, User> fresh = new LinkedHashMap<>();
         long max = 0;
