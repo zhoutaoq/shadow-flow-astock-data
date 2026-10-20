@@ -310,16 +310,60 @@ function openAuthModal(opt) {
     setTimeout(() => mask.querySelector('#amUser').focus(), 60);
 }
 
+/** GitHub 授权跳转是否已发起：跳转前的空白期里连点会重复走 OAuth */
+let _ghJumping = false;
+
 /**
  * 跳 GitHub 授权页。
  *
  * <p>returnTo 记下当前页路径，授权完成回来还落在原地（服务端只认站内相对路径）。
  * 整页跳转离开是 OAuth 授权码流程的常态，回来时走 fragment 收令牌（见 handleAuthFragment）。
+ *
+ * <p>点击到页面真正跳走之间有一段空窗（服务端 302 + github.com 握手），网络慢时
+ * 好几秒没反应，用户必然再点。这里先把按钮改成「正在跳转」并锁住，
+ * 口令登录按钮一并禁用，免得两条登录路同时发起；跳转失败则 10 秒后自动解锁。
  */
 function startGithubLogin() {
+    if (_ghJumping) {
+        return;
+    }
+    _ghJumping = true;
+    const btn = document.getElementById('amGithub');
+    if (btn) {
+        btn.classList.add('loading');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="auth-spin"></span>正在跳转 GitHub…';
+    }
+    const submit = document.getElementById('amSubmit');
+    if (submit) {
+        submit.disabled = true;
+    }
+    setTimeout(resetGithubBtn, 10000);
     const back = location.pathname + location.search;
     location.href = '/api/auth/github/login?returnTo=' + encodeURIComponent(back);
 }
+
+/** 把 GitHub 按钮复位。跳转没走成（被拦、断网）或用户从后退回来时用 */
+function resetGithubBtn() {
+    _ghJumping = false;
+    const btn = document.getElementById('amGithub');
+    if (btn) {
+        btn.classList.remove('loading');
+        btn.disabled = false;
+        btn.innerHTML = ICON.github + '使用 GitHub 登录';
+    }
+    const submit = document.getElementById('amSubmit');
+    if (submit) {
+        submit.disabled = false;
+    }
+}
+
+// 后退回到本页（bfcache）时按钮还停在加载态，得复位才能再点
+window.addEventListener('pageshow', function () {
+    if (_ghJumping) {
+        resetGithubBtn();
+    }
+});
 
 /**
  * 收 OAuth 回跳：地址栏 fragment 里的 {@code #token=}（成功）或 {@code #authError=}（失败）。
@@ -1584,6 +1628,9 @@ function renderUserArea() {
 /** 页脚署名。改这里即可，全站 14 个页面同步（页脚是注入的，页面里没有副本） */
 const SITE_AUTHOR = 'zhoutaoqiang';
 
+/** 项目开源地址，页脚挂入口用 */
+const SITE_REPO = 'https://github.com/zhoutaoq/shadow-flow-astock-data';
+
 /**
  * 注入页脚：署名 + 版本号 + 发布时间。
  *
@@ -1604,6 +1651,9 @@ async function renderFooter() {
     foot.id = 'siteFooter';
     foot.innerHTML = '<div class="site-footer-inner">'
         + '<span>Powered by <span class="sf-author">' + esc(SITE_AUTHOR) + '</span></span>'
+        + '<i class="sf-sep"></i>'
+        + '<a class="sf-link" href="' + esc(SITE_REPO) + '" target="_blank" rel="noopener noreferrer"'
+        + ' title="项目开源地址">' + ICON.github + '<span>GitHub</span></a>'
         + '<i class="sf-sep"></i>'
         + '<span class="sf-ver" id="sfVer">v—</span>'
         + '<i class="sf-sep"></i>'
@@ -1864,7 +1914,7 @@ function scheduleLabelGridTables() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[影流数据] 前端版本 20261020a（v1.6.8：GitHub 三方登录）');
+    console.info('[影流数据] 前端版本 20261020b（v1.7.3：标签页图标 / GitHub 登录防连点 / 页脚仓库入口）');
     // OAuth 回跳先收令牌（fragment 里的 #token=），再拉登录态才拉得到自己
     const oauthBack = handleAuthFragment();
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮

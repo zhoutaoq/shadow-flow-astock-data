@@ -58,7 +58,7 @@ if not "%MISSING%"=="" (
 REM ==================== 2. 本机构建环境 ====================
 set "MVN=C:\workspace\java\apache-maven-3.8.1\bin\mvn.cmd"
 set "BUILD_JAVA_HOME=C:\workspace\java\jdk8x64"
-set "PROJECT_DIR=C:\workspace\code\stock\stock-kline-data-crawler"
+set "PROJECT_DIR=C:\workspace\github\shadow-flow-astock-data"
 
 REM ==================== 3. 派生变量（无需修改） ====================
 set "PLINK=%HERE%plink.exe"

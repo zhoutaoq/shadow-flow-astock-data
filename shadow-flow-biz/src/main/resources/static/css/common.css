@@ -1463,6 +1463,20 @@ button:disabled { box-shadow: none; }
     transform: none;
 }
 .auth-github svg { width: 17px; height: 17px; }
+/* 跳转 GitHub 授权页期间：锁住按钮 + 转圈，避免几秒空窗被连点 */
+.auth-github.loading,
+.auth-github:disabled {
+    opacity: .75;
+    cursor: progress;
+    pointer-events: none;
+}
+/* 描边按钮上没有白底，转圈圈用当前文字色才看得见 */
+.auth-github .auth-spin {
+    border-color: currentColor;
+    border-top-color: transparent;
+    opacity: .6;
+}
+.auth-submit:disabled { opacity: .6; pointer-events: none; }
 .auth-foot {
     margin-top: 14px;
     text-align: center;
@@ -1522,6 +1536,17 @@ button:disabled { box-shadow: none; }
     font-weight: 600;
     color: var(--text);
 }
+/* 仓库入口：图标与文字同色，别在页脚里多一条蓝色下划线抢注意力 */
+.site-footer .sf-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: color .18s var(--ease-out);
+}
+.site-footer .sf-link:hover { color: var(--primary); }
+.site-footer .sf-link svg { width: 13px; height: 13px; }
 /* 版本号做成小徽标，扫一眼就能确认跑的是哪一版 */
 .site-footer .sf-ver {
     display: inline-block;
