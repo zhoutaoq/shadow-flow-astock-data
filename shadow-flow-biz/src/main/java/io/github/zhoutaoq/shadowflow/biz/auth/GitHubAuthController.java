@@ -10,6 +10,10 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.view.RedirectView;
 
 import javax.servlet.http.HttpServletRequest;
+import java.io.IOException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -86,10 +90,29 @@ public class GitHubAuthController {
         } catch (IllegalArgumentException e) {
             log.warn("[auth] GitHub 登录失败：{}", e.getMessage());
             return errorRedirect(e.getMessage(), returnTo);
+        } catch (IOException e) {
+            // 网络类失败单独归一类：这是运维问题（服务器出不了境），不是用户操作问题，
+            // 提示里要把「连不上 github.com」说清楚，否则只会看到一句没用的「请稍后再试」
+            log.warn("[auth] GitHub 登录网络异常：{}", e.toString(), e);
+            return errorRedirect(networkMessage(e), returnTo);
         } catch (Exception e) {
             log.warn("[auth] GitHub 登录异常", e);
             return errorRedirect("GitHub 登录失败，请稍后再试", returnTo);
         }
+    }
+
+    /** 把网络异常翻译成一句用户能看懂、运维也能据此定位的话 */
+    private static String networkMessage(IOException e) {
+        if (e instanceof SocketTimeoutException) {
+            return "连接 GitHub 超时：服务器无法访问 github.com，请检查服务器网络或 DNS 解析";
+        }
+        if (e instanceof UnknownHostException) {
+            return "无法解析 github.com：服务器 DNS 异常";
+        }
+        if (e instanceof ConnectException) {
+            return "无法连接 github.com：服务器到 GitHub 的网络被阻断";
+        }
+        return "与 GitHub 通信失败：" + e.getMessage();
     }
 
     /** 当前是否开通 GitHub 登录（登录页据此决定显不显示按钮） */

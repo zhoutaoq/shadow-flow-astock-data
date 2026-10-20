@@ -98,8 +98,9 @@ app:
       # GitHub 站点与 API 地址；GitHub Enterprise 换成自己的域名
       web-base-url: "https://github.com"
       api-base-url: "https://api.github.com"
-      connect-timeout-ms: 10000
-      read-timeout-ms: 10000
+      # 国内服务器到 github.com 的往返常在秒级波动，读超时给宽一点（换 token 另有 1 次重试）
+      connect-timeout-ms: 15000
+      read-timeout-ms: 20000
   # ============================================================
   # 股票名称跳转：全站股票名称加超链接，点击开新窗口
   #

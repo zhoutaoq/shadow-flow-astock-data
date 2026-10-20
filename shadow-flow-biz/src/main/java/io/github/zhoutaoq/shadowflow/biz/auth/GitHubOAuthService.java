@@ -128,8 +128,35 @@ public class GitHubOAuthService {
         return p;
     }
 
-    /** POST 换 token；GitHub 用 JSON 回 {access_token} 或 {error, error_description} */
+    /**
+     * 换 token：失败重试一次。
+     *
+     * <p>国内服务器到 github.com 的链路质量不稳（丢包 / 中途被掐），单次失败并不代表
+     * 授权码无效；隔半秒重试一次能救掉大部分瞬时超时，且不会让用户重走一遍授权页。
+     */
     private String exchangeCode(String code, String redirectUri) throws IOException {
+        IOException last = null;
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                return exchangeOnce(code, redirectUri);
+            } catch (IOException e) {
+                last = e;
+                log.warn("[auth] GitHub 换 token 失败（第 {} 次）：{}", attempt, e.toString());
+                if (attempt == 1) {
+                    try {
+                        Thread.sleep(500L);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        throw last;
+    }
+
+    /** POST 换 token；GitHub 用 JSON 回 {access_token} 或 {error, error_description} */
+    private String exchangeOnce(String code, String redirectUri) throws IOException {
         String body = "client_id=" + enc(props.getClientId())
                 + "&client_secret=" + enc(props.getClientSecret())
                 + "&code=" + enc(code)
