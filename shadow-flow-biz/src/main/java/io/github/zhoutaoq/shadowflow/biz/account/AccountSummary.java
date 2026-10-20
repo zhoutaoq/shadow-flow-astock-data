@@ -50,6 +50,13 @@ public class AccountSummary {
     private BigDecimal dayRealizedProfit = BigDecimal.ZERO;
     /** 当日收益率（%）：按当日基准市值算，基准价缺失时为 null */
     private BigDecimal dayProfitPercent;
+    /**
+     * 今天是否已经开盘（v1.6.9）。
+     *
+     * <p>为假时（未开盘 / 非交易日）当日收益一律按 0 下发 —— 未开盘没有「当日」的成交价，
+     * 拿昨收或成本价硬凑出来的差都不是当日盈亏。
+     */
+    private boolean dayStarted;
     private String remark;
     /** 持仓明细（含现价、当日/总收益） */
     private List<PositionView> positions = new ArrayList<>();
@@ -90,9 +97,9 @@ public class AccountSummary {
         private BigDecimal costValue = BigDecimal.ZERO;
         /** 当前市值 = 现价 × 数量 */
         private BigDecimal marketValue = BigDecimal.ZERO;
-        /** 当日收益 = (现价 - 昨收) × 数量；昨收取不到为 null */
+        /** 当日收益 = (现价 - 当日基准价) × 数量；今天还没有实时行情（未开盘/停牌）时按 0 计 */
         private BigDecimal dayProfit;
-        /** 当日收益率（%）= (现价 - 昨收) / 昨收 × 100；昨收取不到为 null */
+        /** 当日收益率（%）= (现价 - 当日基准价) / 基准价 × 100；未开盘或基准缺失时为 null */
         private BigDecimal dayProfitPercent;
         /** 总收益 = (现价 - 成本价) × 数量 */
         private BigDecimal totalProfit = BigDecimal.ZERO;
@@ -413,6 +420,14 @@ public class AccountSummary {
 
     public void setDayProfitPercent(BigDecimal dayProfitPercent) {
         this.dayProfitPercent = dayProfitPercent;
+    }
+
+    public boolean isDayStarted() {
+        return dayStarted;
+    }
+
+    public void setDayStarted(boolean dayStarted) {
+        this.dayStarted = dayStarted;
     }
 
     public String getRemark() {

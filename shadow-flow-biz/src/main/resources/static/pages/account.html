@@ -74,17 +74,17 @@
                 </div>
             </section>
 
-            <!-- ② 收益汇总 -->
+            <!-- ② 账户统计（v1.6.9）：总资产 / 持仓市值 / 总盈亏 / 浮动盈亏 / 当日收益 五项 -->
             <section class="acard acard-wide">
                 <header class="acard-hd">
                     <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg></span>
-                    <h2>收益汇总</h2>
+                    <h2>账户统计</h2>
                     <span class="acard-note" id="quoteTip"></span>
                 </header>
                 <div class="acard-bd">
                     <div class="akpi-grid">
                         <div class="akpi">
-                            <div class="akpi-t">当前总市值</div>
+                            <div class="akpi-t">总资产</div>
                             <div class="akpi-v" id="kTotalValue">-</div>
                             <div class="akpi-d">持仓市值 + 可用金额</div>
                         </div>
@@ -94,14 +94,19 @@
                             <div class="akpi-d" id="kPosCost">成本 -</div>
                         </div>
                         <div class="akpi">
+                            <div class="akpi-t">总盈亏</div>
+                            <div class="akpi-v" id="kTotalProfit">-</div>
+                            <div class="akpi-d" id="kTotalPct">相对账户期初市值</div>
+                        </div>
+                        <div class="akpi">
+                            <div class="akpi-t">浮动盈亏</div>
+                            <div class="akpi-v" id="kFloatProfit">-</div>
+                            <div class="akpi-d" id="kFloatPct">相对持仓成本</div>
+                        </div>
+                        <div class="akpi">
                             <div class="akpi-t">当日收益</div>
                             <div class="akpi-v" id="kDayProfit">-</div>
                             <div class="akpi-d" id="kDayPct">持仓浮动 + 当日已实现</div>
-                        </div>
-                        <div class="akpi">
-                            <div class="akpi-t">总收益</div>
-                            <div class="akpi-v" id="kTotalProfit">-</div>
-                            <div class="akpi-d" id="kTotalPct">相对账户期初市值</div>
                         </div>
                     </div>
                 </div>
@@ -150,7 +155,7 @@
                                 <th>成本市值</th>
                                 <th>当前市值</th>
                                 <th>当日收益</th>
-                                <th>总收益</th>
+                                <th>总盈亏</th>
                                 <th class="ops">操作</th>
                             </tr>
                             </thead>
@@ -267,9 +272,9 @@
 
         document.getElementById('ovChips').innerHTML =
             '<span class="achip">' + rows.length + ' / ' + maxA + ' 个账户</span>'
-            + '<span class="achip">合计总市值 ' + money(ov.totalValue) + '</span>'
+            + '<span class="achip">合计总资产 ' + money(ov.totalValue) + '</span>'
             + '<span class="achip ' + dir(ov.dayProfit) + '">合计当日收益 ' + moneySigned(ov.dayProfit) + '</span>'
-            + '<span class="achip ' + dir(ov.totalProfit) + '">合计总收益 ' + moneySigned(ov.totalProfit) + '</span>';
+            + '<span class="achip ' + dir(ov.totalProfit) + '">合计总盈亏 ' + moneySigned(ov.totalProfit) + '</span>';
 
         const canAdd = rows.length < maxA;
         document.getElementById('accGrid').innerHTML = rows.map(a => {
@@ -283,7 +288,7 @@
                 + '<div class="acc-mv">' + money(a.totalValue) + '</div>'
                 + '<div class="acc-kpis">'
                 + '<span class="acc-kpi">当日 <b class="' + d + '">' + moneySigned(a.dayProfit) + '</b></span>'
-                + '<span class="acc-kpi">总收益 <b class="' + t + '">' + moneySigned(a.totalProfit) + '</b>'
+                + '<span class="acc-kpi">总盈亏 <b class="' + t + '">' + moneySigned(a.totalProfit) + '</b>'
                 + '<small> ' + pctSigned(a.totalProfitPercent) + '</small></span>'
                 + '</div>'
                 + '<div class="acc-ft">'
@@ -381,23 +386,36 @@
             + '</div>').join('');
     }
 
+    /** 账户统计（v1.6.9）：总资产 / 持仓市值 / 总盈亏 / 浮动盈亏 / 当日收益 */
     function renderSummary(s) {
         setKpi('kTotalValue', money(s.totalValue), '');
         setKpi('kPosValue', money(s.positionValue), '');
         document.getElementById('kPosCost').textContent = '成本 ' + money(s.positionCost);
 
-        setKpi('kDayProfit', moneySigned(s.dayProfit), dir(s.dayProfit));
-        // 当日收益 = 持仓浮动 + 当天卖出的已实现，副标题把两个来源摊开，便于核对
-        const parts = ['浮动 ' + moneySigned(s.dayFloatProfit), '已实现 ' + moneySigned(s.dayRealizedProfit)];
-        if (s.dayProfitPercent != null) {
-            parts.push(pctSigned(s.dayProfitPercent));
-        }
-        document.getElementById('kDayPct').textContent = parts.join(' · ');
-
         setKpi('kTotalProfit', moneySigned(s.totalProfit), dir(s.totalProfit));
         document.getElementById('kTotalPct').textContent = s.totalProfitPercent == null
             ? '相对账户期初市值'
             : pctSigned(s.totalProfitPercent) + '（期初 ' + money(s.initValue) + '）';
+
+        // 浮动盈亏 = 持仓市值 - 持仓成本，收益率按持仓成本算（总盈亏则把可用金额的进出也算在内）
+        setKpi('kFloatProfit', moneySigned(s.positionProfit), dir(s.positionProfit));
+        const cost = Number(s.positionCost || 0);
+        document.getElementById('kFloatPct').textContent = cost > 0
+            ? pctSigned(Number(s.positionProfit || 0) / cost * 100) + '（成本 ' + money(s.positionCost) + '）'
+            : '相对持仓成本';
+
+        setKpi('kDayProfit', moneySigned(s.dayProfit), dir(s.dayProfit));
+        // 未开盘当日收益一律 0：把口径写在副标题上，省得用户以为是没刷新
+        if (s.dayStarted === false) {
+            document.getElementById('kDayPct').textContent = '未开盘 · 当日收益按 0 计';
+        } else {
+            // 当日收益 = 持仓浮动 + 当天卖出的已实现，副标题把两个来源摊开，便于核对
+            const parts = ['浮动 ' + moneySigned(s.dayFloatProfit), '已实现 ' + moneySigned(s.dayRealizedProfit)];
+            if (s.dayProfitPercent != null) {
+                parts.push(pctSigned(s.dayProfitPercent));
+            }
+            document.getElementById('kDayPct').textContent = parts.join(' · ');
+        }
     }
 
     function setKpi(id, text, cls) {
@@ -415,9 +433,10 @@
             '<span class="achip">期初市值 ' + money(s.initValue) + '</span>'
             + '<span class="achip">可用金额 ' + money(s.cash) + '</span>'
             + '<span class="achip">持仓市值 ' + money(s.positionValue) + '</span>'
+            + '<span class="achip ' + dir(s.positionProfit) + '">浮动盈亏 ' + moneySigned(s.positionProfit) + '</span>'
             + '<span class="achip ' + dir(s.dayProfit) + '">当日收益 ' + moneySigned(s.dayProfit) + '</span>'
             + '<span class="achip ' + dir(s.dayRealizedProfit) + '">当日已实现 ' + moneySigned(s.dayRealizedProfit) + '</span>'
-            + '<span class="achip ' + dir(s.totalProfit) + '">总收益 ' + moneySigned(s.totalProfit) + '</span>'
+            + '<span class="achip ' + dir(s.totalProfit) + '">总盈亏 ' + moneySigned(s.totalProfit) + '</span>'
             + '<span class="achip">' + n + ' / ' + maxP + ' 只持仓</span>';
     }
 

@@ -13,8 +13,11 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -111,6 +114,9 @@ public class AccountService {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private static final BigDecimal MAX_INIT_VALUE = BigDecimal.valueOf(1_000_000_000_000L);
+
+    /** 交易时区：A 股只认北京时间，「今天」与开盘点都按它算，不看服务器本地时区 */
+    private static final ZoneId ZONE_CN = ZoneId.of("Asia/Shanghai");
 
     /** 当日盈亏基准口径（页面直接展示，别在别处再拼字符串） */
     private static final String BASIS_PRE_CLOSE = "昨收";
@@ -816,8 +822,11 @@ public class AccountService {
         Account acct = getAccountRequired(userId, resolveAccountId(userId, accountId));
         String today = todayYmd();
         List<Position> positions = repository.listPositions(userId, acct.getId());
-        Calc c = calc(positions, fetchQuotes(wantedOf(positions)), today);
-        BigDecimal realized = dayRealizedOf(acct, today);
+        Map<String, Quote> quotes = fetchQuotes(wantedOf(positions));
+        Calc c = calc(positions, quotes, today);
+        // v1.6.9：未开盘当日收益一律 0 —— 当日已实现也一样，今天还没成交过就不能算「当日」
+        boolean started = dayStarted(quotes, today);
+        BigDecimal realized = started ? dayRealizedOf(acct, today) : BigDecimal.ZERO;
         BigDecimal dayProfit = c.dayProfit.add(realized);
 
         AccountSummary s = new AccountSummary();
@@ -833,6 +842,7 @@ public class AccountService {
         s.setTotalValue(money(c.positionValue.add(nz(acct.getCash()))));
         s.setTotalProfit(money(c.positionValue.add(nz(acct.getCash())).subtract(nz(acct.getInitValue()))));
         s.setTotalProfitPercent(percent(s.getTotalProfit(), nz(acct.getInitValue())));
+        s.setDayStarted(started);
         s.setDayProfit(money(dayProfit));
         s.setDayFloatProfit(money(c.dayProfit));
         s.setDayRealizedProfit(money(realized));
@@ -862,6 +872,7 @@ public class AccountService {
             }
         }
         Map<String, Quote> quotes = fetchQuotes(wanted);
+        boolean started = dayStarted(quotes, today);
 
         AccountSummary s = new AccountSummary();
         s.setAccountId(0);
@@ -889,7 +900,7 @@ public class AccountService {
             positionCost = positionCost.add(c.positionCost);
             positionProfit = positionProfit.add(c.positionProfit);
             dayFloatProfit = dayFloatProfit.add(c.dayProfit);
-            dayRealizedProfit = dayRealizedProfit.add(dayRealizedOf(a, today));
+            dayRealizedProfit = dayRealizedProfit.add(started ? dayRealizedOf(a, today) : BigDecimal.ZERO);
             dayBasisValue = dayBasisValue.add(c.dayBasisValue);
             initValue = initValue.add(nz(a.getInitValue()));
             cash = cash.add(nz(a.getCash()));
@@ -908,6 +919,7 @@ public class AccountService {
         s.setTotalValue(money(positionValue.add(cash)));
         s.setTotalProfit(money(positionValue.add(cash).subtract(initValue)));
         s.setTotalProfitPercent(percent(s.getTotalProfit(), initValue));
+        s.setDayStarted(started);
         s.setDayProfit(money(dayProfit));
         s.setDayFloatProfit(money(dayFloatProfit));
         s.setDayRealizedProfit(money(dayRealizedProfit));
@@ -959,8 +971,9 @@ public class AccountService {
      * 用户原话是「用成本价算，太傻逼了」。昨收与最近价都是真实成交过的价格，
      * 未开盘时用它算市值才是各家的通行做法；只有连这些都没有（进程刚起来、行情全挂）才退回成本价。
      *
-     * <p>当日盈亏仍按 {@link #dayBasisOf} 给出的当量基准价算 —— 未开盘时现价 = 昨收，
-     * 当日收益自然是 0，不会凭空多出一段盈亏。
+     * <p>当日盈亏按 {@link #dayBasisOf} 给出的当量基准价算，<b>但只在该条今天有实时行情时才计</b>
+     * （见 {@link #liveToday}，v1.6.9）：未开盘时基准价可能是成本价（建仓日 = 今天）或当日买入均价，
+     * 与回落出来的昨收价一减就是一笔假的当日收益 —— 「还没开盘怎么就有当日收益了」说的就是这个。
      */
     private Calc calc(List<Position> positions, Map<String, Quote> quotes, String today) {
         Calc c = new Calc();
@@ -1001,7 +1014,13 @@ public class AccountService {
             v.setDayBuyAvgPrice(basis.dayBuyAvg);
             v.setDayBasisPrice(basis.price);
             v.setDayBasis(basis.label);
-            if (basis.price != null && basis.price.signum() > 0) {
+            if (!liveToday(q, today)) {
+                // v1.6.9：今天还没有这条的实时行情（未开盘 / 停牌 / 非交易日），当日浮动一律按 0 计。
+                // 病根是基准价口径 —— 「建仓日 = 今天」会拿成本价当基准，「当天买入池」会拿买入均价当基准，
+                // 两者都可能与（未开盘回落出来的）昨收价形成一个大差额，未开盘就冒出一笔假的当日收益。
+                v.setDayProfit(money(BigDecimal.ZERO));
+                v.setDayProfitPercent(BigDecimal.ZERO);
+            } else if (basis.price != null && basis.price.signum() > 0) {
                 BigDecimal dayProfitOne = price.subtract(basis.price).multiply(qty)
                         .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
                 v.setDayProfit(dayProfitOne);
@@ -1110,9 +1129,53 @@ public class AccountService {
         return b;
     }
 
+    /**
+     * 这条行情是不是<b>今天的实时价</b>（v1.6.9）。
+     *
+     * <p>两个条件缺一不可：
+     * <ul>
+     *   <li>现价是真成交出来的 —— {@link SinaQuoteClient#fetchForValuation} 在未开盘/停牌时
+     *       会把昨收顶上来（{@code priceFromPreClose}），那不是今天的成交价；</li>
+     *   <li>行情日期就是今天 —— 周末/节假日新浪给的还是上个交易日的快照，
+     *       拿它去减昨收就是上个交易日的涨跌，不该记到「当日」头上。</li>
+     * </ul>
+     */
+    private static boolean liveToday(Quote q, String today) {
+        if (q == null || q.isPriceFromPreClose()) {
+            return false;
+        }
+        BigDecimal p = q.getPrice();
+        return p != null && p.signum() > 0 && today.equals(quoteDayOf(q));
+    }
+
+    /** 行情快照的日期（yyyy-MM-dd）；取不到返回空串 */
+    private static String quoteDayOf(Quote q) {
+        String t = q == null ? null : q.getTimeText();
+        return t != null && t.length() >= 10 ? t.substring(0, 10) : "";
+    }
+
+    /**
+     * 今天是否已经开盘（v1.6.9）：任一持仓拿到了今天的实时价，或已过开盘点（工作日 09:30）。
+     *
+     * <p>没开盘时当日收益一律按 0 计 —— 包括当日已实现：今天一笔成交都没发生过，
+     * 页面上先记的账也不该算进「当日」，等真开盘了再自然出现。
+     * 时钟那一路是为了兜住「今天已经清仓、没有任何持仓可取行情」的情形。
+     */
+    private boolean dayStarted(Map<String, Quote> quotes, String today) {
+        for (Quote q : quotes.values()) {
+            if (liveToday(q, today)) {
+                return true;
+            }
+        }
+        ZonedDateTime now = ZonedDateTime.now(ZONE_CN);
+        if (now.getDayOfWeek() == DayOfWeek.SATURDAY || now.getDayOfWeek() == DayOfWeek.SUNDAY) {
+            return false;
+        }
+        return now.getHour() > 9 || (now.getHour() == 9 && now.getMinute() >= 30);
+    }
+
     /** 持仓里属于「当天买入池」的数量：池子日期不是今天就为 0（跨天自动作废） */
-    private static int dayQtyInHold(Position p, String today) {
-        if (!today.equals(p.getDayBuyDate())) {
+    private static int dayQtyInHold(Position p, String today) {        if (!today.equals(p.getDayBuyDate())) {
             return 0;
         }
         return Math.max(0, Math.min(p.getDayBuyQty(), p.getQuantity()));
@@ -1227,9 +1290,9 @@ public class AccountService {
         return nz(a.getDayRealizedProfit());
     }
 
-    /** 今天的 yyyy-MM-dd */
+    /** 今天的 yyyy-MM-dd（北京时间，与交易时区一致） */
     private static String todayYmd() {
-        return LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+        return LocalDate.now(ZONE_CN).format(DateTimeFormatter.ISO_LOCAL_DATE);
     }
 
     /**

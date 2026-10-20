@@ -199,19 +199,29 @@
         </div>
         <div class="acct-grid">
             <div class="acct-kpi">
-                <div class="acct-kpi-t">当前总市值</div>
+                <div class="acct-kpi-t">总资产</div>
                 <div class="acct-kpi-v" id="acctMv">-</div>
                 <div class="acct-kpi-d" id="acctMvDesc">持仓市值 + 可用金额</div>
+            </div>
+            <div class="acct-kpi">
+                <div class="acct-kpi-t">持仓市值</div>
+                <div class="acct-kpi-v" id="acctPos">-</div>
+                <div class="acct-kpi-d" id="acctPosDesc">成本 -</div>
+            </div>
+            <div class="acct-kpi">
+                <div class="acct-kpi-t">总盈亏</div>
+                <div class="acct-kpi-v" id="acctTotal">-</div>
+                <div class="acct-kpi-d" id="acctTotalDesc">相对账户期初市值</div>
+            </div>
+            <div class="acct-kpi">
+                <div class="acct-kpi-t">浮动盈亏</div>
+                <div class="acct-kpi-v" id="acctFloat">-</div>
+                <div class="acct-kpi-d" id="acctFloatDesc">相对持仓成本</div>
             </div>
             <div class="acct-kpi">
                 <div class="acct-kpi-t">当日收益</div>
                 <div class="acct-kpi-v" id="acctDay">-</div>
                 <div class="acct-kpi-d" id="acctDayDesc"></div>
-            </div>
-            <div class="acct-kpi">
-                <div class="acct-kpi-t">总收益</div>
-                <div class="acct-kpi-v" id="acctTotal">-</div>
-                <div class="acct-kpi-d" id="acctTotalDesc">相对账户期初市值</div>
             </div>
         </div>
         <div class="acct-hold" id="acctHold"></div>
@@ -419,13 +429,24 @@
         document.getElementById('acctMvDesc').textContent =
             '持仓市值 ' + fmtNum(s.positionValue, 2) + ' + 可用 ' + fmtNum(s.cash, 2);
 
-        setV('acctDay', 'acctDayDesc', signed(s.dayProfit), dir(s.dayProfit));
-        document.getElementById('acctDayDesc').textContent =
-            s.dayProfitPercent == null ? '' : pct(s.dayProfitPercent);
+        setV('acctPos', 'acctPosDesc', fmtNum(s.positionValue, 2));
+        document.getElementById('acctPosDesc').textContent = '成本 ' + fmtNum(s.positionCost, 2);
 
         setV('acctTotal', 'acctTotalDesc', signed(s.totalProfit), dir(s.totalProfit));
         document.getElementById('acctTotalDesc').textContent =
             s.totalProfitPercent == null ? '相对账户期初市值' : pct(s.totalProfitPercent) + '（期初 ' + fmtNum(s.initValue, 2) + '）';
+
+        setV('acctFloat', 'acctFloatDesc', signed(s.positionProfit), dir(s.positionProfit));
+        var cost = Number(s.positionCost || 0);
+        document.getElementById('acctFloatDesc').textContent = cost > 0
+            ? pct(Number(s.positionProfit || 0) / cost * 100) + '（成本 ' + fmtNum(s.positionCost, 2) + '）'
+            : '相对持仓成本';
+
+        setV('acctDay', 'acctDayDesc', signed(s.dayProfit), dir(s.dayProfit));
+        // 未开盘当日收益按 0 计，把口径写出来，省得以为是没刷新
+        document.getElementById('acctDayDesc').textContent = s.dayStarted === false
+            ? '未开盘 · 按 0 计'
+            : (s.dayProfitPercent == null ? '' : pct(s.dayProfitPercent));
 
         document.getElementById('acctSub').innerHTML =
             '<span>' + (s.positions || []).length + ' 只持仓</span>';
