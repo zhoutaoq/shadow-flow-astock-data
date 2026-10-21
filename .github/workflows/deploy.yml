@@ -10,12 +10,12 @@ name: 构建并发布到生产
 # 需要的仓库 Secrets（Settings -> Secrets and variables -> Actions）：
 #   SSH_HOST         服务器 IP，如 111.231.171.218
 #   SSH_USER         登录账号，如 root
-#   SSH_PASSWORD     登录口令（与 sh/deploy.env 的 PWD 同一份，deploy.env 不入库）
+#   SSH_PASSWORD     登录口令（与本地 sh/deploy.env 的 PWD 同一份，deploy.env 不入库）
 #   SSH_PORT         可选，默认 22
-#   SSH_KNOWN_HOSTS  服务器主机公钥，一行，取法见 docs/CI自动发布.md
-#   APP_ENV          shadow-flow-biz/src/main/resources/app.env 的全文（不入库，打进 jar）
+#   SSH_KNOWN_HOSTS  服务器主机公钥，一行，取法与完整发布说明见 sh/使用说明.md
 #
-# 说明：app.env 缺失时 AppEnv.load() 会直接抛异常拒绝启动，所以必须在打包前写回。
+# 不需要 APP_ENV：v1.7.3 起密钥只放服务器部署目录的 app.env，由 remote.sh 启动前注入，
+# 构建产物里不含任何凭据（详见 AGENTS.md 第 2 节）。
 
 on:
   push:

@@ -69,7 +69,7 @@ git config ai.model dsv4.1flash      # 每位使用者按自己用的模型改
 | 场景 | 做法 |
 | --- | --- |
 | 应用密钥 | 只放**部署机器部署目录**的 `app.env`（如 `/home/stock-backtesting/app.env`，`chmod 600`）。**严禁打进 jar**：`shadow-flow-biz/pom.xml` 已 `exclude` 该文件，别去掉 |
-| 部署凭据 | 只放 `sh/deploy.env`（已 gitignore） |
+| 部署凭据 | 只放 `sh/deploy.env`（已 gitignore）。正式发布的凭据在仓库 Secrets 里，不走这个文件 |
 | 配置文件 | 一律用 `${ENV_NAME:}` 空兜底占位符，**不允许**写明文默认值 |
 | 模板文件 | `*.env.example` 只写「在此填写…」类占位符 |
 | 校验/测试脚本 | 真实值从环境变量或本机 `app.env` 读取；取不到就 **SKIP**，禁止把真实值写进源码当「探针」 |
@@ -133,7 +133,17 @@ node scripts/check_inline_js.js shadow-flow-biz/src/main/resources/static
 
 ---
 
-## 5. 代码约定
+## 5. 发布
+
+正式发布只走 GitHub Actions（`.github/workflows/deploy.yml`）：推到 `github` / `main` 即打包 → 上传 → 远端重启 → 探活，也可在 Actions 页面手动 Run。Secrets 与完整流程见 `sh/使用说明.md`。
+
+- 入库的只有 `sh/remote.sh` 与 `sh/server.env`（CI 直接解析后上传）。别在 CI 里另存一份部署配置，也别把部署目录/端口写进 workflow。
+- 本地 `sh/deploy.bat` / `deploy.env` / `deploy.env.example` / `plink.exe` / `pscp.exe` 已 gitignore，只给 agent 在本机快发用。**不要提交，也不要把发布逻辑往它们身上加。**
+- `sh/deploy.bat` 目前跑不通：cmd 的 `call` 只认 `.bat` / `.cmd`，`call deploy.env` 会被静默跳过，变量全空后停在「配置缺项」。本机快发按使用说明里的三步手打，不要指望它。
+
+---
+
+## 6. 代码约定
 
 - Java 8、Spring Boot 2.7.6；持久化用 `JdbcTemplate`，**不引入 MyBatis / JPA**。
 - 新增仓储要同时提供文件模式与数据库模式两条实现（无数据库模式是默认模式）。
@@ -143,9 +153,9 @@ node scripts/check_inline_js.js shadow-flow-biz/src/main/resources/static
 
 ---
 
-## 6. 不要做的事
+## 7. 不要做的事
 
 - 不擅自 `git push`、不改写历史、不强推（需人工明确授权）。
 - 不删 `data/`、`docs/`、`sh/deploy.env`、`app.env` 这类运行/配置资产。
-- 不把 `target/`、截图、日志提交进仓库。
+- 不把 `target/`、截图、日志、本地发布脚本（`sh/deploy.bat` / `deploy.env` / `plink.exe` / `pscp.exe`）提交进仓库。
 - 不在提交信息里贴口令、令牌、内网地址。
