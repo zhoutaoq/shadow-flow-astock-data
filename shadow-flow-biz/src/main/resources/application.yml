@@ -102,7 +102,8 @@ app:
       api-base-url: "https://api.github.com"
       # 换 token 的地址前缀，留空 = 跟 web-base-url 一致。
       # 这一步是「服务器 → GitHub」，与用户浏览器无关；服务器连不上 github.com 时可指到自建反代。
-      token-base-url: ""
+      # 想启用就把 GITHUB_TOKEN_BASE_URL 写进 app.env（如 https://xxx.workers.dev），重启即生效，不用重打包。
+      token-base-url: ${GITHUB_TOKEN_BASE_URL:}
       # 单次超时压低、次数增多：这台机器到 github.com 是成块抖动（几分钟连不上、过会儿全通），
       # 与其一次等 15 秒再试一次，不如 5 秒就放弃、共试 3 次（最坏 20 秒左右）。
       connect-timeout-ms: 5000
