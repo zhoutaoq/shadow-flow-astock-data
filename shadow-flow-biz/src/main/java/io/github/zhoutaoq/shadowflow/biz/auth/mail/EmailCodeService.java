@@ -17,12 +17,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * 邮箱验证码：下发、限频、校验。
+ * 邮箱验证码：下发、限频、校验。只服务注册一个场景 —— 登录只要邮箱 + 密码。
  *
- * <p><b>为什么要它（v1.7.4 第 1 条）</b>：注册原本只要「邮箱格式对 + 密码合规」就能开号，
- * 也就是说任何人可以拿别人的邮箱、或者一个根本不存在的邮箱开一堆号。验证码把
- * 「这个地址确实能收信」变成注册的前提，登录时再验一次，等于把「邮箱是本人的」
- * 这件事在每次登录时都重新确认一遍。
+ * <p><b>为什么要它</b>：注册原本只要「邮箱格式对 + 密码合规」就能开号，
+ * 也就是说任何人可以拿别人的邮箱、或者一个根本不存在的邮箱开一堆号。
+ * 验证码把「这个地址确实能收信」变成注册的前提。
  *
  * <p>验证码只放内存（{@link ConcurrentMap}），不落库也不落文件：
  * <ul>
@@ -46,11 +45,6 @@ public class EmailCodeService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailCodeService.class);
 
-    /** 注册场景 */
-    public static final String SCENE_REGISTER = "register";
-    /** 登录场景 */
-    public static final String SCENE_LOGIN = "login";
-
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final MailProperties props;
@@ -61,7 +55,7 @@ public class EmailCodeService {
      */
     private final IntegrationConfigService integrations;
 
-    /** {@code 场景|邮箱 → 待校验的验证码} */
+    /** {@code 邮箱 → 待校验的验证码} */
     private final ConcurrentMap<String, Code> codes = new ConcurrentHashMap<>();
     /** {@code 邮箱 → 发送窗口（冷却 + 当日条数）} */
     private final ConcurrentMap<String, Window> windows = new ConcurrentHashMap<>();
@@ -90,22 +84,11 @@ public class EmailCodeService {
     }
 
     /**
-     * 登录是否要求验证码。
-     *
-     * <p>「邮件服务没配好」时不强制 —— 与注册不同，登录是存量用户的入口：
-     * 配不上发信却在登录口强收验证码，等于把所有邮箱账号锁在门外。
-     * 这时登录退回原来的「邮箱 + 密码」，日志里有明确告警；注册则直接停掉（见 {@link #requireOnRegister()}）。
-     */
-    public boolean requireOnLogin() {
-        return props.isEnabled() && props.isRequireOnLogin() && configured();
-    }
-
-    /**
      * 注册是否要求验证码。
      *
      * <p>只看开关、不看「配没配」：注册是<b>新增入口</b>，没有发信能力就不该放人进来 ——
-     * 放进来就退化成「随便填个邮箱就能开号」，正是这次要堵的口子。
-     * 真去注册时会先被 {@link #send(String, String)} 用「邮件服务未配置」拦下。
+     * 放进来就退化成「随便填个邮箱就能开号」，正是这道闸要堵的口子。
+     * 真去注册时会先被 {@link #send(String)} 用「邮件服务未配置」拦下。
      */
     public boolean requireOnRegister() {
         return props.isEnabled() && props.isRequireOnRegister();
@@ -125,7 +108,6 @@ public class EmailCodeService {
     public Map<String, Object> rules() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("configured", configured());
-        m.put("requiredOnLogin", requireOnLogin());
         m.put("requiredOnRegister", requireOnRegister());
         m.put("resendSeconds", resendSeconds());
         m.put("ttlMinutes", ttlMinutes());
@@ -134,14 +116,13 @@ public class EmailCodeService {
     }
 
     /**
-     * 发一条验证码。
+     * 发一条注册验证码。
      *
      * @param email 目标邮箱（已由调用方做过格式与归属校验）
-     * @param scene {@link #SCENE_REGISTER} 或 {@link #SCENE_LOGIN}
      * @return 给页面的提示（含有效期）
      * @throws IllegalArgumentException 未配置 / 冷却中 / 超日限 / 发送失败
      */
-    public String send(String email, String scene) {
+    public String send(String email) {
         String mail = normalize(email);
         if (!configured()) {
             throw new IllegalArgumentException("邮件服务未配置，暂时无法获取验证码，请联系管理员");
@@ -165,54 +146,52 @@ public class EmailCodeService {
                 throw new IllegalArgumentException("该邮箱今天获取验证码的次数已达上限，请明天再试");
             }
             String code = sixDigits();
-            String text = body(code, scene);
+            String text = body(code);
             try {
-                sendMail(mail, subject(scene), text);
+                sendMail(mail, subject(), text);
             } catch (Exception e) {
                 log.warn("[mail] 验证码发送失败 {}：{}", maskEmail(mail), e.getMessage());
                 throw new IllegalArgumentException("验证码发送失败，请稍后重试");
             }
-            codes.put(key(mail, scene), new Code(code, now + ttlMinutes() * 60_000L));
+            codes.put(mail, new Code(code, now + ttlMinutes() * 60_000L));
             w.lastSentAt = now;
             w.dayCount++;
-            log.info("[mail] 已向 {} 发送{}验证码（{} 分钟内有效）",
-                    maskEmail(mail), sceneLabel(scene), ttlMinutes());
+            log.info("[mail] 已向 {} 发送注册验证码（{} 分钟内有效）", maskEmail(mail), ttlMinutes());
         }
         return "验证码已发送至 " + maskEmail(mail) + "，" + ttlMinutes() + " 分钟内有效";
     }
 
     /**
-     * 校验验证码；通过后立即作废（一次性）。
+     * 校验注册验证码；通过后立即作废（一次性）。
      *
      * @throws IllegalArgumentException 未填 / 已失效 / 试错超限 / 不正确
      */
-    public void verify(String email, String scene, String code) {
+    public void verify(String email, String code) {
         String mail = normalize(email);
         String input = code == null ? "" : code.trim();
         if (input.isEmpty()) {
             throw new IllegalArgumentException("请填写邮箱验证码");
         }
-        String k = key(mail, scene);
-        Code c = codes.get(k);
+        Code c = codes.get(mail);
         if (c == null || c.expireAt < System.currentTimeMillis()) {
-            codes.remove(k);
+            codes.remove(mail);
             throw new IllegalArgumentException("验证码已失效，请重新获取");
         }
         synchronized (c) {
             if (c.attempts >= Math.max(1, props.getMaxAttempts())) {
-                codes.remove(k);
+                codes.remove(mail);
                 throw new IllegalArgumentException("验证码错误次数过多，请重新获取");
             }
             if (!c.value.equals(input)) {
                 c.attempts++;
                 if (c.attempts >= Math.max(1, props.getMaxAttempts())) {
-                    codes.remove(k);
+                    codes.remove(mail);
                     throw new IllegalArgumentException("验证码错误次数过多，请重新获取");
                 }
                 throw new IllegalArgumentException("验证码不正确");
             }
             // 一次性：校验通过就删掉，同一个码不能用第二次
-            codes.remove(k);
+            codes.remove(mail);
         }
     }
 
@@ -243,14 +222,13 @@ public class EmailCodeService {
     }
 
     /** 邮件正文：只有一个验证码 + 用途 + 有效期，不放任何链接（避免被当成钓鱼邮件） */
-    private String body(String code, String scene) {
-        String purpose = SCENE_REGISTER.equals(scene) ? "注册账号" : "登录账号";
+    private String body(String code) {
         return "<div style=\"font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;"
                 + "max-width:460px;margin:0 auto;padding:28px 26px;border:1px solid #e6e8ee;border-radius:14px;"
                 + "color:#1f2430;background:#ffffff\">"
                 + "<div style=\"font-size:16px;font-weight:600;letter-spacing:.5px\">影流数据</div>"
                 + "<div style=\"height:1px;background:#eef0f5;margin:16px 0 20px\"></div>"
-                + "<div style=\"font-size:14px;line-height:22px\">你正在" + purpose + "，验证码是：</div>"
+                + "<div style=\"font-size:14px;line-height:22px\">你正在注册账号，验证码是：</div>"
                 + "<div style=\"margin:18px 0;font-size:30px;font-weight:700;letter-spacing:8px;"
                 + "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#2b5cff\">" + code + "</div>"
                 + "<div style=\"font-size:13px;line-height:21px;color:#5b6478\">"
@@ -259,12 +237,8 @@ public class EmailCodeService {
                 + "</div>";
     }
 
-    private static String subject(String scene) {
-        return "影流数据 · " + sceneLabel(scene) + "验证码";
-    }
-
-    private static String sceneLabel(String scene) {
-        return SCENE_REGISTER.equals(scene) ? "注册" : "登录";
+    private static String subject() {
+        return "影流数据 · 注册验证码";
     }
 
     private static String sixDigits() {
@@ -287,10 +261,6 @@ public class EmailCodeService {
                 wi.remove();
             }
         }
-    }
-
-    private static String key(String email, String scene) {
-        return (SCENE_REGISTER.equals(scene) ? SCENE_REGISTER : SCENE_LOGIN) + "|" + normalize(email);
     }
 
     private static String normalize(String email) {

@@ -51,9 +51,6 @@ public class MailProperties {
     /** 同一条验证码最多试错几次，超过即作废 */
     private int maxAttempts = 5;
 
-    /** 登录是否必须验证码（admin 这类非邮箱账号自动豁免） */
-    private boolean requireOnLogin = true;
-
     /** 注册是否必须验证码 */
     private boolean requireOnRegister = true;
 
@@ -143,14 +140,6 @@ public class MailProperties {
 
     public void setMaxAttempts(int maxAttempts) {
         this.maxAttempts = maxAttempts;
-    }
-
-    public boolean isRequireOnLogin() {
-        return requireOnLogin;
-    }
-
-    public void setRequireOnLogin(boolean requireOnLogin) {
-        this.requireOnLogin = requireOnLogin;
     }
 
     public boolean isRequireOnRegister() {

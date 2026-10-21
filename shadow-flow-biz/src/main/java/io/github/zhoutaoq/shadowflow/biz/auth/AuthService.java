@@ -97,13 +97,13 @@ public class AuthService {
     /**
      * 注册。
      *
-     * <p>v1.7.4 起<b>必须带邮箱验证码</b>：先证明这个邮箱能收信，再开号。
+     * <p><b>必须带邮箱验证码</b>：先证明这个邮箱能收信，再开号。
      * 校验顺序刻意把「格式 → 口令合规 → 是否已注册」放在验证码之前 ——
      * 前三条出错时不该白白消耗掉用户手里的那条码。
      *
      * @param username 邮箱
      * @param password 明文口令
-     * @param code     邮箱验证码（注册场景）
+     * @param code     邮箱验证码
      * @return 新建的用户
      */
     public User register(String username, String password, String code) {
@@ -121,7 +121,7 @@ public class AuthService {
             if (!emailCodes.configured()) {
                 throw new IllegalArgumentException("注册需要邮箱验证码，但邮件服务尚未配置，请联系管理员");
             }
-            emailCodes.verify(name, EmailCodeService.SCENE_REGISTER, code);
+            emailCodes.verify(name, code);
         }
         User u = new User();
         u.setUsername(name);
@@ -140,22 +140,16 @@ public class AuthService {
     }
 
     /**
-     * 登录。
+     * 登录：邮箱 + 密码。
      *
-     * <p>v1.7.4 起邮箱账号还要过一次验证码（密码仍是主要凭证，验证码是第二道）：
-     * <ul>
-     *   <li>先验账号与口令 —— 避免「密码本来就错」的人白白消耗一条验证码；</li>
-     *   <li>再验验证码。<b>admin 这类非邮箱用户名豁免</b>：它没有可收信的邮箱，
-     *       强制验证码等于把超管锁在门外；</li>
-     *   <li>GitHub 三方登录不走这里（OAuth 已经证明了邮箱归属）。</li>
-     * </ul>
+     * <p>验证码只在注册时校验。登录不再要第二道码 —— 存量用户不该因为
+     * 「邮件服务没配好」被锁在门外，GitHub 三方登录同样不走这里。
      *
      * @param username 账号（邮箱）
      * @param password 明文口令
-     * @param code     邮箱验证码（登录场景；非邮箱账号可不填）
      * @return 登录态（含令牌）
      */
-    public SessionService.Session login(String username, String password, String code) {
+    public SessionService.Session login(String username, String password) {
         String name = username == null ? "" : username.trim();
         if (name.isEmpty() || password == null || password.isEmpty()) {
             throw new IllegalArgumentException("用户名与密码都不能为空");
@@ -166,9 +160,6 @@ public class AuthService {
                 || !PasswordHasher.matches(password, u.getPasswordSalt(), u.getPasswordHash())) {
             throw new IllegalArgumentException("用户名或密码不正确");
         }
-        if (emailCodeRequired(u)) {
-            emailCodes.verify(u.getUsername(), EmailCodeService.SCENE_LOGIN, code);
-        }
         String now = LocalDateTime.now().format(DF);
         users.touchLogin(u.getId(), now);
         SessionService.Session s = sessions.create(u);
@@ -177,53 +168,24 @@ public class AuthService {
     }
 
     /**
-     * 这个账号登录时要不要验证码。
+     * 下发注册验证码。
      *
-     * <p>判据是「用户名是邮箱」而不是「角色是普通用户」：三方登录建的号同样是邮箱用户名，
-     * 也该走验证码；反过来，以后若出现别的非邮箱账号（运维号、机器人号），
-     * 一律不受验证码约束，免得再造出一个「没有邮箱却要求收信」的死账号。
-     */
-    public boolean emailCodeRequired(User u) {
-        return u != null && emailCodes.requireOnLogin() && EMAIL.matcher(u.getUsername()).matches();
-    }
-
-    /**
-     * 下发验证码。
-     *
-     * <p>两个场景的区别：
-     * <ul>
-     *   <li>{@code register} —— 邮箱已注册时直接拒绝（注册本来就会告诉他「已注册」，
-     *       这里不必藏），省一封无用的信；</li>
-     *   <li>{@code login} —— 账号不存在时<b>不告诉调用方</b>，也不真的发信，一律回同一句
-     *       「验证码已发送」。否则这个接口就成了「查某邮箱有没有注册过」的探测工具。</li>
-     * </ul>
+     * <p>邮箱已注册时直接拒绝 —— 注册本来就会告诉他「已注册」，不必再发一封无用的信。
      *
      * @return 给页面显示的提示
      */
-    public String sendEmailCode(String username, String scene) {
+    public String sendRegisterCode(String username) {
         String name = checkUsername(username);
-        boolean login = EmailCodeService.SCENE_LOGIN.equals(scene);
-        if (!login && !props.getAuth().isRegistrationEnabled()) {
+        if (!props.getAuth().isRegistrationEnabled()) {
             throw new IllegalArgumentException("注册入口已关闭，请联系管理员开通账号");
         }
-        User u = users.findByUsername(name);
-        if (!login && u != null) {
+        if (users.findByUsername(name) != null) {
             throw new IllegalArgumentException("该邮箱已注册，直接登录即可");
         }
-        if (login) {
-            if (!emailCodes.requireOnLogin()) {
-                throw new IllegalArgumentException("当前登录不需要验证码");
-            }
-            if (u == null || !u.isEnabled()) {
-                // 账号不存在 / 已停用：不发信，但对外与「已发送」完全一致（防探测）
-                log.info("[auth] 登录验证码请求：{} 不存在或已停用，按已发送处理（不发信）", name);
-                return "验证码已发送至 " + EmailCodeService.maskEmail(name) + "，"
-                        + emailCodes.ttlMinutes() + " 分钟内有效";
-            }
-        } else if (!emailCodes.requireOnRegister()) {
+        if (!emailCodes.requireOnRegister()) {
             throw new IllegalArgumentException("当前注册不需要验证码");
         }
-        return emailCodes.send(name, login ? EmailCodeService.SCENE_LOGIN : EmailCodeService.SCENE_REGISTER);
+        return emailCodes.send(name);
     }
 
     /** 退出登录 */
@@ -443,11 +405,6 @@ public class AuthService {
         }
         users.touchLogin(u.getId(), LocalDateTime.now().format(DF));
         return sessions.create(u);
-    }
-
-    /** 邮箱验证码规则（前端登录弹窗据此决定显不显示、多久能重发） */
-    public java.util.Map<String, Object> emailCodeRules() {
-        return emailCodes.rules();
     }
 
     /** 超管用户名 */

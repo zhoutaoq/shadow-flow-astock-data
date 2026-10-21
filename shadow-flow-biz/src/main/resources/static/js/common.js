@@ -97,13 +97,11 @@ const ME = {
     /** GitHub 三方登录是否开通（服务端凭据齐才 true），登录弹窗据此显隐 GitHub 按钮 */
     githubLoginEnabled: false,
     /**
-     * 邮箱验证码规则（v1.7.4）：{configured, requiredOnLogin, requiredOnRegister,
-     * resendSeconds, ttlMinutes, codeLength}。登录弹窗据此决定显不显示验证码行、
-     * 倒计时多少秒 —— 与服务端校验用的是同一份参数，前端不另写死常量。
+     * 邮箱验证码规则：{configured, requiredOnRegister, resendSeconds, ttlMinutes, codeLength}。
+     * 注册标签页据此决定显不显示验证码行、倒计时多少秒 —— 与服务端校验用的是同一份参数。
      */
     emailCode: {
         configured: false,
-        requiredOnLogin: true,
         requiredOnRegister: true,
         resendSeconds: 60,
         ttlMinutes: 10,
@@ -309,7 +307,7 @@ function openAuthModal(opt) {
                 closeAuthModal(true);
             }
         });
-        // 账号框每敲一个字就重判一次：输入 admin（非邮箱）时验证码行要立刻消失
+        // 注册标签页填了邮箱后，验证码行才出现
         mask.querySelector('#amUser').addEventListener('input', syncCodeField);
         ['amUser', 'amPwd', 'amPwd2', 'amCode'].forEach(id => {
             const el = mask.querySelector('#' + id);
@@ -453,7 +451,7 @@ function switchAuthMode(m) {
     syncCodeField();
 }
 
-/** 账号看起来是不是邮箱（含 @ 即可）：登录时只有邮箱账号才需要验证码，admin 不需要 */
+/** 账号看起来是不是邮箱（含 @ 即可）：发注册验证码前先挡一道，省得白跑请求 */
 function isEmailish(v) {
     return /^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/.test(String(v || '').trim());
 }
@@ -464,25 +462,16 @@ let _codeSending = false;
 let _codeTimer = null;
 
 /**
- * 按当前模式与账号形态决定「验证码行显不显示」。
+ * 验证码行只在注册标签页出现 —— 登录只要邮箱 + 密码，不收码也不校验。
  *
- * <p>两处判断都跟后端同口径：
- * <ul>
- *   <li>注册 —— 用户名必须是邮箱，所以注册态永远要验证码（除非服务端关了这项）；</li>
- *   <li>登录 —— 只有邮箱账号才要，admin 这类非邮箱账号不显示、也不校验。</li>
- * </ul>
- * 账号框每敲一个字都会重跑本函数，输入 admin 时那一行会立刻消失。
+ * <p>切标签页、开关弹窗都会重跑本函数，登录态那一行保证是隐藏的。
  */
 function syncCodeField() {
     const mask = document.getElementById('authMask');
     if (!mask) {
         return;
     }
-    const reg = _authMode === 'register';
-    const user = mask.querySelector('#amUser').value.trim();
-    const need = reg
-        ? ME.emailCode.requiredOnRegister !== false
-        : (ME.emailCode.requiredOnLogin !== false && isEmailish(user));
+    const need = _authMode === 'register' && ME.emailCode.requiredOnRegister !== false;
     mask.querySelector('#amCodeField').style.display = need ? '' : 'none';
     if (!need) {
         _codeLeft = 0;
@@ -562,19 +551,19 @@ function resetCodeButton() {
 }
 
 /**
- * 发验证码。两个场景共用这一个入口：
- * 注册场景服务端会先查「这个邮箱有没有注册过」，登录场景则对不存在的账号
- * 一律回「已发送」（不发信），避免被当成探测工具。
+ * 发注册验证码。邮箱已注册时服务端会直接拒绝，省一封无用的信。
  */
 async function sendAuthCode() {
     const mask = document.getElementById('authMask');
     if (!mask || _codeSending) {
         return;
     }
-    const reg = _authMode === 'register';
+    if (_authMode !== 'register') {
+        return;
+    }
     const user = mask.querySelector('#amUser').value.trim();
     if (!user) {
-        setAuthError(reg ? '请先填写邮箱' : '请先填写账号');
+        setAuthError('请先填写邮箱');
         markAuthField('amUserField');
         mask.querySelector('#amUser').focus();
         return;
@@ -589,7 +578,7 @@ async function sendAuthCode() {
     setAuthError('');
     paintCodeButton();
     try {
-        const r = await post('/api/auth/email-code', {username: user, scene: reg ? 'register' : 'login'});
+        const r = await post('/api/auth/email-code', {username: user});
         if (!r || !r.success) {
             // 失败就复位：服务端有 60 秒冷却，真刷得太快它会自己拦
             _codeSending = false;
@@ -731,7 +720,7 @@ async function submitAuthModal() {
             return fail('两次输入的密码不一致', 'amPwd2Field');
         }
     }
-    // 验证码：与服务端同口径 —— 注册必填；登录只在邮箱账号时必填
+    // 验证码只有注册要填
     const needCode = mask.querySelector('#amCodeField').style.display !== 'none';
     const code = mask.querySelector('#amCode').value.replace(/\s/g, '');
     if (needCode) {
@@ -753,7 +742,7 @@ async function submitAuthModal() {
         // 注册成功后服务端直接签发令牌（注册用的验证码已作废，不该再让他收一条来登录）
         const r = reg
             ? await post('/api/auth/register', {username: user, password: pwd, code: code})
-            : await post('/api/auth/login', {username: user, password: pwd, code: needCode ? code : null});
+            : await post('/api/auth/login', {username: user, password: pwd});
         if (!r || !r.success) {
             // 验证码类的报错把焦点落到验证码框，别让用户对着密码框发呆
             const msg = (r && r.message) || (reg ? '注册失败，请稍后再试' : '登录失败，请稍后再试');
@@ -2111,7 +2100,7 @@ function scheduleLabelGridTables() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[影流数据] 前端版本 20261020c（v1.7.3：标签页图标 / GitHub 登录防连点 / 页脚仓库入口）');
+    console.info('[影流数据] 前端版本 20261021a（v1.7.3：标签页图标 / GitHub 登录防连点 / 页脚仓库入口）');
     // OAuth 回跳先收令牌（fragment 里的 #token=），再拉登录态才拉得到自己
     const oauthBack = handleAuthFragment();
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮

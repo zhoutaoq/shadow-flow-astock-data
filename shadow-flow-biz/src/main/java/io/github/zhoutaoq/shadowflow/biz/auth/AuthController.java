@@ -43,17 +43,14 @@ public class AuthController {
     }
 
     /**
-     * 发送邮箱验证码（v1.7.4）：注册与登录各用一个场景。
+     * 发送注册验证码：只有注册要码，登录只要邮箱 + 密码。
      *
-     * <p>放在匿名可用的清单里 —— 注册本来就发生在登录之前；登录场景对「账号不存在」
-     * 一律回「已发送」且不发信（防探测），限频与试错上限在 {@link EmailCodeService} 里。
+     * <p>放在匿名可用的清单里 —— 注册本来就发生在登录之前；
+     * 限频与试错上限在 {@link EmailCodeService} 里。
      */
     @PostMapping("/email-code")
     public ApiResponse<Map<String, Object>> emailCode(@RequestBody(required = false) Map<String, Object> body) {
-        String username = str(body, "username");
-        String scene = str(body, "scene");
-        String message = authService.sendEmailCode(username,
-                "register".equals(scene) ? EmailCodeService.SCENE_REGISTER : EmailCodeService.SCENE_LOGIN);
+        String message = authService.sendRegisterCode(str(body, "username"));
         return ApiResponse.ok(null, message);
     }
 
@@ -72,11 +69,10 @@ public class AuthController {
         return ApiResponse.ok(data, "注册成功");
     }
 
-    /** 登录，成功返回令牌；邮箱账号需同时带上验证码 */
+    /** 登录：邮箱 + 密码，成功返回令牌 */
     @PostMapping("/login")
     public ApiResponse<Map<String, Object>> login(@RequestBody(required = false) Map<String, Object> body) {
-        SessionService.Session s = authService.login(str(body, "username"), str(body, "password"),
-                str(body, "code"));
+        SessionService.Session s = authService.login(str(body, "username"), str(body, "password"));
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("token", s.getToken());
         data.put("expiresInSeconds", s.expiresInSeconds());
@@ -126,7 +122,7 @@ public class AuthController {
         data.put("registrationEnabled", authService.registrationEnabled());
         // GitHub 三方登录是否开通：登录弹窗据此决定显不显示 GitHub 按钮
         data.put("githubLoginEnabled", github.isConfigured());
-        // 邮箱验证码规则（是否必填、冷却秒数、有效期）：登录弹窗按它决定显不显示验证码行
+        // 注册验证码规则（是否必填、冷却秒数、有效期）：注册标签页据它决定显不显示验证码行
         data.put("emailCode", emailCodes.rules());
         data.put("rules", AuthService.rules());
         return ApiResponse.ok(data);

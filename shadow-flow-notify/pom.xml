@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.zhoutaoq</groupId>
         <artifactId>shadow-flow-parent</artifactId>
-        <version>1.7.4</version>
+        <version>1.7.5</version>
     </parent>
 
     <artifactId>shadow-flow-notify</artifactId>
