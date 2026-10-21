@@ -2,15 +2,18 @@
 # ============================================================
 #  服务器侧修复：让本机能够访问 github.com
 #
-#  背景（2026-10-20 线上故障）：
-#    服务器在腾讯云国内，github.com 默认解析到 20.205.243.166，该 IP 被阻断 ——
-#    TLS 能握手完成，但 HTTP 响应永远是 0 字节，表现为 SocketTimeoutException。
-#    GitHub 其它边缘 IP（20.207.73.82 等）完全正常。
-#    结果是「GitHub 三方登录」在回调换 token 时必然超时失败。
+#  背景（2026-10-21 复查）：
+#    这台腾讯云国内机到 github.com 的 443 是「成块抖动」——
+#    几分钟内所有 IP 全连不上（connect timed out / read timed out），
+#    过一会儿又全通；而 api.github.com 一直正常（约 8/10 可用）。
+#    抖动跟具体 IP、SNI 都无关：坏窗口里 10 个候选 IP 全不通，
+#    好窗口里连 hosts 里钉的那个也能 200。所以本脚本只能做「挑一个当下能用的 IP」，
+#    治不了根 —— 要稳定就得给服务器配代理，或用 app.auth.github.token-base-url 指到自建反代。
 #
 #  做法：
-#    探测候选 IP 中哪些真能拿到 HTTP 200，挑最快的一个写进 /etc/hosts，
-#    把 github.com 钉死到可用 IP。Java 走系统解析，因此无需改任何代码。
+#    先取公共 DNS 当前的解析结果（阿里 / 腾讯 / Google 三家），加上 GitHub 已知边缘 IP 兜底，
+#    逐个探测「真能拿到 HTTP 200」，挑最快的一个写进 /etc/hosts。
+#    Java 走系统解析，因此无需改任何代码。
 #
 #  用法（在服务器上执行，需 root）：
 #    bash server-fix-github-dns.sh            # 探测并写入
@@ -25,19 +28,30 @@ HOSTNAME_FIX="github.com"
 BAK="/etc/hosts.bak.shadowflow"
 MARK="# shadow-flow: GitHub DNS 被污染，固定到可用边缘 IP"
 
-# GitHub 公布的 github.com 边缘 IP（含 140.82.112.0/20 段与 Azure Front Door 段）
-CANDIDATES="
+# ① 公共 DNS 当前解析（GitHub 边缘 IP 会漂，硬编码列表迟早全过期）
+DNS_IPS=$(
+    {
+        dig +short "@223.5.5.5" "$HOSTNAME_FIX" 2>/dev/null
+        dig +short "@119.29.29.29" "$HOSTNAME_FIX" 2>/dev/null
+        dig +short "@8.8.8.8" "$HOSTNAME_FIX" 2>/dev/null
+    } | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u
+)
+
+# ② 兜底：GitHub 历史上用过的边缘 IP（DNS 取不到时才用得上）
+STATIC_IPS="
+20.205.243.166
 20.207.73.82
 20.233.83.145
 20.199.39.232
 20.201.28.151
-20.29.134.23
 140.82.121.3
 140.82.116.3
 140.82.114.4
 140.82.113.4
 140.82.112.4
 "
+
+CANDIDATES="$DNS_IPS $STATIC_IPS"
 
 MODE="${1:-}"
 
@@ -54,6 +68,7 @@ if [ "$MODE" = "--revert" ]; then
     exit 0
 fi
 
+echo "[dns] 公共 DNS 解析到：$(echo $DNS_IPS | tr '\n' ' ')"
 echo "[probe] 逐个测试候选 IP（每个最多 8 秒）..."
 BEST=""
 BEST_MS=999999
@@ -75,7 +90,9 @@ for ip in $CANDIDATES; do
 done
 
 if [ -z "$BEST" ]; then
-    echo "[FAIL] 所有候选 IP 都不通，需要给服务器配代理或换线路"
+    echo "[FAIL] 所有候选 IP 都不通 —— 这是链路整体抖动（通常几分钟后自己恢复），"
+    echo "       脚本解决不了，需要给服务器配代理，或把 app.auth.github.token-base-url 指到自建反代。"
+    echo "       原 /etc/hosts 未改动。"
     exit 1
 fi
 echo "[probe] 最优 IP: $BEST (${BEST_MS}ms)"

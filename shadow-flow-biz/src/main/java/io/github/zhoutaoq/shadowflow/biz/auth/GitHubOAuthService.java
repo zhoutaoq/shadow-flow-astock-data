@@ -129,22 +129,26 @@ public class GitHubOAuthService {
     }
 
     /**
-     * 换 token：失败重试一次。
+     * 换 token：失败重试，最多 3 次。
      *
-     * <p>国内服务器到 github.com 的链路质量不稳（丢包 / 中途被掐），单次失败并不代表
-     * 授权码无效；隔半秒重试一次能救掉大部分瞬时超时，且不会让用户重走一遍授权页。
+     * <p>这台服务器到 github.com 的链路是「成块抖动」：几分钟内连不上，
+     * 过一会儿又全通（见 2026-10-21 排查记录）。单次失败不代表授权码无效，
+     * 也不能只试一次就判死 —— 换 token 失败时 GitHub 侧不会消费掉 code，
+     * 重试是安全的。单次超时压到 6 秒，同样 20 秒的总时长里能多试一轮。
      */
     private String exchangeCode(String code, String redirectUri) throws IOException {
+        final int maxAttempts = 3;
+        final long[] backoffMs = {500L, 1500L};
         IOException last = null;
-        for (int attempt = 1; attempt <= 2; attempt++) {
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 return exchangeOnce(code, redirectUri);
             } catch (IOException e) {
                 last = e;
-                log.warn("[auth] GitHub 换 token 失败（第 {} 次）：{}", attempt, e.toString());
-                if (attempt == 1) {
+                log.warn("[auth] GitHub 换 token 失败（第 {}/{} 次）：{}", attempt, maxAttempts, e.toString());
+                if (attempt < maxAttempts) {
                     try {
-                        Thread.sleep(500L);
+                        Thread.sleep(backoffMs[Math.min(attempt - 1, backoffMs.length - 1)]);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;
@@ -161,7 +165,7 @@ public class GitHubOAuthService {
                 + "&client_secret=" + enc(props.getClientSecret())
                 + "&code=" + enc(code)
                 + "&redirect_uri=" + enc(redirectUri);
-        HttpURLConnection conn = open(props.getWebBaseUrl() + "/login/oauth/access_token");
+        HttpURLConnection conn = open(props.exchangeBaseUrl() + "/login/oauth/access_token");
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");

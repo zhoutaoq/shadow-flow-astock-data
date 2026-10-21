@@ -38,10 +38,20 @@ public class GitHubOAuthProperties {
     private String scope = "read:user user:email";
     /** 站点地址（授权跳转） */
     private String webBaseUrl = "https://github.com";
-    /** API 地址（换 token、拉资料） */
+    /** API 地址（拉资料） */
     private String apiBaseUrl = "https://api.github.com";
-    private int connectTimeoutMs = 10000;
-    private int readTimeoutMs = 10000;
+    /**
+     * 换 token 的地址前缀，留空 = 跟 {@link #webBaseUrl} 一致（即 {@code https://github.com}）。
+     *
+     * <p>单独拆出来是因为这一步走的是「服务器 → GitHub」，和用户浏览器无关：
+     * 服务器到 github.com 的链路会成块抖动，必要时把它指到自建中转（反代 github.com 的 Worker），
+     * 而授权页跳转仍走真正的 github.com。
+     */
+    private String tokenBaseUrl = "";
+    /** 连接超时：短一点，失败得快才有机会多试几次 */
+    private int connectTimeoutMs = 5000;
+    /** 读超时：TLS 已握手、只是响应慢时用 */
+    private int readTimeoutMs = 7000;
 
     /** 真的能用：总闸开 + 凭据齐 */
     public boolean isConfigured() {
@@ -102,6 +112,19 @@ public class GitHubOAuthProperties {
 
     public void setApiBaseUrl(String apiBaseUrl) {
         this.apiBaseUrl = apiBaseUrl;
+    }
+
+    /** 换 token 用的前缀：配了 token-base-url 就用它，否则跟 web-base-url */
+    public String exchangeBaseUrl() {
+        return StringUtils.hasText(tokenBaseUrl) ? tokenBaseUrl.trim() : webBaseUrl;
+    }
+
+    public String getTokenBaseUrl() {
+        return tokenBaseUrl;
+    }
+
+    public void setTokenBaseUrl(String tokenBaseUrl) {
+        this.tokenBaseUrl = tokenBaseUrl;
     }
 
     public int getConnectTimeoutMs() {

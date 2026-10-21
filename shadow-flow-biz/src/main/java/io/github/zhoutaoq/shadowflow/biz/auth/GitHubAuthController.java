@@ -104,15 +104,15 @@ public class GitHubAuthController {
     /** 把网络异常翻译成一句用户能看懂、运维也能据此定位的话 */
     private static String networkMessage(IOException e) {
         if (e instanceof SocketTimeoutException) {
-            return "连接 GitHub 超时：服务器无法访问 github.com，请检查服务器网络或 DNS 解析";
+            return "连接 GitHub 超时：服务器到 github.com 的链路抖动，稍等几秒再点一次";
         }
         if (e instanceof UnknownHostException) {
             return "无法解析 github.com：服务器 DNS 异常";
         }
         if (e instanceof ConnectException) {
-            return "无法连接 github.com：服务器到 GitHub 的网络被阻断";
+            return "无法连接 github.com：服务器到 GitHub 的网络被阻断，稍后重试";
         }
-        return "与 GitHub 通信失败：" + e.getMessage();
+        return "与 GitHub 通信失败：" + e.getMessage() + "，稍后重试";
     }
 
     /** 当前是否开通 GitHub 登录（登录页据此决定显不显示按钮） */

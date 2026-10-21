@@ -410,6 +410,8 @@ function handleAuthFragment() {
         history.replaceState(null, '', location.pathname + location.search);
         if (token) {
             setAuthToken(token);
+            // 成功了就把自动重试的标记清掉，下次失败还能再自动试一次
+            sessionStorage.removeItem('ghAuthRetry');
             return true;
         }
         return false;
@@ -417,6 +419,15 @@ function handleAuthFragment() {
     if (h.indexOf('#authError=') === 0) {
         const msg = decodeURIComponent(h.slice('#authError='.length)) || 'GitHub 登录失败，请稍后再试';
         history.replaceState(null, '', location.pathname + location.search);
+        // 网络类失败自动再来一次：换 token 失败时 GitHub 没消费掉授权码，
+        // 服务器到 github.com 又是成块抖动，重走一遍授权往往就过了。只自动试一次。
+        if (/超时|无法连接|无法解析|通信失败/.test(msg) && !sessionStorage.getItem('ghAuthRetry')) {
+            sessionStorage.setItem('ghAuthRetry', '1');
+            toast('网络抖动，正在重试 GitHub 登录…', 'ok');
+            location.href = '/api/auth/github/login';
+            return false;
+        }
+        sessionStorage.removeItem('ghAuthRetry');
         toast(msg, 'err');
         return false;
     }
@@ -2100,7 +2111,7 @@ function scheduleLabelGridTables() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[影流数据] 前端版本 20261021a（v1.7.3：标签页图标 / GitHub 登录防连点 / 页脚仓库入口）');
+    console.info('[影流数据] 前端版本 20261021b（v1.7.6）');
     // OAuth 回跳先收令牌（fragment 里的 #token=），再拉登录态才拉得到自己
     const oauthBack = handleAuthFragment();
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮

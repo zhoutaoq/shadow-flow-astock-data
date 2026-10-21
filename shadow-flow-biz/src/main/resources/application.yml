@@ -100,9 +100,13 @@ app:
       # GitHub 站点与 API 地址；GitHub Enterprise 换成自己的域名
       web-base-url: "https://github.com"
       api-base-url: "https://api.github.com"
-      # 国内服务器到 github.com 的往返常在秒级波动，读超时给宽一点（换 token 另有 1 次重试）
-      connect-timeout-ms: 15000
-      read-timeout-ms: 20000
+      # 换 token 的地址前缀，留空 = 跟 web-base-url 一致。
+      # 这一步是「服务器 → GitHub」，与用户浏览器无关；服务器连不上 github.com 时可指到自建反代。
+      token-base-url: ""
+      # 单次超时压低、次数增多：这台机器到 github.com 是成块抖动（几分钟连不上、过会儿全通），
+      # 与其一次等 15 秒再试一次，不如 5 秒就放弃、共试 3 次（最坏 20 秒左右）。
+      connect-timeout-ms: 5000
+      read-timeout-ms: 7000
   # ============================================================
   # 邮箱验证码 —— 只有注册要码（先证明「这个邮箱是本人的」，不再允许随手填个邮箱就开号）。
   # 登录只要邮箱 + 密码，不需要验证码。
