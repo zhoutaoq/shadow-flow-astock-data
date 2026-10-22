@@ -231,7 +231,6 @@ public class AccountController {
                 name == null ? null : String.valueOf(name),
                 quantity,
                 price,
-                bool(body.get("today")),
                 date == null ? null : String.valueOf(date));
         return ApiResponse.ok(r, (TradeRecord.ACTION_BUY.equals(r.getAction()) ? "买入" : "卖出")
                 + "已生效：可用金额 " + r.getCashAfter());
@@ -371,32 +370,4 @@ public class AccountController {
         }
     }
 
-    /**
-     * 请求体里的布尔宽松解析：「当天买入」标记走它。
-     *
-     * <p>表单/JSON 都可能给 {@code true} / {@code "true"} / {@code 1} / {@code "1"}；
-     * 缺省（null）返回 {@code null}，由业务层决定默认值（当天）。
-     */
-    private static Boolean bool(Object v) {
-        if (v == null) {
-            return null;
-        }
-        if (v instanceof Boolean) {
-            return (Boolean) v;
-        }
-        if (v instanceof Number) {
-            return ((Number) v).intValue() != 0;
-        }
-        String s = String.valueOf(v).trim();
-        if (s.isEmpty()) {
-            return null;
-        }
-        if ("true".equalsIgnoreCase(s) || "1".equals(s) || "yes".equalsIgnoreCase(s)) {
-            return Boolean.TRUE;
-        }
-        if ("false".equalsIgnoreCase(s) || "0".equals(s) || "no".equalsIgnoreCase(s)) {
-            return Boolean.FALSE;
-        }
-        return null;
-    }
 }

@@ -7,8 +7,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261022a">
-    <link rel="stylesheet" href="/css/account.css?v=20261022a">
+    <link rel="stylesheet" href="/css/common.css?v=20261022b">
+    <link rel="stylesheet" href="/css/account.css?v=20261022b">
 </head>
 <body>
 <header class="topbar">
@@ -200,7 +200,7 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261022a"></script>
+<script src="/js/common.js?v=20261022b"></script>
 <script src="/js/date-picker.js?v=20261019a"></script>
 <script src="/js/stock-picker.js?v=20261019a"></script>
 <script src="/vendor/echarts.min.js"></script>
@@ -1300,8 +1300,8 @@
 
     function recRowHtml(x, onlyClock) {
         const buy = x.action === 'buy';
-        // 「当天」标记只出现在买入上：这笔量按买入价起算当日盈亏；卖出恒算隔夜（A股 T+1）
-        const same = buy && x.sameDay ? '<span class="arec-tag">当天</span>' : '';
+        // 「当天」标记：成交日期就是今天，这笔量的当日盈亏从买入价起算（卖出恒为 false）
+        const same = x.sameDay ? '<span class="arec-tag">当天</span>' : '';
         return '<div class="arec-row">'
             + '<span class="arec-act ' + (buy ? 'buy' : 'sell') + '">' + (buy ? '买入' : '卖出') + '</span>'
             + '<span class="arec-time">'
@@ -1378,8 +1378,8 @@
      * 「添加操作记录」弹窗（需求 v1.5.5 第 ② 条，v1.5.6 补默认值与卖出守门）。
      *
      * <p>相比原来平铺在卡片里的表单，这里多了几样东西：成交价（买卖都按它动可用金额，
-     * 页面预填实时行情价）、「当天买入」勾选框（只在买入时出现，决定这笔量按买入价还是昨收算当日盈亏）、
-     * <b>日期</b>（默认今天）与<b>卖出只能从持仓里选</b>。
+     * 页面预填实时行情价）、<b>日期</b>（默认今天，填过去的就是补录）与
+     * <b>卖出只能从持仓里选</b>。
      */
     function openRecordModal() {
         let mask = document.getElementById('recMask');
@@ -1400,11 +1400,9 @@
                 + '<div class="field"><label for="recPrice">成交价（元）</label>'
                 + '<input type="number" id="recPrice" min="0" step="0.01" inputmode="decimal"></div>'
                 + '<div class="modal-note" id="recAmountNote" style="display:none"></div>'
-                + '<div class="field"><label for="recDate">日期</label>'
+                + '<div class="field" id="recDateField"><label for="recDate">日期</label>'
                 + '<input type="date" id="recDate"></div>'
-                + '<div class="field" id="recTodayField"><label class="chk"><input type="checkbox" id="recToday" checked>'
-                + '<span id="recTodayText">当天买入（当日盈亏按买入价算）</span></label></div>'
-                + '<div class="modal-note" id="recTodayHint" style="display:none">成交日期不是今天，这条记录不区分「当天买入」</div>'
+                + '<div class="modal-note" id="recDateHint" style="display:none">补录：只改持仓与可用金额，不计当日盈亏</div>'
                 + '<div class="modal-note" id="recNote" style="display:none"></div>'
                 + '<div class="modal-actions">'
                 + '<button class="btn-ghost" id="recCancel">取消</button>'
@@ -1421,8 +1419,8 @@
                 paintAmount();
                 paintRecordNote();
             });
-            // date-picker 选完会派发原生 change，这里只管跟着收放「当天」勾选框
-            mask.querySelector('#recDate').addEventListener('change', syncTodayField);
+            // date-picker 选完会派发原生 change，这里只管跟着收放补录提示
+            mask.querySelector('#recDate').addEventListener('change', syncDateHint);
             recPicker = createStockPicker(mask.querySelector('#recPickerBox'), {
                 multiple: false,
                 // 卖出只认持仓：候选就是持仓里还有可用数量的那些，名录与手输一律不认
@@ -1441,7 +1439,6 @@
         mask.querySelector('#recQty').value = 100;
         mask.querySelector('#recPrice').value = '';
         mask.querySelector('#recDate').value = today();
-        mask.querySelector('#recToday').checked = true;
         syncRecordModal();
         mask.classList.add('show');
     }
@@ -1468,7 +1465,7 @@
             }
             recPicker.refresh('');
         }
-        syncTodayField();
+        syncDateField();
         paintRecordNote();
         paintAmount();
     }
@@ -1479,29 +1476,19 @@
         return !!d && !!d.value && d.value !== today();
     }
 
-    /**
-     * 「当天」勾选框只在买入、且成交日期 = 今天时才有意义：
-     * 卖出恒按隔夜份额算（A 股 T+1，当天买的当天卖不了），补录历史日期后端也不认这个标记，
-     * 两种情况都直接把勾选框收起，别让用户勾个寂寞。
-     */
-    function syncTodayField() {
-        const field = document.getElementById('recTodayField');
-        const chk = document.getElementById('recToday');
-        const hint = document.getElementById('recTodayHint');
-        if (!field || !chk) return;
-        if (recAction === 'sell') {
-            field.style.display = 'none';
-            if (hint) hint.style.display = 'none';
-            return;
-        }
-        if (isBackfill()) {
-            chk.checked = false;
-            field.style.display = 'none';
-            if (hint) hint.style.display = '';
-        } else {
-            field.style.display = '';
-            if (hint) hint.style.display = 'none';
-        }
+    /** 日期只给买入填：卖出就是此刻成交的，填日期没意义，直接收起 */
+    function syncDateField() {
+        const buy = recAction === 'buy';
+        const field = document.getElementById('recDateField');
+        if (field) field.style.display = buy ? '' : 'none';
+        syncDateHint();
+    }
+
+    /** 补录时提示一句：这笔只改持仓与可用金额，不计当日盈亏 */
+    function syncDateHint() {
+        const hint = document.getElementById('recDateHint');
+        const show = !!(hint && recAction === 'buy' && isBackfill());
+        if (hint) hint.style.display = show ? '' : 'none';
     }
 
     /** 这笔的成交额与资金影响：买入显示成交后剩余可用，卖出显示预计回笼 */
@@ -1637,9 +1624,8 @@
                 code: picked.code,
                 name: picked.name || '',
                 quantity: qty,
-                date: document.getElementById('recDate').value || today(),
-                // 只有买入才认这个标记；卖出恒为 false（A 股 T+1，卖的一定是隔夜仓）
-                today: recAction === 'buy' && document.getElementById('recToday').checked
+                // 卖出恒为今天：日期框在卖出时是收起的，别拿残留值去补录
+                date: recAction === 'sell' ? today() : (document.getElementById('recDate').value || today())
             };
             if (price != null) {
                 body.price = price;

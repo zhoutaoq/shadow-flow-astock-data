@@ -553,15 +553,13 @@ public class AccountService {
      * 买入按成交价扣减可用金额、并按<b>加权平均</b>重算成本价；卖出按成交价加回可用金额。
      * 没填价格时回落到持仓成本价（老前端不带价格时行为不变）。
      *
-     * <p><b>当天标记 {@code todayFlag}</b>（页面上「当天买入」勾选框，默认勾选，只对买入生效）：
-     * <ul>
-     *   <li>买入 + 勾选 → 这笔量进该持仓的「当天买入池」，
-     *       它今后的当日盈亏以<b>当日买入均价</b>为基准，而不是昨收；</li>
-     *   <li>买新标的 + 勾选 → 顺手把建仓日也落成今天。</li>
-     * </ul>
+     * <p><b>「当天」由成交日期决定，不由用户勾</b>：成交日期是今天 = 当天买入，
+     * 这笔量进该持仓的「当天买入池」，当日盈亏以<b>当日买入均价</b>为基准而不是昨收；
+     * 填成过去的日期就是补录，不进池、也不计当日已实现。之前那个 {@code todayFlag} 参数
+     * 等于让用户否认一个后端已经知道的事实，已经删掉。
      *
-     * <p><b>卖出不看这个标记</b>：A 股股票 T+1，当天买入的当天卖不出去，
-     * 所以卖出份额一律先冲隔夜持仓。卖出这一笔的盈亏 =（成交价 − 持仓成本均价）× 数量；
+     * <p><b>卖出恒按隔夜算</b>：A 股股票 T+1，当天买入的当天卖不出去，所以卖出份额一律先冲
+     * 隔夜持仓。卖出这一笔的盈亏 =（成交价 − 持仓成本均价）× 数量；
      * 账户上的「当日已实现」另算 =（成交价 − 昨收）× 数量，用来凑当日盈亏。
      * 卖得比隔夜持仓还多时才落到当天买入份额上（T+1 下不该发生，手工记账里可能出现）。
      *
@@ -578,26 +576,27 @@ public class AccountService {
      *       并且把「只能卖可用数量以内的量」也一起收在这里；</li>
      *   <li><b>可用数量是卖出的硬上限</b>：{@code 数量 ≤ usableQty(持仓)}，
      *       买入加、卖出减（见 {@link Position#getAvailableQty()}）；</li>
-     *   <li><b>成交日期</b>：{@code tradeDate} 缺省即今天。是今天才动「当天买入池」与账户的
-     *       「当日已实现盈亏」；填成过去的日期属于补录，只改持仓与可用金额，不碰当日口径。</li>
+     *   <li><b>成交日期</b>：只有买入能填（{@code tradeDate} 缺省即今天），填成过去的日期属于补录，
+     *       只改持仓与可用金额，不碰当日口径；<b>卖出恒为今天</b> —— 时间不能倒回去卖股票，
+     *       传了别的日期也按今天落账。</li>
      * </ol>
      */
     public TradeRecord addRecord(long userId, long accountId, String action, String code, String name,
-                                 Integer quantity, BigDecimal price, Boolean todayFlag, String tradeDate) {
+                                 Integer quantity, BigDecimal price, String tradeDate) {
         long aid = resolveAccountId(userId, accountId);
         Account acct = getAccountRequired(userId, aid);
         String today = todayYmd();
-        String date = checkTradeDate(tradeDate, today);
-        // 不是今天的成交属于补录：不进「当天买入池」、不计当日已实现（那些口径只对今天有效）
-        boolean onToday = today.equals(date);
-        // 不带标记的老调用按「当天」处理：用户此刻按下「记一笔」，绝大多数就是当天成交
-        boolean sameDay = (todayFlag == null || todayFlag) && onToday;
 
         String act = TradeRecord.ACTION_BUY.equalsIgnoreCase(action) ? TradeRecord.ACTION_BUY
                 : TradeRecord.ACTION_SELL.equalsIgnoreCase(action) ? TradeRecord.ACTION_SELL : null;
         if (act == null) {
             throw new IllegalArgumentException("操作类型只能是买入或卖出");
         }
+        boolean buy = TradeRecord.ACTION_BUY.equals(act);
+        // 卖出就是此刻成交的，日期不给填也不给传：时间不能倒回去卖股票
+        String date = buy ? checkTradeDate(tradeDate, today) : today;
+        // 买入：成交日期是今天 → 进「当天买入池」；填过去的是补录，不进池、不计当日已实现
+        boolean sameDay = today.equals(date);
         String c = normalizeCode(code);
         if (c == null) {
             throw new IllegalArgumentException("请选择操作标的");
@@ -616,7 +615,6 @@ public class AccountService {
             }
         }
 
-        boolean buy = TradeRecord.ACTION_BUY.equals(act);
         // 名称：优先用页面选中的那个（用户看到的就是它），缺了才去名录精确查
         String displayName = nameOf(c, name);
         // 卖出守门：必须先真的持有、且有可卖出的数量（v1.5.6 第 ① 条）
@@ -712,7 +710,7 @@ public class AccountService {
             realized = unit.subtract(nz(hit.getCostPrice()))
                     .multiply(BigDecimal.valueOf(qty)).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             // 账户的「当日已实现」另算：卖出份额先冲隔夜持仓，基准价取昨收。补录不进当日
-            if (onToday) {
+            if (sameDay) {
                 BigDecimal preClose = preCloseOf(c);
                 dayRealized = realizedOfSell(hit, today, qty, unit, preClose);
                 int fromDay = soldFromDay(hit, today, qty);
@@ -737,7 +735,7 @@ public class AccountService {
             }
         }
         // 当日已实现落在账户上（日期不是今天的旧值先作废）；补录不参与当日已实现
-        if (onToday && dayRealized.signum() != 0) {
+        if (sameDay && dayRealized.signum() != 0) {
             if (!today.equals(acct.getDayRealizedDate())) {
                 acct.setDayRealizedDate(today);
                 acct.setDayRealizedProfit(BigDecimal.ZERO);
@@ -767,7 +765,7 @@ public class AccountService {
         log.info("[account] 用户 {} 账户 {} {} {} {} 股，价格 {}，成交额 {}，可用金额 {}{}{}",
                 userId, aid, buy ? "买入" : "卖出",
                 r.getName(), qty, r.getPrice(), turnover, cash,
-                onToday ? "" : "，成交日期 " + date,
+                sameDay ? "" : "，成交日期 " + date,
                 buy ? "" : "，盈亏 " + realized + "，当日已实现 " + dayRealized);
         return r;
     }
