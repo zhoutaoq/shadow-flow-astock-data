@@ -7,8 +7,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261021b">
-    <link rel="stylesheet" href="/css/account.css?v=20261021b">
+    <link rel="stylesheet" href="/css/common.css?v=20261022a">
+    <link rel="stylesheet" href="/css/account.css?v=20261022a">
 </head>
 <body>
 <header class="topbar">
@@ -189,7 +189,7 @@
                         <span>标的</span>
                         <span>成交价</span>
                         <span>数量</span>
-                        <span>当日已实现</span>
+                        <span>盈亏</span>
                         <span id="recDateHead">时间</span>
                     </div>
                     <div class="arec-list" id="recList"></div>
@@ -200,7 +200,7 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261021b"></script>
+<script src="/js/common.js?v=20261022a"></script>
 <script src="/js/date-picker.js?v=20261019a"></script>
 <script src="/js/stock-picker.js?v=20261019a"></script>
 <script src="/vendor/echarts.min.js"></script>
@@ -1284,7 +1284,7 @@
         renderRecords(recRows);
     }
 
-    /** 一组记录里卖出的已实现盈亏合计：组头小计，便于回看那天赚亏多少 */
+    /** 一组记录里卖出的盈亏合计：组头小计，便于回看那天赚亏多少 */
     function realizedSum(rows) {
         let sum = 0;
         let has = false;
@@ -1295,13 +1295,13 @@
             sum += n;
             has = true;
         });
-        return has ? ' · 已实现 ' + moneySigned(sum) : '';
+        return has ? ' · 盈亏 ' + moneySigned(sum) : '';
     }
 
     function recRowHtml(x, onlyClock) {
         const buy = x.action === 'buy';
-        // 「当天」标记：买入 = 这笔量按买入价算当日盈亏；卖出 = 卖的是当天买入的那部分
-        const same = x.sameDay ? '<span class="arec-tag">当天</span>' : '';
+        // 「当天」标记只出现在买入上：这笔量按买入价起算当日盈亏；卖出恒算隔夜（A股 T+1）
+        const same = buy && x.sameDay ? '<span class="arec-tag">当天</span>' : '';
         return '<div class="arec-row">'
             + '<span class="arec-act ' + (buy ? 'buy' : 'sell') + '">' + (buy ? '买入' : '卖出') + '</span>'
             + '<span class="arec-time">'
@@ -1378,7 +1378,7 @@
      * 「添加操作记录」弹窗（需求 v1.5.5 第 ② 条，v1.5.6 补默认值与卖出守门）。
      *
      * <p>相比原来平铺在卡片里的表单，这里多了几样东西：成交价（买卖都按它动可用金额，
-     * 页面预填实时行情价）、「当天」勾选框（决定这笔量按买入价还是昨收算当日盈亏）、
+     * 页面预填实时行情价）、「当天买入」勾选框（只在买入时出现，决定这笔量按买入价还是昨收算当日盈亏）、
      * <b>日期</b>（默认今天）与<b>卖出只能从持仓里选</b>。
      */
     function openRecordModal() {
@@ -1403,7 +1403,7 @@
                 + '<div class="field"><label for="recDate">日期</label>'
                 + '<input type="date" id="recDate"></div>'
                 + '<div class="field" id="recTodayField"><label class="chk"><input type="checkbox" id="recToday" checked>'
-                + '<span id="recTodayText">当天买入</span></label></div>'
+                + '<span id="recTodayText">当天买入（当日盈亏按买入价算）</span></label></div>'
                 + '<div class="modal-note" id="recTodayHint" style="display:none">成交日期不是今天，这条记录不区分「当天买入」</div>'
                 + '<div class="modal-note" id="recNote" style="display:none"></div>'
                 + '<div class="modal-actions">'
@@ -1446,16 +1446,12 @@
         mask.classList.add('show');
     }
 
-    /** 方向切换：按钮高亮 + 候选清单 + 勾选框文案一起跟着走 */
+    /** 方向切换：按钮高亮 + 候选清单 + 「当天」勾选框的显隐一起跟着走 */
     function syncRecordModal() {
         const buy = recAction === 'buy';
         const box = document.getElementById('recAction');
         if (box) {
             box.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.getAttribute('data-act') === recAction));
-        }
-        const label = document.getElementById('recTodayText');
-        if (label) {
-            label.textContent = buy ? '当天买入（当日盈亏按买入价算）' : '卖的是当天买入的部分';
         }
         if (recPicker) {
             recPicker.setPlaceholder(buy ? '代码或名称' : '从持仓中选择');
@@ -1484,14 +1480,20 @@
     }
 
     /**
-     * 「当天」勾选框只在成交日期 = 今天时有意义：补录历史日期时后端不认这个标记
-     * （勾了也不生效），所以直接把勾选框收起、换成一句灰字说明，别让用户勾个寂寞。
+     * 「当天」勾选框只在买入、且成交日期 = 今天时才有意义：
+     * 卖出恒按隔夜份额算（A 股 T+1，当天买的当天卖不了），补录历史日期后端也不认这个标记，
+     * 两种情况都直接把勾选框收起，别让用户勾个寂寞。
      */
     function syncTodayField() {
         const field = document.getElementById('recTodayField');
         const chk = document.getElementById('recToday');
         const hint = document.getElementById('recTodayHint');
         if (!field || !chk) return;
+        if (recAction === 'sell') {
+            field.style.display = 'none';
+            if (hint) hint.style.display = 'none';
+            return;
+        }
         if (isBackfill()) {
             chk.checked = false;
             field.style.display = 'none';
@@ -1636,7 +1638,8 @@
                 name: picked.name || '',
                 quantity: qty,
                 date: document.getElementById('recDate').value || today(),
-                today: document.getElementById('recToday').checked
+                // 只有买入才认这个标记；卖出恒为 false（A 股 T+1，卖的一定是隔夜仓）
+                today: recAction === 'buy' && document.getElementById('recToday').checked
             };
             if (price != null) {
                 body.price = price;

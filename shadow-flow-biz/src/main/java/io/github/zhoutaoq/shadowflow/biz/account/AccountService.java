@@ -553,16 +553,17 @@ public class AccountService {
      * 买入按成交价扣减可用金额、并按<b>加权平均</b>重算成本价；卖出按成交价加回可用金额。
      * 没填价格时回落到持仓成本价（老前端不带价格时行为不变）。
      *
-     * <p><b>当天标记 {@code todayFlag}</b>（页面上「当天买入 / 卖的是当天买入的」勾选框，默认勾选）：
+     * <p><b>当天标记 {@code todayFlag}</b>（页面上「当天买入」勾选框，默认勾选，只对买入生效）：
      * <ul>
      *   <li>买入 + 勾选 → 这笔量进该持仓的「当天买入池」，
      *       它今后的当日盈亏以<b>当日买入均价</b>为基准，而不是昨收；</li>
-     *   <li>买新标的 + 勾选 → 顺手把建仓日也落成今天；</li>
-     *   <li>卖出 + 勾选 → 优先卖<b>当天买入</b>那部分，已实现盈亏按当日买入均价算；</li>
-     *   <li>卖出 + 不勾 → 优先卖隔夜持仓，已实现盈亏按<b>昨收</b>算；
-     *       卖得比隔夜持仓还多时，多出来的部分仍然算在当天买入份额上（A股 T+1 下这本不该发生，
-     *       手工记账时却可能出现，这里给出唯一自洽的解释而不是拒绝）。</li>
+     *   <li>买新标的 + 勾选 → 顺手把建仓日也落成今天。</li>
      * </ul>
+     *
+     * <p><b>卖出不看这个标记</b>：A 股股票 T+1，当天买入的当天卖不出去，
+     * 所以卖出份额一律先冲隔夜持仓。卖出这一笔的盈亏 =（成交价 − 持仓成本均价）× 数量；
+     * 账户上的「当日已实现」另算 =（成交价 − 昨收）× 数量，用来凑当日盈亏。
+     * 卖得比隔夜持仓还多时才落到当天买入份额上（T+1 下不该发生，手工记账里可能出现）。
      *
      * <p><b>买入 = 建仓 + 加盯盘</b>：这正是需求里「买入则加入盯盘」的落点 ——
      * 标的进盯盘名单的前提就是用户买了它，所以买入允许新建持仓（{@code price} 必填）；
@@ -654,6 +655,8 @@ public class AccountService {
 
         Position pos;
         BigDecimal realized = null;
+        // 卖出这一笔落在账户「当日已实现」上的量：与记录里的 realized 口径不同（那个是累计盈亏）
+        BigDecimal dayRealized = BigDecimal.ZERO;
         if (buy) {
             if (hit == null) {
                 // 新建持仓：成本价 = 本次成交价，数量 = 本次数量，可用数量同样从 0 起加
@@ -705,12 +708,14 @@ public class AccountService {
             watchAdd(userId, pos);
         } else {
             int usable = usableQty(hit);
-            // 当日已实现：卖出价 vs 基准价（当天买入份额用当日买入均价、隔夜份额用昨收）。
-            // 补录（日期不是今天）不算当日已实现 —— 那个数只对今天有意义
-            BigDecimal preClose = preCloseOf(c);
-            realized = onToday ? realizedOfSell(hit, today, qty, unit, sameDay, preClose) : BigDecimal.ZERO;
+            // 这一笔的盈亏按持仓成本均价算，与份额来自哪天无关；补录也照样算，方便对账
+            realized = unit.subtract(nz(hit.getCostPrice()))
+                    .multiply(BigDecimal.valueOf(qty)).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            // 账户的「当日已实现」另算：卖出份额先冲隔夜持仓，基准价取昨收。补录不进当日
             if (onToday) {
-                int fromDay = soldFromDay(hit, today, qty, sameDay);
+                BigDecimal preClose = preCloseOf(c);
+                dayRealized = realizedOfSell(hit, today, qty, unit, preClose);
+                int fromDay = soldFromDay(hit, today, qty);
                 if (fromDay > 0) {
                     reduceDayPool(hit, today, fromDay);
                 }
@@ -731,13 +736,13 @@ public class AccountService {
                 watchPruneIfUnheld(userId, hit.getCode());
             }
         }
-        // 已实现盈亏落在账户上（日期不是今天的旧值先作废）；补录不参与当日已实现
-        if (onToday && realized != null && realized.signum() != 0) {
+        // 当日已实现落在账户上（日期不是今天的旧值先作废）；补录不参与当日已实现
+        if (onToday && dayRealized.signum() != 0) {
             if (!today.equals(acct.getDayRealizedDate())) {
                 acct.setDayRealizedDate(today);
                 acct.setDayRealizedProfit(BigDecimal.ZERO);
             }
-            acct.setDayRealizedProfit(nz(acct.getDayRealizedProfit()).add(realized)
+            acct.setDayRealizedProfit(nz(acct.getDayRealizedProfit()).add(dayRealized)
                     .setScale(MONEY_SCALE, RoundingMode.HALF_UP));
         }
         saveAccountCash(acct, cash);
@@ -752,7 +757,7 @@ public class AccountService {
         r.setQuantity(qty);
         r.setTurnover(turnover);
         r.setCashAfter(cash);
-        r.setSameDay(sameDay);
+        r.setSameDay(buy && sameDay);
         r.setRealizedProfit(realized == null ? BigDecimal.ZERO : realized);
         r.setTradeDate(date);
         r.setTime(LocalDateTime.now().format(DF));
@@ -763,7 +768,7 @@ public class AccountService {
                 userId, aid, buy ? "买入" : "卖出",
                 r.getName(), qty, r.getPrice(), turnover, cash,
                 onToday ? "" : "，成交日期 " + date,
-                realized == null ? "" : "，当日已实现 " + realized);
+                buy ? "" : "，盈亏 " + realized + "，当日已实现 " + dayRealized);
         return r;
     }
 
@@ -1195,30 +1200,28 @@ public class AccountService {
     }
 
     /**
-     * 卖出份额里属于「当天买入」的数量。
+     * 卖出份额里属于「当天买入」的数量：先冲隔夜持仓，卖得比隔夜还多时多出来的才算当天买入。
      *
-     * <p>勾了「卖的是当天买入的」就优先冲当天买入池；没勾就优先冲隔夜持仓，
-     * 卖得比隔夜持仓还多时多出来的部分仍归到当天买入池（A股 T+1 下不该发生，
-     * 但手工记账里可能出现，这里给出唯一自洽的解释）。
+     * <p>A 股 T+1 下这个「多出来的部分」本不该出现，手工记账里却可能有，给个自洽的解释。
      */
-    private static int soldFromDay(Position p, String today, int sellQty, boolean sameDay) {
+    private static int soldFromDay(Position p, String today, int sellQty) {
         int dayInHold = dayQtyInHold(p, today);
         int overnight = p.getQuantity() - dayInHold;
-        if (sameDay) {
-            return Math.min(dayInHold, sellQty);
-        }
         return Math.max(0, sellQty - overnight);
     }
 
     /**
-     * 卖出这一笔的当日已实现盈亏 = (成交价 - 该份额基准价) × 数量。
+     * 卖出这一笔的<b>当日已实现</b>（账户口径，用来凑当日盈亏）＝ (成交价 - 该份额基准价) × 数量。
      *
-     * <p>隔夜份额的基准价取<b>今天的昨收</b>（与持仓浮动那部分同一口径）；
-     * 昨收取不到时退化为「不产生已实现」，而不是拿成交价硬凑一个 0 值盈亏。
+     * <p>份额归属恒为「先隔夜」：隔夜份额基准价取<b>今天的昨收</b>（与持仓浮动同一口径），
+     * 多出来的当天买入份额按当日买入均价。昨收取不到时退化为「不产生已实现」，
+     * 而不是拿成交价硬凑一个 0 值盈亏。
+     *
+     * <p>注意与记录里的 {@code realizedProfit} 不同：那个是这一笔的累计盈亏（按成本均价）。
      */
     private static BigDecimal realizedOfSell(Position p, String today, int sellQty, BigDecimal unit,
-                                             boolean sameDay, BigDecimal preClose) {
-        int fromDay = soldFromDay(p, today, sellQty, sameDay);
+                                             BigDecimal preClose) {
+        int fromDay = soldFromDay(p, today, sellQty);
         int fromOvernight = sellQty - fromDay;
         BigDecimal out = BigDecimal.ZERO;
         if (fromOvernight > 0 && preClose != null && preClose.signum() > 0) {
