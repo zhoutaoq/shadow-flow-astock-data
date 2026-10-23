@@ -309,7 +309,8 @@ a.nav-item { color: var(--text-dim); }
     z-index: 120;
 }
 .nav-group:hover .nav-sub,
-.nav-group:focus-within .nav-sub { display: block; }
+.nav-group:focus-within .nav-sub,
+.nav-group.open .nav-sub { display: block; }
 .nav-sub-item {
     display: block;
     color: var(--text-dim);
@@ -1038,6 +1039,12 @@ input.sp-input {
     white-space: nowrap;
     font-size: var(--fs-12);
     color: var(--text-dim);
+}
+/* 二级菜单行（v1.7.9）：缩进 + 浅一档的底色，一眼看出它归属上面那个分组 */
+.menu-row-sub {
+    margin-left: 26px;
+    border-style: dashed;
+    background: transparent;
 }
 .menu-ops { flex: 0 0 auto; display: flex; gap: var(--sp-1); }
 .menu-ops button { min-width: 30px; padding: 2px 6px; font-size: var(--fs-12); }
@@ -1917,6 +1924,18 @@ button:not([class]):disabled, .btn:disabled, .btn-ghost:disabled, .btn-sm:disabl
     }
     .nav::-webkit-scrollbar { display: none; }
     .nav a { white-space: nowrap; }
+    /* 窄屏导航是横向滚动容器，绝对定位的下拉会被 overflow 裁掉；
+       展开的二级菜单改成行内平铺，跟着这一行一起横滑 */
+    .nav-group.open .nav-sub {
+        display: flex;
+        position: static;
+        min-width: 0;
+        padding: 0;
+        border: none;
+        box-shadow: none;
+        background: transparent;
+    }
+    .nav-sub-item { display: inline-flex; align-items: center; }
 
     /* ---- 主体与卡片：边距收窄，把宽度让给内容 ---- */
     .container { padding: var(--sp-3) 12px 40px; }

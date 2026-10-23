@@ -180,7 +180,19 @@ public class AccountService {
      * <p>行情只按<b>去重后的标的</b>取一轮，再分给各本账用 —— 同一只标的被多本账持有也只取一次。
      */
     public AccountOverview overview(long userId) {
-        List<Account> accounts = listAccounts(userId);
+        return overview(userId, true);
+    }
+
+    /**
+     * 只读版本（v1.7.9，超管按用户查看账户用）：一本账都没有就返回空列表，
+     * <b>不替对方建默认账户</b> —— 只是看一眼，不该改别人的数据。
+     */
+    public AccountOverview overviewReadOnly(long userId) {
+        return overview(userId, false);
+    }
+
+    private AccountOverview overview(long userId, boolean createIfMissing) {
+        List<Account> accounts = createIfMissing ? listAccounts(userId) : repository.listAccounts(userId);
         String today = todayYmd();
 
         Map<Long, List<Position>> byAccount = new LinkedHashMap<>();
@@ -264,6 +276,19 @@ public class AccountService {
     /** 取某个账户；accountId 无效时回落到默认账户，一本都没有就现建 */
     public Account getAccount(long userId, Long accountId) {
         return getAccountRequired(userId, resolveAccountId(userId, accountId));
+    }
+
+    /**
+     * 只读定位账户（v1.7.9）：不存在、或不属于该用户时返回 {@code null}。
+     *
+     * <p>与 {@link #getAccount} 的区别是<b>不回落、不建默认账</b> ——
+     * 超管看别人的账时，传错一个 id 不该悄悄变成「对方的第一本账」。
+     */
+    public Account findAccount(long userId, long accountId) {
+        if (accountId <= 0) {
+            return null;
+        }
+        return repository.findAccount(userId, accountId);
     }
 
     /** 取某个账户：accountId 必须存在且属于该用户，否则报错（写操作用） */

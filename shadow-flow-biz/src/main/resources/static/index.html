@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>影流数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261022b">
+    <link rel="stylesheet" href="/css/common.css?v=20261023a">
     <link rel="stylesheet" href="/css/home.css?v=20261011e">
     <link rel="stylesheet" href="/css/account.css?v=20261011e">
 </head>
@@ -255,7 +255,7 @@
 
 </main>
 
-<script src="/js/common.js?v=20261022b"></script>
+<script src="/js/common.js?v=20261023a"></script>
 <script src="/js/date-picker.js?v=20261011e"></script>
 <script src="/js/home.js?v=20261011e"></script>
 <script>
@@ -287,13 +287,13 @@
      *
      * <p>顺序与名称取导航那份（menuConfig 已按配置排好），描述与图标按 key 从 QUICK 里取：
      * 这样一个菜单改名，顶部导航与首页入口一起变，不会出现两处叫法不一致。
-     * 导航里没有映射到图标的项（如「概览」「实时资讯」「用户管理」）不在这里出现 ——
-     * 它本来就是首页自身或另有入口的页面。
+     * 来源用 menuLeaves()（顶层 + 二级菜单）：v1.7.9 起「系统配置」这些收进了
+     * 「系统管理」分组，只取顶层的话它们会从首页入口里消失。
      */
     function renderQuick() {
         var byKey = {};
         QUICK.forEach(function (it) { byKey[it[0]] = it; });
-        var items = menuItems().filter(function (m) { return byKey[m.key] && navVisible(m); });
+        var items = menuLeaves().filter(function (m) { return byKey[m.key] && navVisible(m); });
         document.getElementById('quick').innerHTML = items.map(function (m, i) {
             var it = byKey[m.key];
             return '<a class="quick-item" href="' + esc(m.href) + '">'

@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>系统配置 - 影流数据</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261022b" data-page-node-id="s8Sz1XIVlPjoxS72SVQomE">
+    <link rel="stylesheet" href="/css/common.css?v=20261023a" data-page-node-id="s8Sz1XIVlPjoxS72SVQomE">
 </head>
 <body data-page-node-id="CmpnL8CdVPeBk2Mmq7apAL">
 <header class="topbar" data-page-node-id="qENBJUznHI4YaM82B60Xjw">
@@ -146,7 +146,7 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=20261022b"></script>
+<script src="/js/common.js?v=20261023a"></script>
 <script src="/js/date-picker.js?v=20261011e"></script>
 <script src="/js/stock-picker.js?v=20261011e"></script>
 <script>
@@ -690,17 +690,20 @@
         loadLogoState();
     }
 
-    /** 把菜单配置的状态摊到状态行：改动过没有、一共有几项 */
+    /** 把菜单配置的状态摊到状态行：改动过没有、一共有几项（含二级菜单） */
     function paintMenuState() {
         const el = document.getElementById('menuState');
         if (!el) {
             return;
         }
         const items = menuItems();
+        const leaves = menuLeaves();
         const custom = MENU_CFG && MENU_CFG.customized;
         el.textContent = (custom ? '当前菜单已自定义' : '当前菜单为默认配置')
-            + '，共 ' + items.length + ' 项：'
-            + items.map(i => i.text).join(' · ');
+            + '，共 ' + items.length + ' 项（含二级菜单 ' + leaves.length + ' 项）：'
+            + items.map(i => i.children && i.children.length
+                ? i.text + '（' + i.children.map(c => c.text).join(' · ') + '）'
+                : i.text).join(' · ');
     }
 
     (async function init() {

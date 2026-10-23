@@ -1415,7 +1415,7 @@ function brandInner() {
 
 /* ============ 导航 ============ */
 /**
- * 全站菜单：一级平铺，两种运行模式共用同一份。
+ * 全站菜单：两种运行模式共用同一份。
  *
  * <p>v1.3 起不再区分数据库 / 无数据库两套菜单 ——
  * 原先数据库模式下多出来的「数据更新」整组、「调用日志」「接口调试」全部移除：
@@ -1425,11 +1425,15 @@ function brandInner() {
  * <p>{@code login: true} 的项点进去要登录（页面自己会跳登录页）；
  * {@code admin: true} 的项只有超管看得见。
  *
+ * <p><b>v1.7.9 起超管的管理页收进「系统管理」一个分组</b>（{@code children} 是它的二级菜单）：
+ * 普通用户的导航里没有这一项，自然也就看不到里面的任何一页。
+ *
  * <p><b>v1.6.2 起「名称」与「顺序」可在「系统配置」页配置</b>（见 loadMenu / applyMenu）。
  * 这份数组仍是<b>唯一真相源</b>：{@code href} 与 {@code login} / {@code admin} 都只在这里 ——
  * 服务端只下发 key + 新名称 + 顺序，靠 {@code key} 回来索引本数组。
  * 所以配置里出现本数组没有的 key 一律忽略，本数组有而配置漏掉的按这里的顺序补回。
  * {@code key} 一旦定了就别改：它是配置行的落点，改了等于把用户配好的名称丢掉。
+ * 二级项的归属（谁是哪个分组的）也由这里决定，配置只改名称与组内顺序。
  */
 const NAV_ITEMS = [
     {key: 'home', text: '概览', href: '/'},
@@ -1440,10 +1444,16 @@ const NAV_ITEMS = [
     {key: 'watch', text: '盯盘', href: '/pages/watch.html', login: true},
     {key: 'account', text: '我的账户', href: '/pages/account.html', login: true},
     {key: 'feedback', text: '问题反馈', href: '/pages/feedback.html'},
-    {key: 'system', text: '系统配置', href: '/pages/system.html', admin: true},
-    {key: 'push', text: '钉钉推送', href: '/pages/push.html', admin: true},
-    {key: 'users', text: '用户管理', href: '/pages/users.html', admin: true},
-    {key: 'migrate', text: '数据迁移', href: '/pages/migrate.html', admin: true}
+    {
+        key: 'admin', text: '系统管理', admin: true, children: [
+            {key: 'system', text: '系统配置', href: '/pages/system.html'},
+            {key: 'push', text: '钉钉推送', href: '/pages/push.html'},
+            {key: 'users', text: '用户管理', href: '/pages/users.html'},
+            // 超管按用户查看账户与持仓（只读，卡片展示），不用代理登录
+            {key: 'admin-accounts', text: '账户管理', href: '/pages/admin-accounts.html'},
+            {key: 'migrate', text: '数据迁移', href: '/pages/migrate.html'}
+        ]
+    }
 ];
 
 /**
@@ -1478,6 +1488,24 @@ function loadMenu() {
     return _menuPromise;
 }
 
+/** 内置菜单的扁平索引：key → 项。二级项带 parent（所属分组的 key），渲染与配置都按 key 回索引 */
+function builtInCatalog() {
+    const map = {};
+    NAV_ITEMS.forEach(it => {
+        map[it.key] = {
+            key: it.key, text: it.text, href: it.href,
+            login: it.login, admin: it.admin, children: it.children
+        };
+        (it.children || []).forEach(c => {
+            map[c.key] = {
+                key: c.key, text: c.text, href: c.href,
+                login: c.login, admin: c.admin, parent: it.key
+            };
+        });
+    });
+    return map;
+}
+
 /**
  * 把内置菜单与下发的配置合成「最终要渲染的那一份」。
  *
@@ -1485,26 +1513,47 @@ function loadMenu() {
  * 内置里有而配置里没有的（新增了菜单但没重新配过），按内置顺序补到队尾。
  * 这样加一个新页面时老配置不会把它挤掉。
  *
- * @returns {Array} [{key, text, href, login, admin}]，text 已按配置覆盖
+ * <p>分组（有 children 的项）的子项顺序同样按配置走，配不到的按内置顺序补齐；
+ * 二级项不允许单独出现在顶层 —— 它的位置只由所属分组决定。
+ *
+ * @returns {Array} [{key, text, href, login, admin, children?}]，text 已按配置覆盖
  */
 function menuItems() {
     const cfg = MENU_CFG;
     if (!cfg || !cfg.items || !cfg.items.length) {
         return NAV_ITEMS.slice();
     }
-    const byKey = {};
-    NAV_ITEMS.forEach(it => {
-        byKey[it.key] = it;
-    });
-    const out = [];
+    const cat = builtInCatalog();
     const used = {};
+    const out = [];
     cfg.items.forEach(c => {
-        const base = c && c.key ? byKey[c.key] : null;
-        if (!base || used[base.key]) {
+        const base = c && c.key ? cat[c.key] : null;
+        if (!base || used[base.key] || base.parent) {
             return;
         }
         used[base.key] = 1;
-        out.push(Object.assign({}, base, {text: (c.text || base.text)}));
+        const item = Object.assign({}, base, {text: (c.text || base.text)});
+        if (base.children) {
+            const kids = [];
+            (c.children || []).forEach(k => {
+                const kb = k && k.key ? cat[k.key] : null;
+                if (!kb || !kb.parent || used[kb.key]) {
+                    return;
+                }
+                used[kb.key] = 1;
+                kids.push(Object.assign({}, kb, {text: (k.text || kb.text)}));
+            });
+            // 配置里缺的二级项按内置顺序补回（老后端不带 children 时全靠这一段）
+            base.children.forEach(cb => {
+                if (used[cb.key]) {
+                    return;
+                }
+                used[cb.key] = 1;
+                kids.push(cat[cb.key]);
+            });
+            item.children = kids;
+        }
+        out.push(item);
     });
     // 配置里没有的（含内置新加的）按内置顺序补回队尾
     NAV_ITEMS.forEach(it => {
@@ -1515,7 +1564,24 @@ function menuItems() {
     return out;
 }
 
-/** 当前身份下该菜单项是否可见 */
+/**
+ * 全部叶子菜单：顶层的平铺项 + 分组的二级项。
+ *
+ * <p>首页「功能入口」这种一维列表用它 —— 分组本身没有地址，不能点。
+ */
+function menuLeaves() {
+    const out = [];
+    menuItems().forEach(m => {
+        if (m.children && m.children.length) {
+            m.children.forEach(c => out.push(c));
+        } else {
+            out.push(m);
+        }
+    });
+    return out;
+}
+
+/** 当前身份下该菜单项是否可见（分组的可见性看分组自己，二级项跟着分组走） */
 function navVisible(item) {
     return !item.admin || isAdmin();
 }
@@ -1545,6 +1611,7 @@ function menuModalHtml() {
         + '<div class="dim" style="font-size:var(--fs-12);margin-bottom:14px">'
         + '改的是<b>名称</b>与<b>顺序</b>。地址、登录要求与超管权限由代码决定，这里配不到 ——'
         + '避免配出一个点进去 404 的死菜单，或把超管入口暴露给所有人。'
+        + '「系统管理」下的二级菜单同样能改名，组内顺序跟着所属分组走。'
         + '</div>'
         + '<div class="menu-rows" id="menuRows"></div>'
         + '<div class="modal-actions">'
@@ -1555,7 +1622,7 @@ function menuModalHtml() {
         + '</div></div>';
 }
 
-/** 菜单配置弹窗里的编辑态：一份 {key,text} 的草稿数组 */
+/** 菜单配置弹窗里的编辑态：一份 {key,text,href,level,admin,parent} 的草稿数组（按渲染顺序扁平存放） */
 let menuDraft = [];
 
 async function openMenuModal() {
@@ -1568,22 +1635,46 @@ async function openMenuModal() {
     // （老后端 / 代理改包 / 字段缺失），只用 items 就会让超管看不到、也配不了那些项。
     // 这里以「内置 NAV_ITEMS 为全集」做合并：配置给名称与顺序，内置补齐缺的。
     const cfgItems = (r.data && r.data.items) || [];
-    const byKey = {};
-    NAV_ITEMS.forEach(it => { byKey[it.key] = {key: it.key, text: it.text, href: it.href}; });
+    const cat = builtInCatalog();
     const draft = [];
     const used = {};
-    cfgItems.forEach(c => {
-        if (!c || !c.key || !byKey[c.key] || used[c.key]) {
+    const pushTop = (key, text) => {
+        const base = cat[key];
+        if (!base || used[key]) {
             return;
         }
-        used[c.key] = 1;
-        draft.push(Object.assign({}, byKey[c.key], {text: c.text || byKey[c.key].text}));
-    });
-    NAV_ITEMS.forEach(it => {
-        if (!used[it.key]) {
-            draft.push({key: it.key, text: it.text, href: it.href});
+        used[key] = 1;
+        draft.push({
+            key: key, text: text || base.text, href: base.href,
+            level: 0, admin: !!base.admin
+        });
+        // 二级项紧跟在分组后面：组内顺序由内置数组决定，这里不给配
+        (base.children || []).forEach(cb => {
+            if (used[cb.key]) {
+                return;
+            }
+            used[cb.key] = 1;
+            draft.push({
+                key: cb.key, text: cb.text, href: cb.href,
+                level: 1, admin: !!base.admin, parent: key
+            });
+        });
+    };
+    cfgItems.forEach(c => {
+        const base = c && c.key ? cat[c.key] : null;
+        if (!base || base.parent) {
+            return;
         }
+        pushTop(base.key, c.text);
+        // 配置里带了二级名称的，按配置覆盖（顺序仍按内置）
+        (c.children || []).forEach(k => {
+            const row = k && k.key ? draft.find(x => x.key === k.key) : null;
+            if (row && k.text) {
+                row.text = k.text;
+            }
+        });
     });
+    NAV_ITEMS.forEach(it => pushTop(it.key, it.text));
     menuDraft = draft;
     let mask = document.getElementById('menuMask');
     if (!mask) {
@@ -1605,11 +1696,10 @@ async function openMenuModal() {
             const row = btn.closest('.menu-row');
             const i = Number(row.getAttribute('data-i'));
             const act = btn.getAttribute('data-act');
-            if (act === 'up' && i > 0) {
-                menuDraft.splice(i - 1, 0, menuDraft.splice(i, 1)[0]);
-            } else if (act === 'down' && i < menuDraft.length - 1) {
-                menuDraft.splice(i + 1, 0, menuDraft.splice(i, 1)[0]);
-            } else {
+            if (act !== 'up' && act !== 'down') {
+                return;
+            }
+            if (!moveMenuRow(i, act === 'up' ? -1 : 1)) {
                 return;
             }
             paintMenuRows();
@@ -1626,6 +1716,50 @@ async function openMenuModal() {
     mask.classList.add('show');
 }
 
+/**
+ * 上移 / 下移一条顶层菜单。
+ *
+ * <p>2 级项不参与排序（组内顺序由代码决定），所以这里只处理 level = 0 的行；
+ * 移动时<b>连同它下面的二级行整块搬</b>，否则分组会和自己的子项分家。
+ *
+ * @returns {boolean} 是否真的动了（没动就不必重绘）
+ */
+function moveMenuRow(i, step) {
+    const row = menuDraft[i];
+    if (!row || row.level !== 0) {
+        return false;
+    }
+    // 一块 = 这一行 + 紧跟其后、属于它的二级行
+    const blockOf = start => {
+        let n = 1;
+        while (start + n < menuDraft.length && menuDraft[start + n].level === 1) {
+            n++;
+        }
+        return n;
+    };
+    if (step < 0) {
+        // 往上找最近的一条顶层行（二级行一律跳过）
+        let j = i - 1;
+        while (j >= 0 && menuDraft[j].level !== 0) {
+            j--;
+        }
+        if (j < 0) {
+            return false;
+        }
+        const block = menuDraft.splice(i, blockOf(i));
+        menuDraft.splice(j, 0, ...block);
+        return true;
+    }
+    const block = menuDraft.splice(i, blockOf(i));
+    // 取出本块后，紧跟其后的那块从 i 开始；后面没有东西就说明已经在队尾
+    if (i >= menuDraft.length) {
+        menuDraft.splice(i, 0, ...block);
+        return false;
+    }
+    menuDraft.splice(i + blockOf(i), 0, ...block);
+    return true;
+}
+
 function closeMenuModal() {
     const mask = document.getElementById('menuMask');
     if (mask) {
@@ -1638,21 +1772,34 @@ function paintMenuRows() {
     if (!box) {
         return;
     }
+    let topSeq = 0;
     box.innerHTML = menuDraft.map((it, i) => {
-        const base = NAV_ITEMS.filter(x => x.key === it.key)[0] || {};
-        const tag = base.admin ? '<span class="sl-tag">超管</span>' : '';
-        return '<div class="menu-row" data-i="' + i + '">'
-            + '<span class="menu-seq">' + (i + 1) + '</span>'
+        const sub = it.level === 1;
+        const tag = it.admin ? '<span class="sl-tag">超管</span>' : '';
+        // 二级行不排序，也没有地址行（地址看所属分组），只留名称可改
+        const hasPrevTop = menuDraft.slice(0, i).some(x => x.level === 0);
+        const hasNextTop = menuDraft.slice(i + 1).some(x => x.level === 0);
+        const ops = sub
+            ? '<span class="menu-ops"></span>'
+            : '<span class="menu-ops">'
+              + '<button type="button" class="btn-sm btn-ghost" data-act="up"'
+              + (hasPrevTop ? '' : ' disabled') + ' aria-label="上移">↑</button>'
+              + '<button type="button" class="btn-sm btn-ghost" data-act="down"'
+              + (hasNextTop ? '' : ' disabled')
+              + ' aria-label="下移">↓</button>'
+              + '</span>';
+        if (!sub) {
+            topSeq++;
+        }
+        return '<div class="menu-row' + (sub ? ' menu-row-sub' : '') + '" data-i="' + i + '">'
+            + '<span class="menu-seq">' + (sub ? '·' : topSeq) + '</span>'
             + '<input class="menu-text" maxlength="12" value="' + esc(it.text) + '"'
             + ' aria-label="菜单名称" spellcheck="false">'
-            + '<span class="menu-href mono">' + esc(base.href || it.href || '') + '</span>'
-            + tag
-            + '<span class="menu-ops">'
-            + '<button type="button" class="btn-sm btn-ghost" data-act="up"'
-            + (i === 0 ? ' disabled' : '') + ' aria-label="上移">↑</button>'
-            + '<button type="button" class="btn-sm btn-ghost" data-act="down"'
-            + (i === menuDraft.length - 1 ? ' disabled' : '') + ' aria-label="下移">↓</button>'
+            + '<span class="menu-href mono">'
+            + (sub ? '' : esc(it.href || '（二级菜单）'))
             + '</span>'
+            + tag
+            + ops
             + '</div>';
     }).join('');
 }
@@ -1798,12 +1945,37 @@ function renderNav() {
             openAuthModal({mode: 'login', onSuccess: () => { location.href = href; }});
         });
     });
+    // 分组：桌面靠 :hover 展开，这里补一条点击切换 —— 触屏没有 hover，
+    // 窄屏导航又是横向滚动（overflow 会把绝对定位的下拉裁掉，见 common.css 的 720 断点）
+    nav.querySelectorAll('.nav-group > .nav-item').forEach(toggle => {
+        toggle.addEventListener('click', () => {
+            const group = toggle.parentNode;
+            const open = !group.classList.contains('open');
+            nav.querySelectorAll('.nav-group.open').forEach(g => g.classList.remove('open'));
+            group.classList.toggle('open', open);
+        });
+    });
 }
 
-function navLink(item, path) {
+function navLink(item, path, sub) {
+    // 分组：本身没有地址，悬停 / 聚焦展开二级菜单（.nav-group 的样式在 common.css 里）
+    if (item.children && item.children.length) {
+        const kids = item.children.filter(navVisible)
+            .map(c => navLink(c, path, true)).join('');
+        if (!kids) {
+            return '';
+        }
+        const active = item.children.some(c => c.href === path) ? ' active' : '';
+        return `<div class="nav-group${active}">`
+            + `<span class="nav-item" tabindex="0" aria-haspopup="true">${esc(item.text)}`
+            + '<i class="caret">▾</i></span>'
+            + `<div class="nav-sub">${kids}</div>`
+            + '</div>';
+    }
     const flag = item.login && !isLogin() ? ' data-login="1"' : '';
     // 名称可能来自系统配置页（用户自己填的），一律转义后再拼 —— 否则一个 < 就能把导航拆了
-    return `<a class="nav-item${path === item.href ? ' active' : ''}" href="${esc(item.href)}"${flag}>${esc(item.text)}</a>`;
+    return `<a class="${sub ? 'nav-sub-item' : 'nav-item'}${path === item.href ? ' active' : ''}"`
+        + ` href="${esc(item.href)}"${flag}>${esc(item.text)}</a>`;
 }
 
 /* ============ 顶栏账号区 ============ */
@@ -2111,7 +2283,7 @@ function scheduleLabelGridTables() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[影流数据] 前端版本 20261022b（v1.7.8）');
+    console.info('[影流数据] 前端版本 20261023a（v1.7.9）');
     // OAuth 回跳先收令牌（fragment 里的 #token=），再拉登录态才拉得到自己
     const oauthBack = handleAuthFragment();
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮

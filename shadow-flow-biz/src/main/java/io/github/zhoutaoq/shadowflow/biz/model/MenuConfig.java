@@ -56,6 +56,19 @@ public class MenuConfig {
         private String text = "";
         /** 地址：只读回显，供配置页展示「这一项是哪个页面」，不参与保存 */
         private String href = "";
+        /**
+         * 二级菜单（v1.7.9）：非空表示这一项是<b>分组</b>，本身没有地址，
+         * 点它展开的是这里列出的子项。分组与子项的归属由代码决定，配置只改名称与顺序。
+         */
+        private List<Item> children = new ArrayList<>();
+
+        public List<Item> getChildren() {
+            return children;
+        }
+
+        public void setChildren(List<Item> children) {
+            this.children = children == null ? new ArrayList<Item>() : children;
+        }
 
         public String getKey() {
             return key;
