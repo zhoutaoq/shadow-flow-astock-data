@@ -7,8 +7,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>账户管理</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261027c">
-    <link rel="stylesheet" href="/css/account.css?v=20261027c">
+    <link rel="stylesheet" href="/css/common.css?v=20261027d">
+    <link rel="stylesheet" href="/css/account.css?v=20261027d">
     <style>
         /* 顶部的「选人」工具条：搜索框 + 用户下拉 + 重新载入 */
         .au-toolbar { display: flex; gap: var(--sp-2); align-items: flex-end; flex-wrap: wrap; }
@@ -255,7 +255,7 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261027c"></script>
+<script src="/js/common.js?v=20261027d"></script>
 <script>
     /* 只读页面：数据都来自 /api/admin/accounts/**，唯一会写的是「默认预览用户」这项配置 */
     let users = [];        // 当前搜索到的用户（最多 200 个）
@@ -366,17 +366,23 @@
 
     /* ---------- 一级：账户卡片 ---------- */
 
-    async function selectUser(userId) {
-        curUser = users.filter(u => u.id === userId)[0] || null;
+    async function selectUser(userId, fromRoute) {
+        curUser = users.filter(u => u.id === userId)[0] || curUser;
         curId = 0;
-        if (!curUser) {
-            document.getElementById('listPanel').style.display = 'none';
-            document.getElementById('detailPanel').style.display = 'none';
-            return;
+        if (!curUser || curUser.id !== userId) {
+            // 下拉里没有（例如链接直接带了没出现在列表里的用户）就先按 id 取一次
+            if (!userId) {
+                document.getElementById('listPanel').style.display = 'none';
+                document.getElementById('detailPanel').style.display = 'none';
+                return;
+            }
+        }
+        if (!fromRoute) {
+            pushRoute(userId, 0);
         }
         document.getElementById('whoTip').innerHTML =
-            '只读视图 · 当前查看 <b>' + esc(curUser.username) + '</b>';
-        await loadOverview(curUser.id);
+            '只读视图 · 当前查看 <b>' + esc(curUser ? curUser.username : '') + '</b>';
+        await loadOverview(userId);
     }
 
     async function loadOverview(userId, silent) {
@@ -387,6 +393,8 @@
         overview = (r.data && r.data.overview) || {accounts: []};
         curUser = (r.data && r.data.user) || curUser;
         mode = 'single';
+        document.getElementById('whoTip').innerHTML =
+            '只读视图 · 当前查看 <b>' + esc(curUser ? curUser.username : '') + '</b>';
         document.getElementById('boardPanel').style.display = 'none';
         document.getElementById('listPanel').style.display = '';
         // 静默刷新（3 秒轮询）时不动明细、不滚回顶部：用户正在看的东西别被打断
@@ -395,14 +403,6 @@
             document.getElementById('detailPanel').style.display = 'none';
         }
         renderAccounts();
-        if (!silent) {
-            // 地址里带 accountId 时直接展开那本账（刷新/分享链接不丢现场）
-            const q = new URLSearchParams(location.search);
-            const want = Number(q.get('accountId') || 0);
-            if (want > 0) {
-                await openDetail(userId, want);
-            }
-        }
     }
 
     /** 账户列表 → 卡片数据（单人口径；平铺那份由后端直接给同名字段，前端只负责画） */
@@ -626,9 +626,77 @@
         });
     }
 
+    /* ---------- 路由：平铺 / 单人 / 明细 各有各的 hash ----------
+       之前三级视图共用一个 URL，点进明细后浏览器返回键直接退出页面。
+       现在：#/ = 平铺（默认）、#/u/{userId} = 单人、#/u/{userId}/a/{accountId} = 明细。
+       页面内切换用 pushState（不进 hashchange，避免和渲染互相触发），
+       浏览器前进/后退走 popstate。 */
+
+    function routeOf() {
+        const h = location.hash || '';
+        let m = h.match(/^#\/u\/(\d+)\/a\/(\d+)/);
+        if (m) {
+            return {userId: Number(m[1]), accountId: Number(m[2])};
+        }
+        m = h.match(/^#\/u\/(\d+)/);
+        if (m) {
+            return {userId: Number(m[1]), accountId: 0};
+        }
+        return {userId: 0, accountId: 0};
+    }
+
+    function routeHash(userId, accountId) {
+        if (userId && accountId) {
+            return '#/u/' + userId + '/a/' + accountId;
+        }
+        return userId ? '#/u/' + userId : '#/';
+    }
+
+    /** 进下一层：加一条历史，浏览器返回键能回到上一级 */
+    function pushRoute(userId, accountId) {
+        const h = routeHash(userId, accountId);
+        if (location.hash !== h) {
+            history.pushState(null, '', h);
+        }
+    }
+
+    /** 同级替换（返回列表时用）：不额外堆历史 */
+    function replaceRoute(userId, accountId) {
+        const h = routeHash(userId, accountId);
+        if (location.hash !== h) {
+            history.replaceState(null, '', h);
+        }
+    }
+
+    async function onRoute() {
+        const r = routeOf();
+        if (r.accountId > 0) {
+            if (r.accountId !== curId) {
+                await openDetail(r.userId, r.accountId);
+            }
+            return;
+        }
+        if (r.userId > 0) {
+            if (mode !== 'single' || !curUser || curUser.id !== r.userId) {
+                await loadOverview(r.userId);
+            }
+            return;
+        }
+        if (mode !== 'board') {
+            if (preview.length) {
+                await loadBoard();
+            } else if (await loadUsers()) {
+                // 没配预览用户：空 hash 就落到单人视图（与首次进入一致），不是空平铺页
+                await selectUser(Number(document.getElementById('userSel').value), true);
+            }
+        }
+    }
+
+    window.addEventListener('popstate', onRoute);
+
     /* ---------- 二级：某本账的明细（仍在当前页） ---------- */
 
-    async function openDetail(userId, accountId) {
+    async function openDetail(userId, accountId, fromRoute) {
         if (!userId) {
             return;
         }
@@ -644,6 +712,9 @@
         summary = r.data.summary || null;
         records = r.data.records || [];
         mode = 'detail';
+        if (!fromRoute) {
+            pushRoute(userId, accountId);
+        }
         document.getElementById('boardPanel').style.display = 'none';
         document.getElementById('listPanel').style.display = 'none';
         document.getElementById('detailPanel').style.display = '';
@@ -675,10 +746,12 @@
         document.getElementById('detailPanel').style.display = 'none';
         if (detailFrom === 'board') {
             mode = 'board';
+            replaceRoute(0, 0);
             document.getElementById('boardPanel').style.display = '';
             return;
         }
         mode = 'single';
+        replaceRoute(detailUserId, 0);
         document.getElementById('listPanel').style.display = '';
     }
 
@@ -1029,11 +1102,13 @@
     /** 配置变了：有预览用户就平铺，没有就回单人视图 */
     async function afterPreviewChange() {
         if (preview.length) {
+            replaceRoute(0, 0);
             await loadBoard();
             return;
         }
         document.getElementById('boardPanel').style.display = 'none';
         if (curUser) {
+            replaceRoute(curUser.id, 0);
             await loadOverview(curUser.id, true);
         } else if (await loadUsers()) {
             selectUser(Number(document.getElementById('userSel').value));
@@ -1104,9 +1179,22 @@
         document.getElementById('pickPanel').style.display = '';
         // 持仓里的标的要渲染成跳转链接，配置先拿到
         await loadStockLink();
-        // 配了默认预览用户就直接平铺，否则按单个用户看（默认落在第一个账号）
         await loadPreviewConfig();
-        if (preview.length) {
+
+        // 地址栏里的 hash 优先（刷新 / 分享链接不丢现场）
+        const r0 = routeOf();
+        if (r0.accountId > 0) {
+            // 预览用户点进来的明细，返回应该回平铺，先把它标成 board 来源
+            if (preview.some(u => u.id === r0.userId)) {
+                mode = 'board';
+            }
+            await openDetail(r0.userId, r0.accountId, true);
+        } else if (r0.userId > 0) {
+            if (await loadUsers()) {
+                paintUserSel();
+            }
+            await loadOverview(r0.userId);
+        } else if (preview.length) {
             await loadBoard();
         } else if (await loadUsers()) {
             selectUser(Number(document.getElementById('userSel').value));

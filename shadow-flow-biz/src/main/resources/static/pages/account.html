@@ -7,8 +7,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261027c">
-    <link rel="stylesheet" href="/css/account.css?v=20261027c">
+    <link rel="stylesheet" href="/css/common.css?v=20261027d">
+    <link rel="stylesheet" href="/css/account.css?v=20261027d">
 </head>
 <body>
 <header class="topbar">
@@ -205,7 +205,7 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261027c"></script>
+<script src="/js/common.js?v=20261027d"></script>
 <script src="/js/date-picker.js?v=20261019a"></script>
 <script src="/js/stock-picker.js?v=20261019a"></script>
 <script src="/vendor/echarts.min.js"></script>
@@ -268,6 +268,46 @@
 
     /* ==================== 一级：账户列表 ==================== */
 
+    /* ============ 路由：#/ = 账户列表，#/a/{id} = 某本账 ============
+       以前两级共用一个 URL：点进详情后浏览器返回键直接退站。
+       页面内切换用 pushState（不进 popstate，避免和渲染互相触发），
+       浏览器前进/后退走 popstate。 */
+    function hashAccountId() {
+        const m = (location.hash || '').match(/^#\/a\/(\d+)/);
+        return m ? Number(m[1]) : 0;
+    }
+
+    /** 进下一层：加一条历史，返回键能回到列表 */
+    function pushHash(id) {
+        const h = id > 0 ? '#/a/' + id : '#/';
+        if (location.hash !== h) {
+            history.pushState(null, '', h);
+        }
+    }
+
+    /** 同级替换（回列表时用）：不额外堆历史 */
+    function replaceHash(id) {
+        const h = id > 0 ? '#/a/' + id : '#/';
+        if (location.hash !== h) {
+            history.replaceState(null, '', h);
+        }
+    }
+
+    async function onRoute() {
+        const id = hashAccountId();
+        if (id > 0) {
+            if (id !== curId) {
+                await enterAccount(id, true);
+            }
+            return;
+        }
+        if (curId > 0) {
+            await openList();
+        }
+    }
+
+    window.addEventListener('popstate', onRoute);
+
     async function openList() {
         stopAutoRefresh();
         const r = await get('/api/account/accounts');
@@ -277,6 +317,7 @@
         }
         overview = r.data || {accounts: []};
         curId = 0;
+        replaceHash(0);
         document.getElementById('gatePanel').style.display = 'none';
         document.getElementById('acctPanel').style.display = 'none';
         document.getElementById('listPanel').style.display = '';
@@ -339,10 +380,13 @@
         });
     }
 
-    async function enterAccount(id) {
+    async function enterAccount(id, fromRoute) {
         // 换一本账回到「当天」；同一本账重载（重新载入 / 刚记完一笔）保持当前视图
         if (id !== curId) recScope = 'today';
         curId = id;
+        if (!fromRoute) {
+            pushHash(id);
+        }
         const [accR, sumR] = await Promise.all([
             get('/api/account?accountId=' + id),
             get('/api/account/summary?accountId=' + id)
@@ -1702,7 +1746,13 @@
         if (lr && lr.success) {
             limits = lr.data;
         }
-        await openList();
+        // 地址栏里的 hash 优先：刷新 / 分享链接能直接落到那本账
+        const initial = hashAccountId();
+        if (initial > 0) {
+            await enterAccount(initial, true);
+        } else {
+            await openList();
+        }
     })();
 </script>
 </body>

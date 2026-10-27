@@ -14,7 +14,7 @@
          ============================================================ -->
     <groupId>io.github.zhoutaoq</groupId>
     <artifactId>shadow-flow-parent</artifactId>
-    <version>1.9.1</version>
+    <version>1.9.2</version>
     <packaging>pom</packaging>
     <name>shadow-flow</name>
     <description>影流数据 · Shadow Flow Data（聚合工程）</description>
