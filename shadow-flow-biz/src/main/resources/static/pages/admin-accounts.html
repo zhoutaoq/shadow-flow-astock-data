@@ -7,8 +7,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>账户管理</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261023a">
-    <link rel="stylesheet" href="/css/account.css?v=20261023a">
+    <link rel="stylesheet" href="/css/common.css?v=20261027a">
+    <link rel="stylesheet" href="/css/account.css?v=20261027a">
     <style>
         /* 顶部的「选人」工具条：搜索框 + 用户下拉 + 重新载入 */
         .au-toolbar { display: flex; gap: var(--sp-2); align-items: flex-end; flex-wrap: wrap; }
@@ -30,6 +30,34 @@
             font-size: var(--fs-12); color: var(--text-dim);
         }
         .au-who b { color: var(--text-strong); font-weight: 600; }
+        /* 卡片上的归属用户：平铺时靠它区分这是谁的账户 */
+        .acc-user {
+            font-size: var(--fs-11); color: var(--text-dim);
+            max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        /* 当日收益率（当日收益 / 持仓市值）：单独一颗小胶囊，和金额不同色系 */
+        .acc-rate {
+            display: inline-flex; align-items: center;
+            height: 18px; padding: 0 6px; border-radius: var(--r-pill);
+            background: var(--bg-tint); font-size: var(--fs-11);
+            font-variant-numeric: tabular-nums;
+        }
+        .acc-rate.up { color: var(--up); }
+        .acc-rate.down { color: var(--down); }
+        /* 预览用户勾选列表 */
+        .pv-list {
+            display: flex; flex-direction: column; gap: 4px;
+            max-height: 46vh; overflow-y: auto; padding-right: 2px;
+        }
+        .pv-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 7px 10px; border: 1px solid var(--border-soft);
+            border-radius: var(--r-md); background: var(--bg-input); cursor: pointer;
+        }
+        .pv-row:hover { border-color: var(--primary); }
+        .pv-row .pv-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pv-row .pv-meta { font-size: var(--fs-11); color: var(--text-dim); }
+        .pv-empty { padding: 14px; text-align: center; color: var(--text-dim); font-size: var(--fs-12); }
     </style>
 </head>
 <body>
@@ -61,10 +89,24 @@
                 <select id="userSel"></select>
             </div>
             <button onclick="searchUsers()">查询</button>
+            <button class="btn-ghost" onclick="openPreviewModal()">默认预览用户</button>
             <button class="btn-ghost" onclick="reloadAll()">重新载入</button>
         </div>
-        <div class="dim" style="font-size:var(--fs-12);margin-top:10px" id="userTip"></div>
+        <div class="dim" style="font-size:var(--fs-12);margin-top:10px" id="previewTip"></div>
+        <div class="dim" style="font-size:var(--fs-12);margin-top:4px" id="userTip"></div>
     </section>
+
+    <!-- 平铺：默认预览用户 × 他们名下所有账户，一起看（v1.8.0） -->
+    <div id="boardPanel" style="display:none">
+        <div class="ahead">
+            <div class="ahead-l">
+                <h1 class="ahead-t" id="boardTitle">默认预览</h1>
+                <div class="asum" id="boardChips"></div>
+            </div>
+        </div>
+        <div class="acc-grid" id="boardGrid"></div>
+        <div class="au-empty" id="boardEmpty" style="display:none">配置的预览用户还没有账户</div>
+    </div>
 
     <!-- 一级：选中用户的账户卡片（口径与「我的账户」一致，只读） -->
     <div id="listPanel" style="display:none">
@@ -85,7 +127,7 @@
                 <div class="acrumb">
                     <button class="btn-ghost btn-sm" onclick="closeDetail()">
                         <span class="acrumb-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span>
-                        全部账户
+                        <span id="backLabel">全部账户</span>
                     </button>
                     <h1 class="ahead-t" id="curName">账户</h1>
                 </div>
@@ -194,17 +236,26 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261023a"></script>
+<script src="/js/common.js?v=20261027a"></script>
 <script>
-    /* 只读页面：所有数据都来自 /api/admin/accounts/**，一个写接口都不调 ——
-       超管看别人的账只做核对，改还是让本人来 */
+    /* 只读页面：数据都来自 /api/admin/accounts/**，唯一会写的是「默认预览用户」这项配置 */
     let users = [];        // 当前搜索到的用户（最多 200 个）
-    let curUser = null;    // 正在看的用户
+    let curUser = null;    // 正在看的用户（单人口径）
     let overview = null;   // 该用户的账户列表（AccountOverview）
     let curId = 0;         // 正在看明细的账户 id；0 = 停在卡片列表
+    let detailUserId = 0;  // 明细属于哪个用户（平铺时卡片来自不同人）
+    let detailFrom = 'single'; // 明细是从哪儿进去的：single / board
     let summary = null;    // 该账户的汇总
     let records = [];      // 该账户的操作记录（新的在前）
     let keyword = '';
+    let preview = [];      // 默认预览用户（UserView[]）
+    let board = null;      // 平铺数据（/api/admin/accounts/board）
+    let mode = 'single';   // single（看一个人） | board（平铺所有人） | detail（某本账明细）
+
+    /** 收益刷新频率：与「我的账户」页一致（3 秒） */
+    const REFRESH_MS = 3000;
+    let refreshTimer = null;
+    let refreshBusy = false;
 
     /* ---------- 数字口径：与 account.html 保持一致 ---------- */
 
@@ -281,6 +332,12 @@
     }
 
     function reloadAll() {
+        if (mode === 'detail' && curId > 0) {
+            return refreshDetail();
+        }
+        if (mode === 'board') {
+            return loadBoard();
+        }
         if (curUser) {
             return loadOverview(curUser.id);
         }
@@ -302,87 +359,241 @@
         await loadOverview(curUser.id);
     }
 
-    async function loadOverview(userId) {
+    async function loadOverview(userId, silent) {
         const r = await get('/api/admin/accounts/overview?userId=' + userId);
         if (!r || !r.success) {
             return;
         }
         overview = (r.data && r.data.overview) || {accounts: []};
         curUser = (r.data && r.data.user) || curUser;
-        curId = 0;
-        document.getElementById('detailPanel').style.display = 'none';
+        mode = 'single';
+        document.getElementById('boardPanel').style.display = 'none';
         document.getElementById('listPanel').style.display = '';
-        renderAccounts();
-        // 地址里带 accountId 时直接展开那本账（刷新/分享链接不丢现场）
-        const want = Number(new URLSearchParams(location.search).get('accountId') || 0);
-        if (want > 0) {
-            await openDetail(want);
+        // 静默刷新（3 秒轮询）时不动明细、不滚回顶部：用户正在看的东西别被打断
+        if (!silent) {
+            curId = 0;
+            document.getElementById('detailPanel').style.display = 'none';
         }
+        renderAccounts();
+        if (!silent) {
+            // 地址里带 accountId 时直接展开那本账（刷新/分享链接不丢现场）
+            const q = new URLSearchParams(location.search);
+            const want = Number(q.get('accountId') || 0);
+            if (want > 0) {
+                await openDetail(userId, want);
+            }
+        }
+    }
+
+    /** 账户列表 → 卡片数据（单人口径；平铺那份由后端直接给同名字段，前端只负责画） */
+    function cardsOf(ov, user) {
+        return (ov.accounts || []).map(a => ({
+            userId: user.id,
+            username: user.username,
+            accountId: a.id,
+            accountName: a.name,
+            initValue: a.initValue,
+            cash: a.cash,
+            positionValue: a.positionValue,
+            totalValue: a.totalValue,
+            dayProfit: a.dayProfit,
+            dayProfitRate: rate(Number(a.dayProfit), Number(a.positionValue)),
+            totalProfit: a.totalProfit,
+            totalProfitPercent: a.totalProfitPercent,
+            positionCount: a.positionCount
+        }));
+    }
+
+    /** 当日收益率（%）= 当日收益 / 持仓市值；持仓市值为 0 时没有意义，给 null */
+    function rate(profit, positionValue) {
+        if (!positionValue || positionValue <= 0) {
+            return null;
+        }
+        return Math.round((profit || 0) / positionValue * 10000) / 100;
+    }
+
+    /* ---------- 卡片：平铺与单人共用同一套 DOM，3 秒只改数字不重建 ---------- */
+
+    function makeCard(c) {
+        const el = document.createElement('div');
+        el.className = 'acc-item';
+        el.setAttribute('data-key', c.userId + '-' + c.accountId);
+        el.innerHTML = '<div class="acc-hd">'
+            + (c.username ? '<span class="acc-user">' + esc(c.username) + '</span>' : '')
+            + '<span class="acc-name">' + esc(c.accountName || '账户') + '</span>'
+            + '<span class="acc-badge"></span>'
+            + '</div>'
+            + '<div class="acc-mv"></div>'
+            + '<div class="acc-kpis">'
+            + '<span class="acc-kpi">当日 <b data-f="day"></b></span>'
+            + '<span class="acc-kpi">当日收益率 <span class="acc-rate" data-f="rate"></span></span>'
+            + '</div>'
+            + '<div class="acc-kpis">'
+            + '<span class="acc-kpi">总盈亏 <b data-f="profit"></b><small data-f="pct"></small></span>'
+            + '</div>'
+            + '<div class="acc-ft">'
+            + '<span data-f="init"></span><span data-f="cash"></span><span data-f="pos"></span>'
+            + '</div>'
+            + '<div class="acc-hint">查看持仓与操作记录 ›</div>';
+        el.addEventListener('click', () => openDetail(c.userId, c.accountId));
+        paintCard(el, c);
+        return el;
+    }
+
+    function paintCard(el, c) {
+        const d = dir(c.dayProfit);
+        const t = dir(c.totalProfit);
+        el.querySelector('.acc-badge').textContent = c.positionCount + ' 只持仓';
+        el.querySelector('.acc-mv').textContent = money(c.totalValue);
+
+        const day = el.querySelector('[data-f="day"]');
+        day.textContent = moneySigned(c.dayProfit);
+        day.className = d;
+
+        const r = el.querySelector('[data-f="rate"]');
+        r.textContent = c.dayProfitRate == null ? '—' : pctSigned(c.dayProfitRate);
+        r.className = 'acc-rate ' + d;
+
+        const p = el.querySelector('[data-f="profit"]');
+        p.textContent = moneySigned(c.totalProfit);
+        p.className = t;
+        el.querySelector('[data-f="pct"]').textContent = ' ' + pctSigned(c.totalProfitPercent);
+
+        el.querySelector('[data-f="init"]').textContent = '期初 ' + money(c.initValue);
+        el.querySelector('[data-f="cash"]').textContent = '可用 ' + money(c.cash);
+        el.querySelector('[data-f="pos"]').textContent = '持仓 ' + money(c.positionValue);
+    }
+
+    /**
+     * 按 key 对齐地画一网格卡片。
+     *
+     * <p>卡片集合没变就只改数字 —— 3 秒重建一次 innerHTML 会让卡片闪、
+     * 鼠标悬停态也丢（和首页行情带同一个理由）。
+     */
+    function paintGrid(boxId, rows) {
+        const box = document.getElementById(boxId);
+        const keys = rows.map(c => c.userId + '-' + c.accountId);
+        const have = Array.prototype.map.call(box.children, el => el.getAttribute('data-key'));
+        if (have.join(',') !== keys.join(',')) {
+            box.innerHTML = '';
+            rows.forEach(c => box.appendChild(makeCard(c)));
+            return;
+        }
+        rows.forEach((c, i) => paintCard(box.children[i], c));
     }
 
     function renderAccounts() {
         const ov = overview || {};
-        const rows = ov.accounts || [];
+        const rows = cardsOf(ov, curUser || {id: 0, username: ''});
         document.getElementById('listTitle').textContent =
             (curUser ? curUser.username : '') + ' 的账户';
         document.getElementById('ovChips').innerHTML =
             '<span class="achip">' + rows.length + ' 个账户</span>'
             + '<span class="achip">合计总资产 ' + money(ov.totalValue) + '</span>'
             + '<span class="achip ' + dir(ov.dayProfit) + '">合计当日收益 ' + moneySigned(ov.dayProfit) + '</span>'
+            + '<span class="achip ' + dir(ov.dayProfit) + '">合计当日收益率 '
+            + pctOrDash(rate(Number(ov.dayProfit), Number(ov.positionValue))) + '</span>'
             + '<span class="achip ' + dir(ov.totalProfit) + '">合计总盈亏 ' + moneySigned(ov.totalProfit) + '</span>'
             + '<span class="achip">可用金额 ' + money(ov.cash) + '</span>';
-
-        const box = document.getElementById('accGrid');
         document.getElementById('accEmpty').style.display = rows.length ? 'none' : '';
-        box.innerHTML = rows.map(a => {
-            const d = dir(a.dayProfit);
-            const t = dir(a.totalProfit);
-            return '<div class="acc-item" data-id="' + a.id + '">'
-                + '<div class="acc-hd">'
-                + '<span class="acc-name">' + esc(a.name || '账户') + '</span>'
-                + '<span class="acc-badge">' + a.positionCount + ' 只持仓</span>'
-                + '</div>'
-                + '<div class="acc-mv">' + money(a.totalValue) + '</div>'
-                + '<div class="acc-kpis">'
-                + '<span class="acc-kpi">当日 <b class="' + d + '">' + moneySigned(a.dayProfit) + '</b></span>'
-                + '<span class="acc-kpi">总盈亏 <b class="' + t + '">' + moneySigned(a.totalProfit) + '</b>'
-                + '<small> ' + pctSigned(a.totalProfitPercent) + '</small></span>'
-                + '</div>'
-                + '<div class="acc-ft">'
-                + '<span>期初 ' + money(a.initValue) + '</span>'
-                + '<span>可用 ' + money(a.cash) + '</span>'
-                + '</div>'
-                + '<div class="acc-hint">查看持仓与操作记录 ›</div>'
-                + '</div>';
-        }).join('');
-        box.querySelectorAll('.acc-item').forEach(card => {
-            card.addEventListener('click', () => openDetail(Number(card.getAttribute('data-id'))));
-        });
+        paintGrid('accGrid', rows);
+    }
+
+    function pctOrDash(v) {
+        return v == null ? '—' : pctSigned(v);
+    }
+
+    /* ---------- 平铺：默认预览用户 × 他们名下所有账户 ---------- */
+
+    async function loadBoard() {
+        const r = await get('/api/admin/accounts/board');
+        if (!r || !r.success) {
+            return;
+        }
+        board = r.data || {cards: [], users: []};
+        renderBoard();
+    }
+
+    function renderBoard() {
+        const b = board || {cards: [], users: []};
+        const cards = b.cards || [];
+        const userCount = (b.users || []).length;
+        mode = 'board';
+        curId = 0;
+        document.getElementById('listPanel').style.display = 'none';
+        document.getElementById('detailPanel').style.display = 'none';
+        document.getElementById('boardPanel').style.display = '';
+
+        document.getElementById('boardTitle').textContent =
+            '默认预览 · ' + userCount + ' 位用户的 ' + cards.length + ' 个账户';
+        document.getElementById('whoTip').innerHTML =
+            '只读视图 · 平铺 <b>' + userCount + '</b> 位用户的账户';
+        const d = dir(b.dayProfit);
+        document.getElementById('boardChips').innerHTML =
+            '<span class="achip">' + userCount + ' 位用户</span>'
+            + '<span class="achip">' + cards.length + ' 个账户</span>'
+            + '<span class="achip">合计总资产 ' + money(b.totalValue) + '</span>'
+            + '<span class="achip">合计持仓市值 ' + money(b.positionValue) + '</span>'
+            + '<span class="achip ' + d + '">合计当日收益 ' + moneySigned(b.dayProfit) + '</span>'
+            + '<span class="achip ' + d + '">合计当日收益率 ' + pctOrDash(b.dayProfitRate) + '</span>'
+            + '<span class="achip ' + dir(b.totalProfit) + '">合计总盈亏 ' + moneySigned(b.totalProfit) + '</span>';
+        document.getElementById('boardEmpty').style.display = cards.length ? 'none' : '';
+        paintGrid('boardGrid', cards);
     }
 
     /* ---------- 二级：某本账的明细（仍在当前页） ---------- */
 
-    async function openDetail(accountId) {
-        if (!curUser) {
+    async function openDetail(userId, accountId) {
+        if (!userId) {
             return;
         }
-        const r = await get('/api/admin/accounts/detail?userId=' + curUser.id
+        const r = await get('/api/admin/accounts/detail?userId=' + userId
             + '&accountId=' + accountId);
         if (!r || !r.success) {
             return toast((r && r.message) || '账户打不开', 'err');
         }
+        detailFrom = mode === 'board' ? 'board' : 'single';
+        detailUserId = userId;
         curId = accountId;
+        curUser = (r.data && r.data.user) || curUser;
         summary = r.data.summary || null;
         records = r.data.records || [];
+        mode = 'detail';
+        document.getElementById('boardPanel').style.display = 'none';
         document.getElementById('listPanel').style.display = 'none';
         document.getElementById('detailPanel').style.display = '';
+        document.getElementById('backLabel').textContent =
+            detailFrom === 'board' ? '默认预览' : '全部账户';
         render();
         document.getElementById('detailPanel').scrollIntoView({block: 'start'});
+    }
+
+    /** 3 秒刷新明细：只重画数字区，持仓表与操作记录不重排 */
+    async function refreshDetail() {
+        if (!detailUserId || !curId) {
+            return;
+        }
+        const r = await get('/api/admin/accounts/detail?userId=' + detailUserId
+            + '&accountId=' + curId);
+        if (!r || !r.success) {
+            return;
+        }
+        summary = r.data.summary || null;
+        records = r.data.records || [];
+        renderFund(summary || {});
+        renderSummary(summary || {});
+        renderChips(summary || {});
     }
 
     function closeDetail() {
         curId = 0;
         document.getElementById('detailPanel').style.display = 'none';
+        if (detailFrom === 'board') {
+            mode = 'board';
+            document.getElementById('boardPanel').style.display = '';
+            return;
+        }
+        mode = 'single';
         document.getElementById('listPanel').style.display = '';
     }
 
@@ -531,6 +742,157 @@
         }).join('');
     }
 
+    /* ---------- 默认预览用户（v1.8.0） ---------- */
+
+    async function loadPreviewConfig() {
+        const r = await get('/api/admin/accounts/preview');
+        if (!r || !r.success) {
+            return;
+        }
+        preview = (r.data && r.data.users) || [];
+        paintPreviewTip();
+    }
+
+    function paintPreviewTip() {
+        const el = document.getElementById('previewTip');
+        el.innerHTML = preview.length
+            ? '默认预览：<b>' + preview.map(u => esc(u.username)).join('、')
+              + '</b> —— 进入本页即平铺这些人的所有账户'
+            : '还没配置默认预览用户。配好后本页默认平铺他们的所有账户，一起看。';
+    }
+
+    /** 配置弹窗：勾选要一起看的用户（列表取前 200 个账号） */
+    async function openPreviewModal() {
+        const [u, p] = await Promise.all([
+            get('/api/admin/users?page=1&size=200'),
+            get('/api/admin/accounts/preview')
+        ]);
+        const list = (u && u.success && u.data && u.data.rows) || [];
+        const chosen = ((p && p.success && p.data && p.data.userIds) || []).map(Number);
+        let mask = document.getElementById('pvMask');
+        if (!mask) {
+            mask = document.createElement('div');
+            mask.className = 'mask';
+            mask.id = 'pvMask';
+            mask.innerHTML = '<div class="modal modal-lg" role="dialog" aria-modal="true" aria-label="默认预览用户">'
+                + '<h3>默认预览用户</h3>'
+                + '<div class="dim" style="font-size:var(--fs-12);margin-bottom:12px">'
+                + '勾选的用户，进「账户管理」时平铺他们名下<b>所有账户</b>的卡片，收益 3 秒刷新一次。'
+                + '最多 20 个 —— 每多一个人就多一轮行情取数。</div>'
+                + '<div class="pv-list" id="pvList"></div>'
+                + '<div class="modal-actions">'
+                + '<button class="btn-ghost" onclick="clearPreview()">清空配置</button>'
+                + '<button class="btn-ghost" onclick="closePreviewModal()">取消</button>'
+                + '<button id="pvSave">保存</button>'
+                + '</div></div>';
+            document.body.appendChild(mask);
+            mask.addEventListener('mousedown', e => {
+                if (e.target === mask) {
+                    closePreviewModal();
+                }
+            });
+            mask.querySelector('#pvSave').addEventListener('click', savePreview);
+        }
+        mask.querySelector('#pvList').innerHTML = list.length
+            ? list.map(x => '<label class="pv-row"><input type="checkbox" value="' + x.id + '"'
+                + (chosen.indexOf(x.id) >= 0 ? ' checked' : '') + '>'
+                + '<span class="pv-name">' + esc(x.username) + '</span>'
+                + '<span class="pv-meta">' + (x.admin ? '超管' : '成员')
+                + (x.enabled ? '' : ' · 已停用') + '</span></label>').join('')
+            : '<div class="pv-empty">没有可选的账号</div>';
+        mask.classList.add('show');
+    }
+
+    function closePreviewModal() {
+        const mask = document.getElementById('pvMask');
+        if (mask) {
+            mask.classList.remove('show');
+        }
+    }
+
+    async function savePreview() {
+        const ids = Array.prototype.map.call(
+            document.querySelectorAll('#pvList input[type=checkbox]:checked'),
+            x => Number(x.value));
+        const r = await put('/api/admin/accounts/preview', {userIds: ids});
+        if (!r || !r.success) {
+            return;
+        }
+        preview = (r.data && r.data.users) || [];
+        paintPreviewTip();
+        closePreviewModal();
+        toast(r.message || '已保存', 'ok');
+        await afterPreviewChange();
+    }
+
+    async function clearPreview() {
+        if (!confirm('清空默认预览后，本页回到「按单个用户查看」，确认？')) {
+            return;
+        }
+        const r = await put('/api/admin/accounts/preview', {userIds: []});
+        if (!r || !r.success) {
+            return;
+        }
+        preview = [];
+        paintPreviewTip();
+        closePreviewModal();
+        toast(r.message || '已清空默认预览', 'ok');
+        await afterPreviewChange();
+    }
+
+    /** 配置变了：有预览用户就平铺，没有就回单人视图 */
+    async function afterPreviewChange() {
+        if (preview.length) {
+            await loadBoard();
+            return;
+        }
+        document.getElementById('boardPanel').style.display = 'none';
+        if (curUser) {
+            await loadOverview(curUser.id, true);
+        } else if (await loadUsers()) {
+            selectUser(Number(document.getElementById('userSel').value));
+        }
+    }
+
+    /* ---------- 3 秒轮询：与「我的账户」页同一频率 ---------- */
+
+    function startAutoRefresh() {
+        stopAutoRefresh();
+        refreshTimer = setInterval(tick, REFRESH_MS);
+    }
+
+    function stopAutoRefresh() {
+        if (refreshTimer) {
+            clearInterval(refreshTimer);
+            refreshTimer = null;
+        }
+        refreshBusy = false;
+    }
+
+    /**
+     * 一跳只刷当前视图，且就地改数字：页面在后台不刷、弹窗开着不刷、
+     * 上一次还没回来就跳过 —— 和账户页同一套规矩。
+     */
+    async function tick() {
+        if (document.hidden || refreshBusy || document.querySelector('.mask.show')) {
+            return;
+        }
+        refreshBusy = true;
+        try {
+            if (mode === 'detail' && curId > 0) {
+                await refreshDetail();
+            } else if (mode === 'board') {
+                await loadBoard();
+            } else if (curUser) {
+                await loadOverview(curUser.id, true);
+            }
+        } catch (e) {
+            // 轮询失败下一跳自然重试，不弹提示（弹了只会刷屏）
+        } finally {
+            refreshBusy = false;
+        }
+    }
+
     /* ---------- 事件与初始化 ---------- */
 
     document.getElementById('fKw').addEventListener('keydown', function (e) {
@@ -556,10 +918,14 @@
         document.getElementById('pickPanel').style.display = '';
         // 持仓里的标的要渲染成跳转链接，配置先拿到
         await loadStockLink();
-        if (await loadUsers()) {
-            // 默认落在第一个账号上：进页面就有东西看，不用先点一下
+        // 配了默认预览用户就直接平铺，否则按单个用户看（默认落在第一个账号）
+        await loadPreviewConfig();
+        if (preview.length) {
+            await loadBoard();
+        } else if (await loadUsers()) {
             selectUser(Number(document.getElementById('userSel').value));
         }
+        startAutoRefresh();
     })();
 </script>
 </body>

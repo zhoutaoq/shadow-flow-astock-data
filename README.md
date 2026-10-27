@@ -25,7 +25,7 @@
 | **可视化** | 原生 HTML + ECharts，无外部 UI 框架依赖 |
 | **策略回测** | 支持自定义买卖规则、涨跌停成交策略、滑点手续费 |
 | **实时盯盘** | 监控价格波动、封板/开板，通过钉钉机器人推送（基于新浪实时行情） |
-| **账户管理** | 多账户、持仓管理、当日/总收益计算、支持导入导出 |
+| **账户管理** | 多账户、持仓管理、当日/总收益计算、支持导入导出；超管可平铺查看多个用户的所有账户（只读） |
 
 ---
 
@@ -175,3 +175,79 @@ java -jar shadow-flow-biz/target/shadow-flow-biz.jar --server.port=8081
 2. **盯盘开关**：钉钉机器人需配置 Keyword 或 Secret，否则会被拦截。
 3. **股票范围**：系统目前仅支持沪深 A 股（代码以 60/68/00/30 开头）。
 4. **持仓数量**：每日 00:00 (北京时间) 系统会自动将所有账户的「可用数量」对齐至「持仓数量」（允许卖出隔夜持仓）。
+
+---
+
+## 八、参与开发与合并流程（Pull Request）
+
+本项目按开源项目惯例走 **Pull Request**，不接受直接向主干推提交：
+
+```
+fork / 建分支 → 提交 → 本地自测 → 提 PR → 评审 → 合并 → CI 自动发布
+```
+
+### 1. 建分支
+
+从发布分支切出，分支名带类型前缀：
+
+```bash
+git switch -c feat/admin-account-board github
+# 常见前缀：feat/  fix/  refactor/  docs/  chore/
+```
+
+### 2. 提交规范
+
+沿用 [Conventional Commits](https://www.conventionalcommits.org/)，范围写模块名
+（`kline` / `watch` / `auth` / `admin` / `deploy` …）；**提交信息最后一行必须带模型名**：
+
+```
+feat(account): 超管账户管理支持平铺多用户
+
+- 默认预览用户落系统级配置，进入页面即平铺
+- 卡片增加当日收益率（当日收益 / 持仓市值）
+
+Model: dsv4.1flash
+```
+
+纯人工提交写 `Model: human`。仓库钩子 `.githooks/commit-msg` 会自动补这一行，
+但规范上仍要求自己写。详细规则见 [`AGENTS.md`](AGENTS.md) 第 1 节。
+
+### 3. 本地自测
+
+```bash
+mvn -B clean package -DskipTests
+node scripts/check_inline_js.js shadow-flow-biz/src/main/resources/static
+```
+
+改了行情 / 通知 / 账户口径时，再本地起一次服务手工点一遍关键页面（`--server.port=8081`）。
+
+### 4. 提 PR
+
+```bash
+git push origin feat/admin-account-board
+```
+
+然后在 GitHub 上以 `github` 为 base 开 PR，PR 描述建议写清三件事：
+
+| 段落 | 写什么 |
+|---|---|
+| 改了什么 | 行为层面的变化，不是文件清单 |
+| 为什么 | 对应的问题或需求；有 trade-off 一并写 |
+| 怎么验 | 复现步骤 / 自测命令 / 关键接口返回；界面改动附截图 |
+
+### 5. 评审与合并
+
+- 至少一位维护者 review 通过后再合并，**优先 squash merge**：主干上一条提交对应一件事；
+- 合并进 `github` 即触发 GitHub Actions（打包 → 上传 → 远端重启 → 探活），发布详情见 [`sh/使用说明.md`](sh/使用说明.md)；
+- 紧急修复同样走 PR，不走「本地打包直传」——线上版本只认 CI 产物。
+
+### 6. 不要提交的东西
+
+密钥与运行资产一律不进仓库：`app.env`、`sh/deploy.env`、`data/`、`target/`、本地发布脚本
+（`sh/deploy.bat` / `plink.exe` / `pscp.exe`）。提交前可自查：
+
+```bash
+git diff --cached | grep -inE 'password|passwd|secret|token|webhook|access_token'
+```
+
+发现明文凭据：**先撤销入库 + 轮换凭据**，再改代码 —— 历史里的值不会因为新提交而消失。
