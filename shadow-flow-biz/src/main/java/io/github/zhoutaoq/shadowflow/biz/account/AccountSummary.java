@@ -48,6 +48,14 @@ public class AccountSummary {
     private BigDecimal dayFloatProfit = BigDecimal.ZERO;
     /** 当日已实现盈亏（元）：当天卖出部分落袋的部分（在途时可能为 0） */
     private BigDecimal dayRealizedProfit = BigDecimal.ZERO;
+    /**
+     * 当日操作盈亏（元，v1.9.0）：当天每一笔操作「放到现在的价格上值多少」。
+     *
+     * <p>= Σ卖出（卖出价 - 现价）× 数量 + Σ买入（现价 - 买入价）× 数量。
+     * 卖出后价格跌了算正（卖对了），买入后价格涨了算正（买对了）；只看当天成交的记录。
+     * 现价取不到的标的按 0 计（不让整块数字变成 null）。
+     */
+    private BigDecimal dayTradeProfit = BigDecimal.ZERO;
     /** 当日收益率（%）：按当日基准市值算，基准价缺失时为 null */
     private BigDecimal dayProfitPercent;
     /**
@@ -412,6 +420,14 @@ public class AccountSummary {
 
     public void setDayRealizedProfit(BigDecimal dayRealizedProfit) {
         this.dayRealizedProfit = dayRealizedProfit;
+    }
+
+    public BigDecimal getDayTradeProfit() {
+        return dayTradeProfit;
+    }
+
+    public void setDayTradeProfit(BigDecimal dayTradeProfit) {
+        this.dayTradeProfit = dayTradeProfit;
     }
 
     public BigDecimal getDayProfitPercent() {

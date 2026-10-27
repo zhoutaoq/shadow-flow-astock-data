@@ -7,8 +7,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>账户管理</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261027a">
-    <link rel="stylesheet" href="/css/account.css?v=20261027a">
+    <link rel="stylesheet" href="/css/common.css?v=20261027b">
+    <link rel="stylesheet" href="/css/account.css?v=20261027b">
     <style>
         /* 顶部的「选人」工具条：搜索框 + 用户下拉 + 重新载入 */
         .au-toolbar { display: flex; gap: var(--sp-2); align-items: flex-end; flex-wrap: wrap; }
@@ -180,6 +180,11 @@
                             <div class="akpi-v" id="kDayProfit">-</div>
                             <div class="akpi-d" id="kDayPct"></div>
                         </div>
+                        <div class="akpi">
+                            <div class="akpi-t">当日操作盈亏</div>
+                            <div class="akpi-v" id="kTradeProfit">-</div>
+                            <div class="akpi-d">卖(卖价-现价) + 买(现价-买价)</div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -219,6 +224,12 @@
                     <span class="acard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span>
                     <h2>操作记录</h2>
                     <span class="acard-note" id="recCount"></span>
+                    <div class="acard-acts">
+                        <div class="aseg aseg-sm" id="recScope">
+                            <button type="button" data-scope="today" class="on" onclick="setRecScope('today')">当天</button>
+                            <button type="button" data-scope="all" onclick="setRecScope('all')">历史</button>
+                        </div>
+                    </div>
                 </header>
                 <div class="acard-bd">
                     <div class="arec-head">
@@ -227,7 +238,7 @@
                         <span>成交价</span>
                         <span>数量</span>
                         <span>盈亏</span>
-                        <span>时间</span>
+                        <span id="recDateHead">时间</span>
                     </div>
                     <div class="arec-list" id="recList"></div>
                 </div>
@@ -236,7 +247,7 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261027a"></script>
+<script src="/js/common.js?v=20261027b"></script>
 <script>
     /* 只读页面：数据都来自 /api/admin/accounts/**，唯一会写的是「默认预览用户」这项配置 */
     let users = [];        // 当前搜索到的用户（最多 200 个）
@@ -251,6 +262,7 @@
     let preview = [];      // 默认预览用户（UserView[]）
     let board = null;      // 平铺数据（/api/admin/accounts/board）
     let mode = 'single';   // single（看一个人） | board（平铺所有人） | detail（某本账明细）
+    let recScope = 'today'; // 操作记录视图：today = 只看当天（与「我的账户」页同一默认） / all = 全部历史
 
     /** 收益刷新频率：与「我的账户」页一致（3 秒） */
     const REFRESH_MS = 3000;
@@ -631,7 +643,6 @@
         setKpi('kTotalValue', money(s.totalValue), '');
         setKpi('kPosValue', money(s.positionValue), '');
         document.getElementById('kPosCost').textContent = '成本 ' + money(s.positionCost);
-
         setKpi('kTotalProfit', moneySigned(s.totalProfit), dir(s.totalProfit));
         document.getElementById('kTotalPct').textContent = s.totalProfitPercent == null
             ? '相对账户期初市值'
@@ -654,6 +665,9 @@
             }
             document.getElementById('kDayPct').textContent = parts.join(' · ');
         }
+
+        // 当日操作盈亏（v1.9.0）：与「我的账户」页同一口径，卖(卖价-现价) + 买(现价-买价)
+        setKpi('kTradeProfit', moneySigned(s.dayTradeProfit), dir(s.dayTradeProfit));
 
         // 行情口径：未开盘按昨收、行情断了按最近价，写出来省得以为数字没刷新
         const ps = s.positions || [];
@@ -711,35 +725,134 @@
         }).join('');
     }
 
-    /** 操作记录：只读，最多摆最近 20 条（全量看还是让本人去「我的账户」） */
+    /**
+     * 操作记录：与「我的账户」页同一套呈现 —— 默认只看当天，切「历史」按成交日期分组。
+     *
+     * <p>上一版这里只摆最近 20 笔、不分今日/历史，超管看到的和别人自己看到的对不上，
+     * 所以整段逻辑照账户页搬过来（记录本身都是同一个 /api/account/records 口径，
+     * 每账户最多 200 条，一次全取在本地切）。
+     */
+    function setRecScope(scope) {
+        recScope = scope === 'all' ? 'all' : 'today';
+        const box = document.getElementById('recScope');
+        if (box) {
+            box.querySelectorAll('button').forEach(function (b) {
+                b.classList.toggle('on', b.getAttribute('data-scope') === recScope);
+            });
+        }
+        const head = document.getElementById('recDateHead');
+        if (head) {
+            head.textContent = recScope === 'today' ? '时间' : '日期';
+        }
+        renderRecords();
+    }
+
+    /** 这条记录算在哪一天：成交日期优先；v1.5.6 之前的老数据没有 tradeDate，退回录入时刻 */
+    function recDayOf(x) {
+        if (!x) return '';
+        if (x.tradeDate) return String(x.tradeDate).slice(0, 10);
+        return x.time ? String(x.time).slice(0, 10) : '';
+    }
+
+    /** 只要时刻（当天视图里日期列不必每行重复一遍今天） */
+    function recClock(x) {
+        const t = String((x && x.time) || '');
+        return t.length >= 19 ? t.slice(11) : (t || recDayOf(x));
+    }
+
+    /** 历史视图的完整时间：成交日期 + 录入时刻 */
+    function recordWhen(x) {
+        const d = x.tradeDate || '';
+        const t = x.time || '';
+        const hms = t.length >= 19 ? t.slice(11) : '';
+        if (d && hms) return d + ' ' + hms;
+        return d || t;
+    }
+
+    /** 一组记录里卖出的盈亏合计：组头小计，便于回看那天赚亏多少 */
+    function realizedSum(rows) {
+        let sum = 0;
+        let has = false;
+        (rows || []).forEach(function (x) {
+            if (x.action !== 'sell') return;
+            const n = Number(x.realizedProfit);
+            if (x.realizedProfit === null || x.realizedProfit === undefined || isNaN(n)) return;
+            sum += n;
+            has = true;
+        });
+        return has ? ' · 盈亏 ' + moneySigned(sum) : '';
+    }
+
+    function recRowHtml(x, onlyClock) {
+        const buy = x.action === 'buy';
+        const same = x.sameDay ? '<span class="arec-tag">当天</span>' : '';
+        return '<div class="arec-row">'
+            + '<span class="arec-act ' + (buy ? 'buy' : 'sell') + '">' + (buy ? '买入' : '卖出') + '</span>'
+            + '<span class="arec-time">'
+            + stockLinkHtml(x.code, x.name, {text: x.name || x.code})
+            + ' · ' + esc(x.code) + same + '</span>'
+            + '<span>' + money(x.price) + ' 元</span>'
+            + '<span>' + fmtNum(x.quantity, 0) + ' 股</span>'
+            + '<span class="' + dir(x.realizedProfit) + '">'
+            + (buy ? '—' : moneySigned(x.realizedProfit)) + '</span>'
+            + '<span class="arec-time">' + esc(onlyClock ? recClock(x) : recordWhen(x)) + '</span>'
+            + '</div>';
+    }
+
     function renderRecords() {
         const box = document.getElementById('recList');
+        if (!box) {
+            return;
+        }
         const all = records || [];
-        document.getElementById('recCount').textContent = all.length
-            ? '最近 ' + Math.min(all.length, 20) + ' 笔 · 共 ' + all.length + ' 笔'
-            : '';
-        if (!all.length) {
+        const day = today();
+        const note = document.getElementById('recCount');
+
+        if (recScope === 'today') {
+            const todays = all.filter(function (x) { return recDayOf(x) === day; });
+            if (note) {
+                note.textContent = all.length ? '当天 ' + todays.length + ' 笔 · 共 ' + all.length + ' 笔' : '';
+            }
+            if (!todays.length) {
+                box.innerHTML = '<div class="arec-empty">今天还没有操作记录，切到「历史」可以看往期</div>';
+                return;
+            }
+            box.innerHTML = todays.map(function (x) { return recRowHtml(x, true); }).join('');
+            return;
+        }
+
+        const sorted = all.slice().sort(function (a, b) {
+            const da = recDayOf(a);
+            const db = recDayOf(b);
+            if (da !== db) return da < db ? 1 : -1;
+            return String(b.time || '').localeCompare(String(a.time || ''));
+        });
+        if (note) {
+            note.textContent = all.length
+                ? '全部 ' + all.length + ' 笔' + (all.length >= 200 ? '（每账户最多留 200 条）' : '')
+                : '';
+        }
+        if (!sorted.length) {
             box.innerHTML = '<div class="arec-empty">这本账户还没有操作记录</div>';
             return;
         }
-        box.innerHTML = all.slice(0, 20).map(x => {
-            const buy = x.action === 'buy';
-            const t = String(x.time || '');
-            const when = x.tradeDate
-                ? esc(x.tradeDate) + (t.length >= 19 ? ' ' + esc(t.slice(11)) : '')
-                : esc(t);
-            return '<div class="arec-row">'
-                + '<span class="arec-act ' + (buy ? 'buy' : 'sell') + '">' + (buy ? '买入' : '卖出') + '</span>'
-                + '<span class="arec-time">'
-                + stockLinkHtml(x.code, x.name, {text: x.name || x.code})
-                + ' · ' + esc(x.code) + '</span>'
-                + '<span>' + money(x.price) + ' 元</span>'
-                + '<span>' + fmtNum(x.quantity, 0) + ' 股</span>'
-                + '<span class="' + dir(x.realizedProfit) + '">'
-                + (buy ? '—' : moneySigned(x.realizedProfit)) + '</span>'
-                + '<span class="arec-time">' + when + '</span>'
+
+        let html = '';
+        let i = 0;
+        while (i < sorted.length) {
+            const d = recDayOf(sorted[i]);
+            const group = [];
+            while (i < sorted.length && recDayOf(sorted[i]) === d) {
+                group.push(sorted[i]);
+                i++;
+            }
+            html += '<div class="arec-day">'
+                + '<span class="arec-day-d">' + esc(d || '未标注日期') + (d === day ? ' · 今天' : '') + '</span>'
+                + '<span class="arec-day-n">' + group.length + ' 笔' + realizedSum(group) + '</span>'
                 + '</div>';
-        }).join('');
+            html += group.map(function (x) { return recRowHtml(x, false); }).join('');
+        }
+        box.innerHTML = html;
     }
 
     /* ---------- 默认预览用户（v1.8.0） ---------- */

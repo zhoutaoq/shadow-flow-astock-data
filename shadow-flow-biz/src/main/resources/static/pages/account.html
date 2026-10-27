@@ -7,8 +7,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>我的账户</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261027a">
-    <link rel="stylesheet" href="/css/account.css?v=20261027a">
+    <link rel="stylesheet" href="/css/common.css?v=20261027b">
+    <link rel="stylesheet" href="/css/account.css?v=20261027b">
 </head>
 <body>
 <header class="topbar">
@@ -110,6 +110,11 @@
                             <div class="akpi-v" id="kDayProfit">-</div>
                             <div class="akpi-d" id="kDayPct">持仓浮动 + 当日已实现</div>
                         </div>
+                        <div class="akpi">
+                            <div class="akpi-t">当日操作盈亏</div>
+                            <div class="akpi-v" id="kTradeProfit">-</div>
+                            <div class="akpi-d" id="kTradeDesc">卖(卖价-现价) + 买(现价-买价)</div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -200,7 +205,7 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261027a"></script>
+<script src="/js/common.js?v=20261027b"></script>
 <script src="/js/date-picker.js?v=20261019a"></script>
 <script src="/js/stock-picker.js?v=20261019a"></script>
 <script src="/vendor/echarts.min.js"></script>
@@ -431,6 +436,9 @@
             }
             document.getElementById('kDayPct').textContent = parts.join(' · ');
         }
+
+        // 当日操作盈亏（v1.9.0）：卖(卖价-现价) + 买(现价-买价)，按成交数量加权
+        setKpi('kTradeProfit', moneySigned(s.dayTradeProfit), dir(s.dayTradeProfit));
     }
 
     function setKpi(id, text, cls) {

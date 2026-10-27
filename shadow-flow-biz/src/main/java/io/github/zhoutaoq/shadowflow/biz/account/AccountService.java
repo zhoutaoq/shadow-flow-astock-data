@@ -874,8 +874,84 @@ public class AccountService {
         s.setDayProfit(money(dayProfit));
         s.setDayFloatProfit(money(c.dayProfit));
         s.setDayRealizedProfit(money(realized));
+        s.setDayTradeProfit(dayTradeProfit(userId, acct.getId(), today, quotes));
         s.setDayProfitPercent(c.dayKnown ? percent(dayProfit, c.dayBasisValue) : null);
         return s;
+    }
+
+    /**
+     * 当日操作盈亏（v1.9.0）：当天每一笔「放到现在的价格上」值多少。
+     *
+     * <p>= Σ卖出（卖出价 - 现价）× 成交数量 + Σ买入（现价 - 买入价）× 成交数量。
+     * 卖出后价格跌了算正（卖对了），买入后价格涨了算正（买对了）；只统计成交日期是今天的记录。
+     *
+     * <p>现价优先用本轮已经取到的行情（{@code quotes}），没有再查一次缓存
+     * （{@link #lastPriceCache}，覆盖今天卖出后已清仓的标的）；两处都没有就按 0 计 ——
+     * 缺一只标的的行情不该让整块数字变成 null。
+     *
+     * @param quotes 本次汇总已经取到的行情，按代码索引（可复用，避免重复请求）
+     */
+    private BigDecimal dayTradeProfit(long userId, long accountId, String today, Map<String, Quote> quotes) {
+        List<TradeRecord> records = repository.listRecords(userId, accountId);
+        if (records == null || records.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        // 当日记录里出现、但本轮汇总没取过行情的标的（例如今天已清仓），补取一轮
+        Map<String, String> missing = new LinkedHashMap<>();
+        List<TradeRecord> todays = new ArrayList<>();
+        for (TradeRecord r : records) {
+            if (r == null || r.getCode() == null || !today.equals(tradeDateOf(r))) {
+                continue;
+            }
+            todays.add(r);
+            if (!quotes.containsKey(r.getCode()) && !lastPriceCache.containsKey(r.getCode())) {
+                missing.putIfAbsent(r.getCode(),
+                        r.getName() == null || r.getName().trim().isEmpty() ? r.getCode() : r.getName());
+            }
+        }
+        if (todays.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        Map<String, Quote> extra = missing.isEmpty() ? new LinkedHashMap<String, Quote>() : fetchQuotes(missing);
+
+        BigDecimal sum = BigDecimal.ZERO;
+        for (TradeRecord r : todays) {
+            BigDecimal now = priceOf(r.getCode(), quotes, extra);
+            if (now == null || now.signum() <= 0) {
+                continue;
+            }
+            BigDecimal qty = BigDecimal.valueOf(Math.max(0, r.getQuantity()));
+            BigDecimal diff = TradeRecord.ACTION_BUY.equals(r.getAction())
+                    ? now.subtract(nz(r.getPrice()))
+                    : nz(r.getPrice()).subtract(now);
+            sum = sum.add(diff.multiply(qty));
+        }
+        return money(sum);
+    }
+
+    /** 记录的成交日期：老数据没写 tradeDate，退回录入时刻的前 10 位 */
+    private static String tradeDateOf(TradeRecord r) {
+        String d = r.getTradeDate();
+        if (d != null && !d.trim().isEmpty()) {
+            return d.trim().length() > 10 ? d.trim().substring(0, 10) : d.trim();
+        }
+        String t = r.getTime();
+        return t == null || t.length() < 10 ? "" : t.substring(0, 10);
+    }
+
+    /** 某只标的的现价：本轮行情 → 最近一次取到的有效价 → null */
+    private BigDecimal priceOf(String code, Map<String, Quote> quotes, Map<String, Quote> extra) {
+        if (code == null) {
+            return null;
+        }
+        Quote q = quotes.get(code);
+        if (q == null) {
+            q = extra.get(code);
+        }
+        if (q != null && q.getPrice() != null && q.getPrice().signum() > 0) {
+            return q.getPrice();
+        }
+        return lastPriceCache.get(code);
     }
 
     /**
