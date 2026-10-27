@@ -7,8 +7,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>账户管理</title>
-    <link rel="stylesheet" href="/css/common.css?v=20261027b">
-    <link rel="stylesheet" href="/css/account.css?v=20261027b">
+    <link rel="stylesheet" href="/css/common.css?v=20261027c">
+    <link rel="stylesheet" href="/css/account.css?v=20261027c">
     <style>
         /* 顶部的「选人」工具条：搜索框 + 用户下拉 + 重新载入 */
         .au-toolbar { display: flex; gap: var(--sp-2); align-items: flex-end; flex-wrap: wrap; }
@@ -30,11 +30,6 @@
             font-size: var(--fs-12); color: var(--text-dim);
         }
         .au-who b { color: var(--text-strong); font-weight: 600; }
-        /* 卡片上的归属用户：平铺时靠它区分这是谁的账户 */
-        .acc-user {
-            font-size: var(--fs-11); color: var(--text-dim);
-            max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-        }
         /* 当日收益率（当日收益 / 持仓市值）：单独一颗小胶囊，和金额不同色系 */
         .acc-rate {
             display: inline-flex; align-items: center;
@@ -44,6 +39,18 @@
         }
         .acc-rate.up { color: var(--up); }
         .acc-rate.down { color: var(--down); }
+        /* 平铺：按用户分块，块头是这个人的合计 */
+        .board-user { margin-bottom: var(--sp-4); }
+        .board-user-hd {
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            padding-bottom: 8px; margin-bottom: 10px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .bu-name {
+            font-size: var(--fs-14); font-weight: 600; color: var(--text-strong);
+            max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .bu-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
         /* 预览用户勾选列表 */
         .pv-list {
             display: flex; flex-direction: column; gap: 4px;
@@ -104,7 +111,8 @@
                 <div class="asum" id="boardChips"></div>
             </div>
         </div>
-        <div class="acc-grid" id="boardGrid"></div>
+        <!-- 按用户分块：一个人一块，块内是他名下的账户卡片 -->
+        <div id="boardUsers"></div>
         <div class="au-empty" id="boardEmpty" style="display:none">配置的预览用户还没有账户</div>
     </div>
 
@@ -247,7 +255,7 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261027b"></script>
+<script src="/js/common.js?v=20261027c"></script>
 <script>
     /* 只读页面：数据都来自 /api/admin/accounts/**，唯一会写的是「默认预览用户」这项配置 */
     let users = [];        // 当前搜索到的用户（最多 200 个）
@@ -431,7 +439,6 @@
         el.className = 'acc-item';
         el.setAttribute('data-key', c.userId + '-' + c.accountId);
         el.innerHTML = '<div class="acc-hd">'
-            + (c.username ? '<span class="acc-user">' + esc(c.username) + '</span>' : '')
             + '<span class="acc-name">' + esc(c.accountName || '账户') + '</span>'
             + '<span class="acc-badge"></span>'
             + '</div>'
@@ -550,7 +557,73 @@
             + '<span class="achip ' + d + '">合计当日收益率 ' + pctOrDash(b.dayProfitRate) + '</span>'
             + '<span class="achip ' + dir(b.totalProfit) + '">合计总盈亏 ' + moneySigned(b.totalProfit) + '</span>';
         document.getElementById('boardEmpty').style.display = cards.length ? 'none' : '';
-        paintGrid('boardGrid', cards);
+        renderBoardUsers();
+    }
+
+    /** 单个用户的合计胶囊：账户数 / 总资产 / 当日收益 / 当日收益率 / 总盈亏 */
+    function userChips(u) {
+        const d = dir(u.dayProfit);
+        return '<span class="achip">' + u.accountCount + ' 个账户</span>'
+            + '<span class="achip">总资产 ' + money(u.totalValue) + '</span>'
+            + '<span class="achip">持仓市值 ' + money(u.positionValue) + '</span>'
+            + '<span class="achip ' + d + '">当日 ' + moneySigned(u.dayProfit) + '</span>'
+            + '<span class="achip ' + d + '">当日收益率 ' + pctOrDash(u.dayProfitRate) + '</span>'
+            + '<span class="achip ' + dir(u.totalProfit) + '">总盈亏 ' + moneySigned(u.totalProfit) + '</span>';
+    }
+
+    /**
+     * 平铺视图按用户分块渲染。
+     *
+     * <p>v1.9.1 起不再把所有人的账混在一个网格里 —— 一个人一块，块头给出这个人的合计，
+     * 块内只摆他名下的账户卡片，几个人并排也不会看串。
+     *
+     * <p>3 秒刷新时按「用户顺序 + 每人名下账户」做结构签名：签名没变就只改数字，
+     * 变了才重建（重建会闪、也会丢鼠标悬停态）。
+     */
+    function renderBoardUsers() {
+        const b = board || {cards: [], users: []};
+        const users = b.users || [];
+        const all = b.cards || [];
+        const box = document.getElementById('boardUsers');
+        const cardsOfUser = u => all.filter(c => c.userId === u.userId);
+        const sig = users.map(u => u.userId + '#' + cardsOfUser(u).map(c => c.accountId).join('.'))
+            .join('|');
+
+        if (box.getAttribute('data-sig') !== sig) {
+            box.innerHTML = '';
+            users.forEach(u => {
+                const sec = document.createElement('section');
+                sec.className = 'board-user';
+                sec.setAttribute('data-uid', String(u.userId));
+                sec.innerHTML = '<div class="board-user-hd">'
+                    + '<span class="bu-name">' + esc(u.username) + '</span>'
+                    + '<span class="bu-chips"></span>'
+                    + '</div><div class="acc-grid"></div>';
+                const grid = sec.querySelector('.acc-grid');
+                const mine = cardsOfUser(u);
+                if (!mine.length) {
+                    grid.innerHTML = '<div class="au-empty">这个用户还没有账户</div>';
+                } else {
+                    mine.forEach(c => grid.appendChild(makeCard(c)));
+                }
+                box.appendChild(sec);
+            });
+            box.setAttribute('data-sig', sig);
+        }
+
+        users.forEach(u => {
+            const sec = box.querySelector('.board-user[data-uid="' + u.userId + '"]');
+            if (!sec) {
+                return;
+            }
+            sec.querySelector('.bu-chips').innerHTML = userChips(u);
+            const grid = sec.querySelector('.acc-grid');
+            cardsOfUser(u).forEach((c, i) => {
+                if (grid.children[i]) {
+                    paintCard(grid.children[i], c);
+                }
+            });
+        });
     }
 
     /* ---------- 二级：某本账的明细（仍在当前页） ---------- */
