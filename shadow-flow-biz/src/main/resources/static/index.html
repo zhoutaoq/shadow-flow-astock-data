@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>影流数据</title>
     <link rel="stylesheet" href="/css/common.css?v=20261027d">
-    <link rel="stylesheet" href="/css/home.css?v=20261011e">
+    <link rel="stylesheet" href="/css/home.css?v=20261028a">
     <link rel="stylesheet" href="/css/account.css?v=20261011e">
 </head>
 <body>
@@ -191,6 +191,9 @@
 
     <!-- 指数行情带：数据到才显示 -->
     <section class="tape" id="tape" hidden></section>
+
+    <!-- 市场成交：上证 / 深证 / 创业板成交额，3 秒刷新，比的是昨日同一时点的累计 -->
+    <section class="turnover" id="turnoverPanel" hidden></section>
 
     <!-- 我的账户：账户期初市值 + 当日/累计收益，按可用金额与持仓算当前总市值。
          数据按登录用户隔离，未登录或拿不到数据时整块隐藏 -->
@@ -383,6 +386,67 @@
         }
     }
 
+    /**
+     * 市场成交：上证 / 深证 / 创业板成交额，与行情带同一节奏（3 秒）刷新。
+     *
+     * <p>后端给的是「较昨日同一时点」的增减 —— 盘中拿今日累计去比昨日全天永远是大负数，
+     * 所以未开盘 / 昨日分时没取到时增减额留空，这里显示「—」。
+     */
+    async function loadTurnover() {
+        try {
+            var r = await get('/api/market/turnover');
+            var d = (r && r.success) ? r.data : null;
+            if (!d || !d.items || !d.items.length) return;
+            paintTurnover(d);
+        } catch (e) {
+            /* 取不到保持上一屏，不弹提示（首页行情类数据一律静默降级） */
+        }
+    }
+
+    function paintTurnover(d) {
+        var panel = document.getElementById('turnoverPanel');
+        // 结构只建一次，之后只改文字：3 秒重建 DOM 会让数字闪
+        if (!panel.dataset.built) {
+            var html = d.items.map(function (it, i) {
+                return '<div class="to-item">'
+                    + '<div class="to-title">' + esc(it.name) + '成交</div>'
+                    + '<div class="to-value"><span id="toAmt' + i + '">-</span><small>亿</small></div>'
+                    + '<div class="to-delta" id="toDlt' + i + '"></div>'
+                    + '</div>';
+            }).join('');
+            panel.innerHTML = html + '<div class="to-note" id="toNote"></div>';
+            panel.dataset.built = '1';
+            panel.hidden = false;
+        }
+        d.items.forEach(function (it, i) {
+            document.getElementById('toAmt' + i).textContent = toYi(it.amount);
+            paintTurnoverDelta('toDlt' + i, it);
+        });
+        document.getElementById('toNote').textContent = d.prevDate
+            ? '较昨日（' + d.prevDate + '）同一时点的累计成交额 · 每 3 秒刷新'
+            : '暂未取到昨日同期数据，只显示当日累计 · 每 3 秒刷新';
+    }
+
+    /** 元 → 亿（取整）：两千多亿的盘子，小数点没意义 */
+    function toYi(v) {
+        var n = Number(v);
+        return isNaN(n) ? '-' : (n / 1e8).toFixed(0);
+    }
+
+    function paintTurnoverDelta(id, one) {
+        var el = document.getElementById(id);
+        if (one.delta === null || one.delta === undefined) {
+            el.textContent = '—';
+            el.className = 'to-delta';
+            return;
+        }
+        var n = Number(one.delta);
+        el.textContent = '较昨日同期 ' + signed(n / 1e8, 1) + ' 亿'
+            + (one.percent === null || one.percent === undefined
+                ? '' : '（' + signed(one.percent, 2) + '%）');
+        el.className = 'to-delta ' + (n > 0 ? 'up' : n < 0 ? 'down' : '');
+    }
+
     /** 背景行情上的时间：每秒走一格，跟本机时钟对齐 */
     function startTapeClock() {
         var el = document.getElementById('tapeTime');
@@ -474,6 +538,9 @@
         loadIndices();
         // 行情带自己按固定间隔刷：不跟着整页刷新走，价格才是「在动」的
         setInterval(loadIndices, TAPE_INTERVAL);
+        // 成交额与行情带同频，用户要的就是「和行情一起动」
+        loadTurnover();
+        setInterval(loadTurnover, TAPE_INTERVAL);
         await startTapeClock();
         await loadMode();
         // 功能入口的名称与顺序跟随菜单配置，拉配置必须在渲染之前
