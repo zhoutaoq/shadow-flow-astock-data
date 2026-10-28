@@ -205,7 +205,7 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261027d"></script>
+<script src="/js/common.js?v=20261028c"></script>
 <script src="/js/date-picker.js?v=20261019a"></script>
 <script src="/js/stock-picker.js?v=20261019a"></script>
 <script src="/vendor/echarts.min.js"></script>
@@ -1341,19 +1341,35 @@
         let sum = 0;
         let has = false;
         (rows || []).forEach(function (x) {
-            if (x.action !== 'sell') return;
-            const n = Number(x.realizedProfit);
-            if (x.realizedProfit === null || x.realizedProfit === undefined || isNaN(n)) return;
+            const p = recProfit(x);
+            if (p === null) return;
+            const n = Number(p);
+            if (isNaN(n)) return;
             sum += n;
             has = true;
         });
         return has ? ' · 盈亏 ' + moneySigned(sum) : '';
     }
 
+    /**
+     * 一条记录该显示多少盈亏。
+     *
+     * 今天买入的看后端补的 dayProfit（现价 - 买入价）；卖出的看结算时算好的已实现。
+     * 历史买入两者都没有，返回 null 让调用方画横杠 —— 拿今天的价去算几个月前的买入不叫盈亏。
+     */
+    function recProfit(x) {
+        if (x.dayProfit !== null && x.dayProfit !== undefined) return x.dayProfit;
+        if (x.action === 'sell' && x.realizedProfit !== null && x.realizedProfit !== undefined) {
+            return x.realizedProfit;
+        }
+        return null;
+    }
+
     function recRowHtml(x, onlyClock) {
         const buy = x.action === 'buy';
         // 「当天」标记：成交日期就是今天，这笔量的当日盈亏从买入价起算（卖出恒为 false）
         const same = x.sameDay ? '<span class="arec-tag">当天</span>' : '';
+        const profit = recProfit(x);
         return '<div class="arec-row">'
             + '<span class="arec-act ' + (buy ? 'buy' : 'sell') + '">' + (buy ? '买入' : '卖出') + '</span>'
             + '<span class="arec-time">'
@@ -1361,8 +1377,8 @@
             + ' · ' + esc(x.code) + same + '</span>'
             + '<span>' + money(x.price) + ' 元</span>'
             + '<span>' + fmtNum(x.quantity, 0) + ' 股</span>'
-            + '<span class="' + dir(x.realizedProfit) + '">'
-            + (buy ? '—' : moneySigned(x.realizedProfit)) + '</span>'
+            + '<span class="' + dir(profit) + '">'
+            + (profit === null ? '—' : moneySigned(profit)) + '</span>'
             + '<span class="arec-time">' + esc(onlyClock ? recClock(x) : recordWhen(x)) + '</span>'
             + '</div>';
     }

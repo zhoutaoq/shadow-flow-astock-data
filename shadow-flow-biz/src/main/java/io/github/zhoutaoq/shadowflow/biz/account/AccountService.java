@@ -813,7 +813,47 @@ public class AccountService {
         for (int i = list.size() - 1; i >= 0; i--) {
             out.add(list.get(i));
         }
+        fillTodayBuyProfit(out);
         return out;
+    }
+
+    /**
+     * 给「今天买入」的记录补上当日盈亏，列表里买入那行才不会永远是一道横杠。
+     *
+     * <p>只补今天买的：历史买入拿今天的价去算，算出来是估值不是盈亏。
+     * 行情走 {@link #fetchQuotes}（有 2 秒缓存），一整页记录最多一次外部请求。
+     */
+    private void fillTodayBuyProfit(List<TradeRecord> records) {
+        String today = todayYmd();
+        Map<String, String> wanted = new LinkedHashMap<>();
+        for (TradeRecord r : records) {
+            if (isTodayBuy(r, today)) {
+                wanted.putIfAbsent(r.getCode(),
+                        r.getName() == null || r.getName().trim().isEmpty() ? r.getCode() : r.getName());
+            }
+        }
+        if (wanted.isEmpty()) {
+            return;
+        }
+        Map<String, Quote> quotes = fetchQuotes(wanted);
+        Map<String, Quote> none = new LinkedHashMap<>();
+        for (TradeRecord r : records) {
+            if (!isTodayBuy(r, today)) {
+                continue;
+            }
+            BigDecimal now = priceOf(r.getCode(), quotes, none);
+            if (now == null) {
+                continue;
+            }
+            r.setCurrentPrice(now);
+            r.setDayProfit(money(now.subtract(nz(r.getPrice()))
+                    .multiply(BigDecimal.valueOf(Math.max(0, r.getQuantity())))));
+        }
+    }
+
+    private static boolean isTodayBuy(TradeRecord r, String today) {
+        return r != null && TradeRecord.ACTION_BUY.equals(r.getAction())
+                && r.getCode() != null && today.equals(tradeDateOf(r));
     }
 
     /**
@@ -1000,6 +1040,7 @@ public class AccountService {
         BigDecimal positionProfit = BigDecimal.ZERO;
         BigDecimal dayFloatProfit = BigDecimal.ZERO;
         BigDecimal dayRealizedProfit = BigDecimal.ZERO;
+        BigDecimal dayTrade = BigDecimal.ZERO;
         BigDecimal initValue = BigDecimal.ZERO;
         BigDecimal cash = BigDecimal.ZERO;
 
@@ -1019,6 +1060,8 @@ public class AccountService {
             dayBasisValue = dayBasisValue.add(c.dayBasisValue);
             initValue = initValue.add(nz(a.getInitValue()));
             cash = cash.add(nz(a.getCash()));
+            // 每本账各自算，再合起来 —— 首页不带 accountId，走的就是这个汇总
+            dayTrade = dayTrade.add(dayTradeProfit(userId, a.getId(), today, quotes));
             if (!c.dayKnown) {
                 dayKnown = false;
             }
@@ -1038,6 +1081,7 @@ public class AccountService {
         s.setDayProfit(money(dayProfit));
         s.setDayFloatProfit(money(dayFloatProfit));
         s.setDayRealizedProfit(money(dayRealizedProfit));
+        s.setDayTradeProfit(money(dayTrade));
         s.setDayProfitPercent(dayKnown ? percent(dayProfit, dayBasisValue) : null);
         return s;
     }

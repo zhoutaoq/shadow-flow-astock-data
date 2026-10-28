@@ -57,6 +57,15 @@ public class TradeRecord {
     /** 卖出这一笔的盈亏（元）=（成交价 - 持仓成本均价）× 数量；买入恒为 0 */
     private BigDecimal realizedProfit = BigDecimal.ZERO;
     /**
+     * 这一笔放到现在值多少（元），只在列表接口里现算、不落库。
+     *
+     * <p>只给「今天买入」的记录填：(现价 - 买入价) × 数量。历史买入不填 ——
+     * 拿今天的价去算几个月前的买入，那不叫盈亏，叫重新估值。
+     */
+    private BigDecimal dayProfit;
+    /** 上面那个数用的现价，跟着一起给前端看 */
+    private BigDecimal currentPrice;
+    /**
      * 成交日期 yyyy-MM-dd（需求 v1.5.6 第 ② 条）：录入时默认今天，可回填历史成交。
      *
      * <p>与 {@link #time}（这一笔的录入时刻）分开：日期决定这笔算不算「今天的成交」——
@@ -161,6 +170,22 @@ public class TradeRecord {
 
     public void setRealizedProfit(BigDecimal realizedProfit) {
         this.realizedProfit = realizedProfit;
+    }
+
+    public BigDecimal getDayProfit() {
+        return dayProfit;
+    }
+
+    public void setDayProfit(BigDecimal dayProfit) {
+        this.dayProfit = dayProfit;
+    }
+
+    public BigDecimal getCurrentPrice() {
+        return currentPrice;
+    }
+
+    public void setCurrentPrice(BigDecimal currentPrice) {
+        this.currentPrice = currentPrice;
     }
 
     public String getTradeDate() {
