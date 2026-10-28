@@ -12,6 +12,8 @@ public class MarketIndex {
 
     private String code;
     private String name;
+    /** 归属市场：cn = A 股，global = 全球；首页按它分两个 TAB */
+    private String market;
     /** 当前点数 */
     private BigDecimal point;
     /** 涨跌额 */
@@ -48,6 +50,14 @@ public class MarketIndex {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getMarket() {
+        return market;
+    }
+
+    public void setMarket(String market) {
+        this.market = market;
     }
 
     public BigDecimal getPoint() {

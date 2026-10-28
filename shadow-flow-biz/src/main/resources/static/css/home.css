@@ -405,18 +405,58 @@
 /* =========================================================================
  * 指数行情带
  * ========================================================================= */
-.tape {
-    display: grid;
-    /* auto-fill（不是 auto-fit）：轨道宽度恒定。指数共 10 条（国内 5 + 外盘 5），
-       按 240px 下限正好排 5 + 5；
-       换成 auto-fit 的话落单的那条会被拉伸成整行宽，很难看。
-       末行剩下的空轨道由容器同色底兜住，看不出空洞。 */
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+/* 外框由容器画：上面多了 TAB 条，边框圆角不能再挂在网格上 */
+.tape-wrap {
     margin-bottom: var(--sp-6);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     background: var(--bg-panel);
     overflow: hidden;
+}
+
+.tape-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 6px var(--sp-3) 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.tape-tab {
+    padding: 9px 20px;
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.2;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    border-radius: var(--r-sm) var(--r-sm) 0 0;
+    transition: color .15s ease, background .15s ease;
+}
+
+.tape-tab:hover { color: var(--text); background: var(--bg-row-hover); }
+
+.tape-tab.is-active {
+    color: var(--text-strong);
+    font-weight: 600;
+    border-bottom-color: var(--primary);
+}
+
+.tape {
+    display: grid;
+    /* auto-fill（不是 auto-fit）：轨道宽度恒定，末行不满只留空轨道，
+       不会把落单那条拉成整行宽。字号放大后每格也要跟着加宽。 */
+    grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+}
+
+.tape-empty {
+    grid-column: 1 / -1;
+    padding: var(--sp-6);
+    text-align: center;
+    font-size: 15px;
+    color: var(--text-dim);
 }
 
 .tape-item {
@@ -433,7 +473,7 @@
 .tape-item:hover { background: var(--bg-row-hover); }
 
 .tape-name {
-    font-size: var(--fs-12);
+    font-size: var(--fs-14);
     color: var(--text-dim);
     letter-spacing: .3px;
 }
@@ -442,7 +482,7 @@
     margin-top: 6px;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 26px;
+    font-size: 32px;
     line-height: 1.15;
     font-weight: 600;
 }
@@ -451,14 +491,14 @@
     margin-top: 4px;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: var(--fs-13);
+    font-size: 17px;
 }
 
 .tape-chg b { font-weight: 600; }
 
 .tape-amt {
     margin-top: 6px;
-    font-size: var(--fs-11);
+    font-size: var(--fs-14);
     color: var(--text-dim);
     font-variant-numeric: tabular-nums;
 }
@@ -615,7 +655,7 @@
 .to-item:nth-last-child(2) { border-right: none; margin-right: 0; }
 
 .to-title {
-    font-size: var(--fs-12);
+    font-size: var(--fs-13);
     color: var(--text-dim);
     letter-spacing: .3px;
 }
@@ -624,19 +664,20 @@
     margin-top: 6px;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 26px;
+    font-size: 30px;
     line-height: 1.15;
     font-weight: 600;
     color: var(--text-strong);
 }
 
-.to-value small { font-size: var(--fs-13); font-weight: 400; color: var(--text-dim); margin-left: 4px; }
+.to-value small { font-size: var(--fs-14); font-weight: 400; color: var(--text-dim); margin-left: 4px; }
 
 .to-delta {
-    margin-top: 4px;
+    margin-top: 6px;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: var(--fs-13);
+    font-size: 17px;
+    font-weight: 500;
     color: var(--text-dim);
 }
 
@@ -648,11 +689,12 @@
     flex: 1 1 100%;
     padding: 8px var(--sp-4);
     border-top: 1px solid var(--border);
-    font-size: var(--fs-12);
+    font-size: var(--fs-13);
     color: var(--text-dim);
 }
 
 @media (max-width: 720px) {
     .to-item { flex: 1 1 100%; border-right: none; margin-right: 0; border-bottom: 1px solid var(--border); }
-    .to-value { font-size: 22px; }
+    .to-value { font-size: 26px; }
+    .to-delta { font-size: 16px; }
 }

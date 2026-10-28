@@ -134,11 +134,19 @@ public class MarketIndexService {
     private volatile long domesticWarnAt;
     private volatile long overseasWarnAt;
 
-    /** 指数快照：国内在前、海外在后；某个来源取不到时只影响它自己那一段 */
+    /** 指数快照：国内标 cn、海外标 global，首页按这个分 TAB；某段取不到只影响它自己 */
     public List<MarketIndex> indices() {
-        List<MarketIndex> out = new ArrayList<>(DOMESTIC_CODES.length + OVERSEAS.length);
-        out.addAll(domestic());
-        out.addAll(overseas());
+        List<MarketIndex> cn = domestic();
+        List<MarketIndex> gl = overseas();
+        List<MarketIndex> out = new ArrayList<>(cn.size() + gl.size());
+        for (MarketIndex m : cn) {
+            m.setMarket("cn");
+            out.add(m);
+        }
+        for (MarketIndex m : gl) {
+            m.setMarket("global");
+            out.add(m);
+        }
         return out;
     }
 

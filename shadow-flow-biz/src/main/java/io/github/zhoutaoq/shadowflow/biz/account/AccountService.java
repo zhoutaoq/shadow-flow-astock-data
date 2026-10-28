@@ -148,6 +148,17 @@ public class AccountService {
      */
     private final Map<String, BigDecimal> lastPriceCache = new ConcurrentHashMap<>();
 
+    /**
+     * 估值行情的 2 秒短缓存。
+     *
+     * <p>首页账户块从「进页面拉一次」改成跟行情带一样 3 秒刷，而估值是一条一条打新浪的 ——
+     * 十只持仓就是每 3 秒十次上游请求，多几个人看就把新浪打成限流。同一个代码 2 秒内复用，
+     * 账户数字照样在跳，上游压力降到 1/3 以下。
+     */
+    private static final long QUOTE_TTL_MS = 2_000L;
+    private final Map<String, Quote> quoteCache = new ConcurrentHashMap<>();
+    private final Map<String, Long> quoteCacheAt = new ConcurrentHashMap<>();
+
     public AccountService(AccountRepository repository,
                           AccountTrendRepository trendRepository,
                           ObjectProvider<SinaQuoteClient> quoteClientProvider,
@@ -1495,18 +1506,28 @@ public class AccountService {
         if (client == null || wanted.isEmpty()) {
             return out;
         }
+        long now = System.currentTimeMillis();
         for (Map.Entry<String, String> e : wanted.entrySet()) {
+            String code = e.getKey();
+            Quote cached = quoteCache.get(code);
+            Long at = quoteCacheAt.get(code);
+            if (cached != null && at != null && now - at < QUOTE_TTL_MS) {
+                out.put(code, cached);
+                continue;
+            }
             try {
-                Quote q = client.fetchForValuation(new WatchTarget(e.getValue(), e.getKey()));
+                Quote q = client.fetchForValuation(new WatchTarget(e.getValue(), code));
                 if (q != null) {
-                    out.put(e.getKey(), q);
+                    out.put(code, q);
+                    quoteCache.put(code, q);
+                    quoteCacheAt.put(code, now);
                     if (q.getPrice() != null && q.getPrice().signum() > 0 && !q.isPriceFromPreClose()) {
-                        lastPriceCache.put(e.getKey(), q.getPrice());
+                        lastPriceCache.put(code, q.getPrice());
                     }
                 }
             } catch (Exception ex) {
                 // 单只取不到不影响其它持仓的收益展示
-                log.warn("[account] 持仓行情取数失败 {}: {}", e.getKey(), ex.getMessage());
+                log.warn("[account] 持仓行情取数失败 {}: {}", code, ex.getMessage());
             }
         }
         return out;

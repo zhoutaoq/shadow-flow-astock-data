@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>影流数据</title>
     <link rel="stylesheet" href="/css/common.css?v=20261027d">
-    <link rel="stylesheet" href="/css/home.css?v=20261028a">
+    <link rel="stylesheet" href="/css/home.css?v=20261028b">
     <link rel="stylesheet" href="/css/account.css?v=20261011e">
 </head>
 <body>
@@ -189,8 +189,14 @@
         </div>
     </section>
 
-    <!-- 指数行情带：数据到才显示 -->
-    <section class="tape" id="tape" hidden></section>
+    <!-- 指数行情带：A 股 / 全球分两个 TAB，数据到才显示 -->
+    <section class="tape-wrap" id="tapeWrap" hidden>
+        <div class="tape-tabs" id="tapeTabs">
+            <button type="button" class="tape-tab is-active" data-market="cn">A 股</button>
+            <button type="button" class="tape-tab" data-market="global">全球市场</button>
+        </div>
+        <section class="tape" id="tape"></section>
+    </section>
 
     <!-- 市场成交：上证 / 深证 / 创业板成交额，3 秒刷新，比的是昨日同一时点的累计 -->
     <section class="turnover" id="turnoverPanel" hidden></section>
@@ -258,7 +264,7 @@
 
 </main>
 
-<script src="/js/common.js?v=20261027d"></script>
+<script src="/js/common.js?v=20261028b"></script>
 <script src="/js/date-picker.js?v=20261011e"></script>
 <script src="/js/home.js?v=20261011e"></script>
 <script>
@@ -317,6 +323,13 @@
     /** 指数行情带：拿不到数据就整块不显示，不留空壳 */
     var TAPE_INTERVAL = 3000;   // 行情带刷新间隔
     var tapeNodes = null;       // code -> {point, chg, amt}；null 表示还没建过
+    var tapeAll = [];           // 后端给的全量（A 股 + 全球）
+    var tapeMarket = 'cn';      // 当前 TAB
+
+    /** 当前 TAB 该显示的那几条 */
+    function tapeList() {
+        return tapeAll.filter(function (x) { return (x.market || 'cn') === tapeMarket; });
+    }
 
     /** 涨跌配色：红涨绿跌，0 或取不到值走中性色 */
     function tapeDir(pct) {
@@ -329,10 +342,16 @@
      *
      * 第一次把 DOM 建出来，之后只改数字、不整块重建 —— 每 3 秒重建一次的话，
      * 价格会闪、鼠标正悬停在某一格上时状态也会丢。
-     * 只有指数集合本身变了（多一条 / 少一条）才重建结构。
+     * 只有指数集合本身变了（切 TAB / 多一条 / 少一条）才重建结构。
      */
-    function paintTape(list) {
+    function paintTape() {
         var box = document.getElementById('tape');
+        var list = tapeList();
+        if (!list.length) {
+            box.innerHTML = '<div class="tape-empty">暂无数据</div>';
+            tapeNodes = null;
+            return;
+        }
         var nodeCount = tapeNodes ? Object.keys(tapeNodes).length : -1;
         var same = nodeCount === list.length
             && list.every(function (x) { return tapeNodes[x.code]; });
@@ -371,7 +390,6 @@
             n.amt.textContent = x.amount ? '成交 ' + fmtVol(x.amount) : '';
             n.amt.hidden = !x.amount;
         });
-        box.hidden = false;
     }
 
     async function loadIndices() {
@@ -379,7 +397,9 @@
             var r = await get('/api/market/indices');
             var list = (r && r.success && r.data) ? r.data : [];
             if (!list.length) return;
-            paintTape(list);
+            tapeAll = list;
+            paintTape();
+            document.getElementById('tapeWrap').hidden = false;
             document.getElementById('heroLive').hidden = false;
         } catch (e) {
             /* 行情拿不到不影响首页其它功能，静默即可 */
@@ -461,8 +481,20 @@
      * <p>未登录 / 拿不到数据时整块保持 hidden —— 首页是匿名可用的，
      * 给路人展示一块「—」的空壳没有意义。
      */
+    /** 上一轮还没回来就不再发：3 秒一次，慢网下容易叠起来 */
+    var acctBusy = false;
+
     async function loadAccount() {
-        if (!ME.loggedIn) return;
+        if (!ME.loggedIn || acctBusy) return;
+        acctBusy = true;
+        try {
+            await fillAccount();
+        } finally {
+            acctBusy = false;
+        }
+    }
+
+    async function fillAccount() {
         var r = await get('/api/account/summary');
         if (!r || !r.success || !r.data) return;
         var s = r.data;
@@ -535,6 +567,22 @@
     }
 
     (async function () {
+        // 行情带 A 股 / 全球切换：换了指数集合就重搭结构，数字等下一轮刷新自然填上
+        document.getElementById('tapeTabs').addEventListener('click', function (e) {
+            var btn = e.target;
+            while (btn && btn !== this && !btn.classList.contains('tape-tab')) {
+                btn = btn.parentNode;
+            }
+            if (!btn || btn === this) return;
+            var m = btn.getAttribute('data-market');
+            if (!m || m === tapeMarket) return;
+            tapeMarket = m;
+            Array.prototype.forEach.call(this.querySelectorAll('.tape-tab'), function (b) {
+                b.classList.toggle('is-active', b === btn);
+            });
+            tapeNodes = null;
+            paintTape();
+        });
         loadIndices();
         // 行情带自己按固定间隔刷：不跟着整页刷新走，价格才是「在动」的
         setInterval(loadIndices, TAPE_INTERVAL);
@@ -551,7 +599,9 @@
         renderQuick();
         // 账户里的持仓名要渲染成跳转链接，配置先拿到
         await loadStockLink();
+        // 当日盈亏要跟行情一起动：只在进页面算一次，盘中数字就是死的
         loadAccount();
+        setInterval(loadAccount, TAPE_INTERVAL);
         if (MODE.noDb) {
             return;
         }
