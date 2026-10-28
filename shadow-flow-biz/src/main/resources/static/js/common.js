@@ -1573,7 +1573,11 @@ function menuLeaves() {
     const out = [];
     menuItems().forEach(m => {
         if (m.children && m.children.length) {
-            m.children.forEach(c => out.push(c));
+            m.children.forEach(c => {
+                // 二级项跟着分组走：分组是超管专属，里面每一页也都是。
+                // 拍平之后 navVisible 只看得到 undefined，管理页会漏给普通用户。
+                out.push(m.admin && !c.admin ? Object.assign({}, c, {admin: true}) : c);
+            });
         } else {
             out.push(m);
         }
