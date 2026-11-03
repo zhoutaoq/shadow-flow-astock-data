@@ -15,7 +15,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -59,6 +61,12 @@ public class RealtimeBoardService {
 
     private static final String THS_STATS_URL = "https://q.10jqka.com.cn/api.php?t=indexflash";
     private static final String THS_REFERER = "https://q.10jqka.com.cn/";
+    /** 涨跌家数 60 秒一次：同花顺按 IP 封，压不住频率就 403 */
+    private static final long THS_CACHE_MS = 60_000L;
+
+    /** 涨停 / 跌停池走东财 push2ex —— 线上这条一直通 */
+    private static final String THS_LIMIT_BASE = "https://push2ex.eastmoney.com/";
+    private static final String EM_REFERER = "https://quote.eastmoney.com/";
 
     /**
      * 新浪返回体是一行赋值语句，值里按逗号排了 13 段：
@@ -73,6 +81,10 @@ public class RealtimeBoardService {
 
     private volatile Map<String, Object> cached;
     private volatile long cachedAt;
+
+    /** 涨跌家数单独缓存：它比板块更容易被上游封 */
+    private volatile Map<String, Object> thsCache;
+    private volatile long thsAt;
 
     /** 板块 + 市场统计，一次给全；取不到的段自己留空，不拖累另一段 */
     public Map<String, Object> snapshot() {
@@ -128,24 +140,63 @@ public class RealtimeBoardService {
         return out;
     }
 
-    // ------------------------------------------------------------ 涨跌 / 涨跌停家数（同花顺）
+    // ------------------------------------------------------------ 涨跌 / 涨跌停家数
 
+    /**
+     * 涨跌停走东财 {@code push2ex}，涨跌家数走同花顺。
+     *
+     * <p>为什么拆两个源：同花顺的 {@code indexflash} 一个请求就能给全四样，但它按 IP 封 ——
+     * 线上这台机器请求几次就被 Nginx 403（响应体里直接写着 IP）。东财 {@code push2ex}
+     * 在线上是稳的，只管涨停跌停，那就让稳的管稳的，同花顺只留涨跌家数并降到 60 秒一次。
+     */
     private Map<String, Object> stats() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        Map<String, Object> breadth = breadth();
+        out.put("up", breadth.get("up"));
+        out.put("down", breadth.get("down"));
+        out.put("limitUp", limitCount("getTopicZTPool", "fbt%3Aasc"));
+        out.put("limitDown", limitCount("getTopicDTPool", "fund%3Aasc"));
+        out.put("avgChangePercent", breadth.get("avgChangePercent"));
+        return out;
+    }
+
+    /** 涨停 / 跌停家数：返回体里 {@code data.tc} 就是总数，只要这一只不用拉明细 */
+    private Integer limitCount(String api, String sort) {
+        String date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        String url = THS_LIMIT_BASE + api + "?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt"
+                + "&Pageindex=0&pagesize=1&sort=" + sort + "&date=" + date;
+        try {
+            JsonNode root = mapper.readTree(doGet(url, EM_REFERER, StandardCharsets.UTF_8));
+            JsonNode tc = root.path("data").path("tc");
+            return tc.isMissingNode() ? null : tc.asInt();
+        } catch (Exception e) {
+            log.warn("[realtime] 涨跌停取数失败({}): {}", api, e.getMessage());
+            return null;
+        }
+    }
+
+    /** 涨跌家数：同花顺封 IP，所以单独缓存 60 秒，把请求频率压到一分钟一次 */
+    private Map<String, Object> breadth() {
+        long now = System.currentTimeMillis();
+        Map<String, Object> hit = thsCache;
+        if (hit != null && now - thsAt < THS_CACHE_MS) {
+            return hit;
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         try {
             String body = doGet(THS_STATS_URL, THS_REFERER, StandardCharsets.UTF_8);
             JsonNode root = mapper.readTree(body);
-            JsonNode zd = root.path("zdt_data").path("last_zdt");
             JsonNode fb = root.path("zdfb_data");
-            out.put("limitUp", zd.path("ztzs").asInt(0));
-            out.put("limitDown", zd.path("dtzs").asInt(0));
             out.put("up", fb.path("znum").asInt(0));
             out.put("down", fb.path("dnum").asInt(0));
             out.put("avgChangePercent", scale(root.path("jrbx_data").path("last_zdf").asDouble(0), 2));
+            thsCache = out;
+            thsAt = now;
+            return out;
         } catch (Exception e) {
             log.warn("[realtime] 涨跌家数取数失败: {}", e.getMessage());
+            return hit == null ? out : hit;
         }
-        return out;
     }
 
     // ------------------------------------------------------------ 工具
