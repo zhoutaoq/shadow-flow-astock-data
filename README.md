@@ -54,6 +54,10 @@
 
 <img src="screenshots/kline.png" width="100%" alt="K 线查看">
 
+**实时行情查看** —— 行业板块涨跌幅与成交额、领涨股，外加全市场涨跌与涨跌停家数，10 秒刷新。
+
+<img src="screenshots/market-live.png" width="100%" alt="实时行情查看">
+
 ---
 
 ## 快速开始
@@ -175,6 +179,7 @@ shadow-flow-parent      聚合 pom
 | --- | --- |
 | `GET /market/indices` | 十个指数快照，带 `market` 分组 |
 | `GET /market/turnover` | 三市成交额 + 较昨日同期 |
+| `GET /market/realtime` | 行业板块 + 涨跌 / 涨跌停家数 |
 | `GET /account/summary` | 账户汇总，不带 `accountId` 即全部账户合计 |
 | `GET /account/records` | 买卖流水，今日买入带浮动盈亏 |
 | `GET /kline/chart` | K 线数据，ECharts 直接用 |
