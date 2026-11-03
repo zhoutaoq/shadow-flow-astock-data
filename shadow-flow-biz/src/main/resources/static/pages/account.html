@@ -583,6 +583,8 @@
                 + '<td class="code">' + esc(p.code) + '</td>'
                 + '<td class="name">' + stockLinkHtml(p.code, p.name)
                 + priceBadge(p)
+                // 港股 5 位代码：金额是港元，按 1:1 计入人民币合计，标一下别让人误会
+                + (String(p.code || '').length === 5 ? '<span class="abadge">港元</span>' : '')
                 + (p.dayBuyQty > 0 ? '<span class="abadge abadge-day">当日买入 ' + fmtNum(p.dayBuyQty, 0) + ' 股</span>' : '')
                 + '</td>'
                 + '<td class="adim">' + (p.openDate ? esc(p.openDate) : '—') + '</td>'

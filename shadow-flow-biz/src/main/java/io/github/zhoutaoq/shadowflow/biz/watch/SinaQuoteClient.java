@@ -136,6 +136,9 @@ public class SinaQuoteClient {
             log.warn("[watch] 行情接口无此代码 {} symbol={}", target, target.getSymbol());
             return null;
         }
+        if (target.isHk()) {
+            return parseHk(target, f, allowPreCloseFallback);
+        }
         if (f.length < 32) {
             log.warn("[watch] 行情字段不足（{} 个）{} body={}", f.length, target, abbr(line));
             return null;
@@ -158,6 +161,39 @@ public class SinaQuoteClient {
                 decimal(f[F_HIGH]), decimal(f[F_LOW]),
                 decimal(f[F_VOLUME]), decimal(f[F_AMOUNT]),
                 System.currentTimeMillis(), timeText, fromPreClose);
+    }
+
+    /**
+     * 港股报价：字段位与 A 股完全不同，不能共用下标。
+     *
+     * <p>实测 <code>hk00700</code> 的返回：
+     * <pre>
+     * 0 英文名 1 中文名 2 今开 3 昨收 4 最高 5 最低 6 现价 7 涨跌额 8 涨跌幅%
+     * 11 成交额(港元) 12 成交量(股) 17 日期 18 时间
+     * </pre>
+     * 现价在 6、昨收在 3 —— 与 A 股正好错开两位，照 A 股那套下标读会把昨收当成现价，
+     * 盈亏会凭空少掉当天的全部涨跌。
+     */
+    private Quote parseHk(WatchTarget target, String[] f, boolean allowPreCloseFallback) {
+        if (f.length < 19) {
+            log.warn("[watch] 港股字段不足（{} 个）{}", f.length, target);
+            return null;
+        }
+        BigDecimal price = decimal(f[6]);
+        BigDecimal preClose = decimal(f[3]);
+        boolean fromPreClose = false;
+        if (price == null || price.signum() <= 0) {
+            if (!allowPreCloseFallback || preClose == null || preClose.signum() <= 0) {
+                return null;
+            }
+            price = preClose;
+            fromPreClose = true;
+        }
+        String name = f[1] == null || f[1].trim().isEmpty() ? target.getName() : f[1].trim();
+        return new Quote(target.getCode(), name, price, preClose,
+                decimal(f[4]), decimal(f[5]),
+                decimal(f[12]), decimal(f[11]),
+                System.currentTimeMillis(), (f[17] + " " + f[18]).trim(), fromPreClose);
     }
 
     private String doGet(String urlStr) throws IOException {

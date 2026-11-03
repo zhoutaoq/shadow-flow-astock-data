@@ -1697,7 +1697,9 @@ public class AccountService {
             return null;
         }
         String c = code.trim();
-        return c.length() == 6 && c.chars().allMatch(Character::isDigit) ? c : null;
+        // 6 位 A 股 / ETF，5 位港股；其它长度一律不认
+        boolean okLen = c.length() == 6 || c.length() == 5;
+        return okLen && c.chars().allMatch(Character::isDigit) ? c : null;
     }
 
     /**
