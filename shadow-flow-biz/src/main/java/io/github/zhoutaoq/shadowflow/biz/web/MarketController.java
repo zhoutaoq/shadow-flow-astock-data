@@ -3,6 +3,7 @@ package io.github.zhoutaoq.shadowflow.biz.web;
 import io.github.zhoutaoq.shadowflow.biz.market.MarketIndex;
 import io.github.zhoutaoq.shadowflow.biz.market.MarketIndexService;
 import io.github.zhoutaoq.shadowflow.biz.market.MarketTurnoverService;
+import io.github.zhoutaoq.shadowflow.biz.market.RealtimeBoardService;
 import io.github.zhoutaoq.shadowflow.biz.model.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,15 +24,28 @@ public class MarketController {
 
     private final MarketIndexService service;
     private final MarketTurnoverService turnover;
+    private final RealtimeBoardService realtime;
 
-    public MarketController(MarketIndexService service, MarketTurnoverService turnover) {
+    public MarketController(MarketIndexService service, MarketTurnoverService turnover,
+                            RealtimeBoardService realtime) {
         this.service = service;
         this.turnover = turnover;
+        this.realtime = realtime;
     }
 
     @GetMapping("/indices")
     public ApiResponse<List<MarketIndex>> indices() {
         return ApiResponse.ok(service.indices());
+    }
+
+    /**
+     * 行业板块成交额 / 涨跌幅 + 全市场涨跌、涨跌停家数（「实时行情查看」页）。
+     *
+     * <p>同样匿名可读，只读公开行情。
+     */
+    @GetMapping("/realtime")
+    public ApiResponse<Map<String, Object>> realtime() {
+        return ApiResponse.ok(realtime.snapshot());
     }
 
     /**

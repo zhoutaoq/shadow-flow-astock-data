@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+    <title>实时行情查看</title>
+    <link rel="stylesheet" href="/css/common.css?v=20261027d">
+    <link rel="stylesheet" href="/css/market-live.css?v=20261103a">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">影流数据</a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="container">
+    <div id="msgBox" class="msg"></div>
+
+    <!-- 市场概览：涨跌家数与涨跌停，一眼看情绪 -->
+    <section class="panel ml-overview">
+        <div class="ml-ov-hd">
+            <h1>市场概览</h1>
+            <span class="ml-upd" id="updTxt">加载中…</span>
+        </div>
+        <div class="ml-ov-grid">
+            <div class="ml-kpi">
+                <div class="ml-kpi-t">上涨</div>
+                <div class="ml-kpi-v up" id="kUp">—</div>
+                <div class="ml-kpi-bar"><i class="up" id="barUp"></i></div>
+            </div>
+            <div class="ml-kpi">
+                <div class="ml-kpi-t">下跌</div>
+                <div class="ml-kpi-v down" id="kDown">—</div>
+                <div class="ml-kpi-bar"><i class="down" id="barDown"></i></div>
+            </div>
+            <div class="ml-kpi">
+                <div class="ml-kpi-t">涨停</div>
+                <div class="ml-kpi-v up" id="kLu">—</div>
+            </div>
+            <div class="ml-kpi">
+                <div class="ml-kpi-t">跌停</div>
+                <div class="ml-kpi-v down" id="kLd">—</div>
+            </div>
+            <div class="ml-kpi">
+                <div class="ml-kpi-t">平均涨幅</div>
+                <div class="ml-kpi-v" id="kAvg">—</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 行业板块 -->
+    <section class="panel">
+        <div class="ml-tbl-hd">
+            <h2>行业板块</h2>
+            <div class="ml-sort">
+                <button type="button" class="ml-sort-btn on" data-sort="chg">按涨跌幅</button>
+                <button type="button" class="ml-sort-btn" data-sort="amt">按成交额</button>
+            </div>
+        </div>
+        <div class="ml-tbl">
+            <div class="ml-row ml-th">
+                <span>板块</span>
+                <span class="num">涨跌幅</span>
+                <span class="num">成交额</span>
+                <span class="ml-lead">领涨股</span>
+            </div>
+            <div id="mlBody"><div class="ml-empty">加载中…</div></div>
+        </div>
+        <p class="ml-note">
+            板块涨跌幅与成交额来自新浪行业分类；涨跌与涨跌停家数来自同花顺。
+            每 10 秒刷新。资金流向暂未接入 —— 线上可用的行情源都给不了这一列。
+        </p>
+    </section>
+</main>
+
+<script src="/js/common.js?v=20261103a"></script>
+<script>
+(function () {
+    var INTERVAL = 10000;
+    var sortBy = 'chg';
+    var all = [];
+
+    function yi(v) {
+        var n = Number(v);
+        return isNaN(n) || !n ? '—' : (n / 1e8).toFixed(2) + ' 亿';
+    }
+
+    function pct(v) {
+        var n = Number(v);
+        if (v === null || v === undefined || isNaN(n)) return '—';
+        return (n > 0 ? '+' : '') + n.toFixed(2) + '%';
+    }
+
+    function dirOf(v) {
+        var n = Number(v);
+        if (isNaN(n) || n === 0) return '';
+        return n > 0 ? 'up' : 'down';
+    }
+
+    function paintStats(s) {
+        if (!s) return;
+        document.getElementById('kUp').textContent = s.up == null ? '—' : s.up;
+        document.getElementById('kDown').textContent = s.down == null ? '—' : s.down;
+        document.getElementById('kLu').textContent = s.limitUp == null ? '—' : s.limitUp;
+        document.getElementById('kLd').textContent = s.limitDown == null ? '—' : s.limitDown;
+        var avg = document.getElementById('kAvg');
+        avg.textContent = pct(s.avgChangePercent);
+        avg.className = 'ml-kpi-v ' + dirOf(s.avgChangePercent);
+
+        // 涨跌条形图：只有涨跌都有数才画，缺一边就别给个半截图
+        var up = Number(s.up || 0), dn = Number(s.down || 0), total = up + dn;
+        var bUp = document.getElementById('barUp'), bDown = document.getElementById('barDown');
+        if (total > 0) {
+            bUp.style.width = (up / total * 100).toFixed(1) + '%';
+            bDown.style.width = (dn / total * 100).toFixed(1) + '%';
+        }
+    }
+
+    function paintBoards() {
+        var box = document.getElementById('mlBody');
+        if (!all.length) {
+            box.innerHTML = '<div class="ml-empty">暂时取不到板块数据，稍后自动重试</div>';
+            return;
+        }
+        var list = all.slice().sort(function (a, b) {
+            return sortBy === 'amt'
+                ? Number(b.amount || 0) - Number(a.amount || 0)
+                : Number(b.changePercent || 0) - Number(a.changePercent || 0);
+        });
+        box.innerHTML = list.map(function (b) {
+            var d = dirOf(b.changePercent);
+            return '<div class="ml-row">'
+                + '<span class="ml-name" title="' + esc(b.name) + ' 共 ' + (b.stockCount || 0) + ' 只">'
+                + esc(b.name) + '</span>'
+                + '<span class="num ' + d + '">' + pct(b.changePercent) + '</span>'
+                + '<span class="num">' + yi(b.amount) + '</span>'
+                + '<span class="ml-lead">'
+                + (b.leadName
+                    ? stockLinkHtml(b.leadCode, b.leadName, {text: b.leadName})
+                      + ' <i class="' + dirOf(b.leadChangePercent) + '">' + pct(b.leadChangePercent) + '</i>'
+                    : '—')
+                + '</span>'
+                + '</div>';
+        }).join('');
+    }
+
+    async function load() {
+        try {
+            var r = await get('/api/market/realtime');
+            var d = (r && r.success) ? r.data : null;
+            if (!d) return;
+            all = d.boards || [];
+            paintStats(d.stats);
+            paintBoards();
+            document.getElementById('updTxt').textContent =
+                '更新于 ' + (d.time || '') + ' · 每 10 秒';
+        } catch (e) {
+            /* 行情类数据一律静默降级，保留上一屏 */
+        }
+    }
+
+    document.querySelectorAll('.ml-sort-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            sortBy = btn.getAttribute('data-sort');
+            document.querySelectorAll('.ml-sort-btn').forEach(function (b) {
+                b.classList.toggle('on', b === btn);
+            });
+            paintBoards();
+        });
+    });
+
+    // 领涨股名称要渲染成跳转链接，配置先拿到再首次渲染
+    if (typeof loadStockLink === 'function') {
+        loadStockLink().then(load);
+    } else {
+        load();
+    }
+    setInterval(load, INTERVAL);
+})();
+</script>
+</body>
+</html>

@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <title>账户管理</title>
     <link rel="stylesheet" href="/css/common.css?v=20261027d">
-    <link rel="stylesheet" href="/css/account.css?v=20261027d">
+    <link rel="stylesheet" href="/css/account.css?v=20261029a">
     <style>
         /* 顶部的「选人」工具条：搜索框 + 用户下拉 + 重新载入 */
         .au-toolbar { display: flex; gap: var(--sp-2); align-items: flex-end; flex-wrap: wrap; }
@@ -233,6 +233,12 @@
                     <h2>操作记录</h2>
                     <span class="acard-note" id="recCount"></span>
                     <div class="acard-acts">
+                        <div class="arec-range" id="recRange" style="display:none">
+                            <input type="date" id="recFrom" class="atrend-date" onchange="onRecRangeChange()">
+                            <span class="arec-range-sep">~</span>
+                            <input type="date" id="recTo" class="atrend-date" onchange="onRecRangeChange()">
+                            <button class="btn-ghost btn-sm" onclick="pickRecThisMonth()">本月</button>
+                        </div>
                         <div class="aseg aseg-sm" id="recScope">
                             <button type="button" data-scope="today" class="on" onclick="setRecScope('today')">当天</button>
                             <button type="button" data-scope="all" onclick="setRecScope('all')">历史</button>
@@ -255,7 +261,7 @@
     </div>
 </main>
 
-<script src="/js/common.js?v=20261028c"></script>
+<script src="/js/common.js?v=20261103a"></script>
 <script>
     /* 只读页面：数据都来自 /api/admin/accounts/**，唯一会写的是「默认预览用户」这项配置 */
     let users = [];        // 当前搜索到的用户（最多 200 个）
@@ -270,7 +276,9 @@
     let preview = [];      // 默认预览用户（UserView[]）
     let board = null;      // 平铺数据（/api/admin/accounts/board）
     let mode = 'single';   // single（看一个人） | board（平铺所有人） | detail（某本账明细）
-    let recScope = 'today'; // 操作记录视图：today = 只看当天（与「我的账户」页同一默认） / all = 全部历史
+    let recScope = 'today'; // 操作记录视图：today = 只看当天（与「我的账户」页同一默认） / all = 按日期区间看历史
+    let recFrom = '';       // 历史视图的起始日（yyyy-MM-dd），空 = 还没铺默认值
+    let recTo = '';         // 历史视图的结束日（yyyy-MM-dd），空 = 还没铺默认值
 
     /** 收益刷新频率：与「我的账户」页一致（3 秒） */
     const REFRESH_MS = 3000;
@@ -707,6 +715,12 @@
         }
         detailFrom = mode === 'board' ? 'board' : 'single';
         detailUserId = userId;
+        // 换一本账回到「当天」并清掉日期区间；同一本账刷新保持当前视图（与「我的账户」页一致）
+        if (curId !== accountId) {
+            recScope = 'today';
+            recFrom = '';
+            recTo = '';
+        }
         curId = accountId;
         curUser = (r.data && r.data.user) || curUser;
         summary = r.data.summary || null;
@@ -764,7 +778,8 @@
         renderSummary(s);
         renderPositions(s.positions || []);
         renderChips(s);
-        renderRecords();
+        // 走 setRecScope 而不是直接 renderRecords：区间控件的显隐要与当前视图同步
+        setRecScope(recScope);
     }
 
     function renderFund(s) {
@@ -840,6 +855,20 @@
             + '<span class="achip">' + (s.positions || []).length + ' 只持仓</span>';
     }
 
+    /**
+     * 现价后面的当日涨跌幅：(现价 - 昨收) / 昨收（与「我的账户」页同一口径）。
+     *
+     * <p>昨收取不到（行情全挂、按成本价兜底）时不显示 —— 那时候现价不是成交价，
+     * 拿它算涨跌幅只会误导。
+     */
+    function dayChangeTag(p) {
+        const pre = Number(p && p.preClose);
+        const px = Number(p && p.price);
+        if (!(pre > 0) || !(px > 0)) return '';
+        const pct = (px - pre) / pre * 100;
+        return ' <small class="' + dir(pct) + '">（' + pctSigned(pct) + '）</small>';
+    }
+
     function renderPositions(rows) {
         const body = document.getElementById('posBody');
         if (!rows.length) {
@@ -859,7 +888,7 @@
                 + '</td>'
                 + '<td class="adim">' + (p.openDate ? esc(p.openDate) : '—') + '</td>'
                 + '<td>' + money(p.costPrice) + '</td>'
-                + '<td>' + money(p.price) + '</td>'
+                + '<td>' + money(p.price) + dayChangeTag(p) + '</td>'
                 + '<td>' + fmtNum(p.quantity, 0) + '</td>'
                 + '<td>' + fmtNum(usableQty(p), 0) + '</td>'
                 + '<td>' + money(p.costValue) + '</td>'
@@ -886,10 +915,60 @@
                 b.classList.toggle('on', b.getAttribute('data-scope') === recScope);
             });
         }
+        const range = document.getElementById('recRange');
+        if (range) {
+            range.style.display = recScope === 'all' ? '' : 'none';
+        }
+        if (recScope === 'all') {
+            ensureRecRange();
+        }
         const head = document.getElementById('recDateHead');
         if (head) {
             head.textContent = recScope === 'today' ? '时间' : '日期';
         }
+        renderRecords();
+    }
+
+    /** 历史视图的默认区间：本月 1 日 ~ 今天；用户改过就保留（换账户时才清空回到本月） */
+    function ensureRecRange() {
+        const day = today();
+        if (!recFrom || !recTo) {
+            recFrom = day.slice(0, 8) + '01';
+            recTo = day;
+        }
+        const from = document.getElementById('recFrom');
+        const to = document.getElementById('recTo');
+        if (from) {
+            from.max = day;
+            if (from.value !== recFrom) from.value = recFrom;
+        }
+        if (to) {
+            to.max = day;
+            if (to.value !== recTo) to.value = recTo;
+        }
+    }
+
+    function onRecRangeChange() {
+        const fromEl = document.getElementById('recFrom');
+        const toEl = document.getElementById('recTo');
+        const from = (fromEl && fromEl.value) || '';
+        const to = (toEl && toEl.value) || '';
+        if (from && to && from > to) {
+            toast('起始日期不能晚于结束日期', 'err');
+            if (fromEl) fromEl.value = recFrom;
+            return;
+        }
+        recFrom = from;
+        recTo = to;
+        renderRecords();
+    }
+
+    /** 「本月」：一键把区间拉回本月 1 日 ~ 今天 */
+    function pickRecThisMonth() {
+        const day = today();
+        recFrom = day.slice(0, 8) + '01';
+        recTo = day;
+        ensureRecRange();
         renderRecords();
     }
 
@@ -967,19 +1046,29 @@
             return;
         }
 
-        const sorted = all.slice().sort(function (a, b) {
+        // 历史：先按所选区间过滤（默认本月），再按成交日期分组，日期新的在上
+        const inRange = all.filter(function (x) {
+            const d = recDayOf(x);
+            if (!d) return false;
+            if (recFrom && d < recFrom) return false;
+            if (recTo && d > recTo) return false;
+            return true;
+        });
+        const sorted = inRange.slice().sort(function (a, b) {
             const da = recDayOf(a);
             const db = recDayOf(b);
             if (da !== db) return da < db ? 1 : -1;
             return String(b.time || '').localeCompare(String(a.time || ''));
         });
         if (note) {
-            note.textContent = all.length
-                ? '全部 ' + all.length + ' 笔' + (all.length >= 200 ? '（每账户最多留 200 条）' : '')
+            note.textContent = (recFrom || recTo)
+                ? (recFrom || '最早') + ' ~ ' + (recTo || '今天') + ' · ' + inRange.length + ' 笔'
+                    + (all.length >= 200 ? '（每账户最多留 200 条）' : '')
                 : '';
         }
         if (!sorted.length) {
-            box.innerHTML = '<div class="arec-empty">这本账户还没有操作记录</div>';
+            box.innerHTML = '<div class="arec-empty">'
+                + (all.length ? '所选日期区间内没有操作记录' : '这本账户还没有操作记录') + '</div>';
             return;
         }
 

@@ -1440,6 +1440,7 @@ const NAV_ITEMS = [
     {key: 'stock-list', text: '股票列表', href: '/pages/stock-list.html'},
     {key: 'chart', text: 'K线查看', href: '/pages/chart.html'},
     {key: 'news', text: '实时资讯', href: '/pages/news.html'},
+    {key: 'market-live', text: '实时行情查看', href: '/pages/market-live.html'},
     {key: 'backtest', text: '策略回测', href: '/pages/backtest.html', login: true},
     {key: 'watch', text: '盯盘', href: '/pages/watch.html', login: true},
     {key: 'account', text: '我的账户', href: '/pages/account.html', login: true},
@@ -2287,7 +2288,7 @@ function scheduleLabelGridTables() {
 document.addEventListener('DOMContentLoaded', async function () {
     // 前端构建版本标记：升级静态资源时同步改这里和各页面的 ?v=，
     // 打开 DevTools Console 看这行即可确认浏览器加载的是不是最新前端
-    console.info('[影流数据] 前端版本 20261028c（v1.9.5）');
+    console.info('[影流数据] 前端版本 20261103a（v1.9.6）');
     // OAuth 回跳先收令牌（fragment 里的 #token=），再拉登录态才拉得到自己
     const oauthBack = handleAuthFragment();
     // 主题要在渲染导航之前落地，顶栏按钮才知道该显示太阳还是月亮

@@ -388,6 +388,25 @@ table.atable tbody tr:last-child td { border-bottom: none; }
     .arec-head { display: none; }
 }
 
+/* 历史视图的日期区间（v1.9.1）：两个原生 date 控件 + 分隔符 + 「本月」快捷，
+   只在「历史」下露出；控件高度与卡头按钮对齐，窄屏由 .acard-acts 换行兜住 */
+.arec-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.arec-range .atrend-date {
+    width: 136px;
+    height: 28px;
+    font-size: var(--fs-12);
+}
+
+.arec-range-sep {
+    color: var(--text-dim);
+    font-size: var(--fs-12);
+}
+
 .aseg {
     display: inline-flex;
     border: 1px solid var(--border);

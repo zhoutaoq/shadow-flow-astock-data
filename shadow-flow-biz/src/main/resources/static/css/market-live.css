@@ -1,0 +1,177 @@
+/* =========================================================================
+ * 实时行情查看（v1.9.6）
+ *
+ * 两段：上面一排市场概览，下面是行业板块表。
+ * 配色只走语义令牌（--up / --down），红涨绿跌由它们决定。
+ * ========================================================================= */
+
+.ml-overview { padding-bottom: var(--sp-4); }
+
+.ml-ov-hd {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-4);
+}
+
+.ml-ov-hd h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.ml-upd { font-size: var(--fs-13); color: var(--text-dim); }
+
+.ml-ov-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--sp-3);
+}
+
+.ml-kpi {
+    padding: var(--sp-3) var(--sp-4);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--bg-elev);
+}
+
+.ml-kpi-t { font-size: var(--fs-13); color: var(--text-dim); }
+
+.ml-kpi-v {
+    margin-top: 4px;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.ml-kpi-bar {
+    display: flex;
+    height: 4px;
+    margin-top: 8px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: var(--border);
+}
+
+.ml-kpi-bar i { display: block; height: 100%; width: 0; transition: width .3s ease; }
+.ml-kpi-bar i.up { background: var(--up); }
+.ml-kpi-bar i.down { background: var(--down); }
+
+/* ---------------------------------------------------------------- 板块表 */
+
+.ml-tbl-hd {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
+}
+
+.ml-tbl-hd h2 {
+    margin: 0;
+    font-size: var(--fs-16);
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.ml-sort { display: flex; gap: 6px; }
+
+.ml-sort-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: var(--fs-13);
+    cursor: pointer;
+}
+
+.ml-sort-btn:hover { color: var(--text); border-color: var(--primary); }
+
+.ml-sort-btn.on {
+    color: var(--text-strong);
+    border-color: var(--primary);
+    background: var(--bg-tint);
+}
+
+.ml-tbl { border-top: 1px solid var(--border); }
+
+/* 四列定宽：板块名可伸缩，其余按内容宽度，窄屏也不会把数字挤成两行 */
+.ml-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) 92px 104px minmax(0, 1.2fr);
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 9px var(--sp-2);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--fs-14);
+}
+
+.ml-row:hover { background: var(--bg-row-hover); }
+
+.ml-th {
+    font-size: var(--fs-13);
+    color: var(--text-dim);
+    background: var(--bg-tint);
+    border-bottom: 1px solid var(--border);
+}
+
+.ml-th:hover { background: var(--bg-tint); }
+
+.ml-row .num {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.ml-name {
+    color: var(--text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ml-lead {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--text-dim);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.ml-lead i { font-style: normal; font-family: var(--font-mono); }
+
+.ml-row .up { color: var(--up); }
+.ml-row .down { color: var(--down); }
+
+.ml-empty {
+    padding: var(--sp-6);
+    text-align: center;
+    color: var(--text-dim);
+    font-size: var(--fs-14);
+}
+
+.ml-note {
+    margin: var(--sp-3) 0 0;
+    font-size: var(--fs-13);
+    line-height: 1.7;
+    color: var(--text-dim);
+}
+
+@media (max-width: 640px) {
+    .ml-row {
+        grid-template-columns: minmax(0, 1.3fr) 78px 84px;
+        font-size: var(--fs-13);
+    }
+    /* 窄屏先舍掉领涨股：它是补充信息，涨跌幅和成交额才是主列 */
+    .ml-row .ml-lead { display: none; }
+    .ml-kpi-v { font-size: 22px; }
+}
