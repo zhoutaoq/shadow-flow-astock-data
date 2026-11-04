@@ -118,11 +118,13 @@
         <div class="q-panel">
             <div class="q-tabs">
                 <div class="q-tab active" data-tab="pos" onclick="switchTab('pos')">持仓</div>
+                <div class="q-tab" data-tab="intraday" onclick="switchTab('intraday')">日内分时</div>
                 <div class="q-tab" data-tab="trade" onclick="switchTab('trade')">交易记录</div>
                 <div class="q-tab" data-tab="daily" onclick="switchTab('daily')">每日收益</div>
                 <div class="q-tab" data-tab="month" onclick="switchTab('month')">每月收益</div>
             </div>
             <div id="tabPos"></div>
+            <div id="tabIntraday" style="display:none"></div>
             <div id="tabTrade" style="display:none"></div>
             <div id="tabDaily" style="display:none"></div>
             <div id="tabMonth" style="display:none"></div>
@@ -267,7 +269,7 @@ async function openDetail(id) {
         `初始资金 ${money(s.initCapital)} · 决策间隔 ${s.decisionIntervalSec}s · 最低分 ${s.minScore}`;
     renderChips(s);
     switchTab('pos');
-    await Promise.all([loadPositions(), loadTrades(), loadDaily(), loadMonthly()]);
+    await Promise.all([loadPositions(), loadIntraday(), loadTrades(), loadDaily(), loadMonthly()]);
 }
 
 function backToList() {
@@ -302,10 +304,11 @@ function renderChips(s) {
 
 function switchTab(key) {
     document.querySelectorAll('.q-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === key));
-    ['pos', 'trade', 'daily', 'month'].forEach(k => {
+    ['pos', 'intraday', 'trade', 'daily', 'month'].forEach(k => {
         document.getElementById('tab' + cap(k)).style.display = k === key ? '' : 'none';
     });
     if (key === 'daily') drawDailyChart();
+    if (key === 'intraday') drawIntradayChart();
 }
 
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -352,6 +355,50 @@ async function loadTrades() {
 }
 
 let DAILY_ROWS = [];
+let INTRADAY = [];
+let CHART_IT = null;
+
+/**
+ * 日内分时：盘中每分钟一个点（后端 captureIntraday 落盘），只留当天。
+ * 两条线 —— 总资产看结果，持仓市值看仓位，两者之间的差就是可用资金。
+ */
+async function loadIntraday() {
+    const r = await get(`/api/quant/strategies/${CUR.id}/intraday`);
+    INTRADAY = r.data || [];
+    const box = document.getElementById('tabIntraday');
+    if (!INTRADAY.length) {
+        box.innerHTML = '<div class="q-empty">今天还没有分时数据（盘中每分钟记一个点）</div>';
+        return;
+    }
+    box.innerHTML = '<div class="q-chart-box"><div id="chartIntraday" style="width:100%;height:320px"></div></div>';
+    drawIntradayChart();
+}
+
+function drawIntradayChart() {
+    const el = document.getElementById('chartIntraday');
+    if (!el || !INTRADAY.length || !window.echarts) return;
+    if (CHART_IT) { CHART_IT.dispose(); CHART_IT = null; }
+    CHART_IT = echarts.init(el);
+    const last = INTRADAY[INTRADAY.length - 1];
+    CHART_IT.setOption({
+        grid: {left: 70, right: 20, top: 34, bottom: 32},
+        tooltip: {trigger: 'axis'},
+        legend: {data: ['总资产', '持仓市值'], top: 0, textStyle: {fontSize: 11}},
+        xAxis: {type: 'category', data: INTRADAY.map(p => p.time), axisLabel: {fontSize: 11}},
+        yAxis: {type: 'value', scale: true, axisLabel: {fontSize: 11}},
+        series: [
+            {name: '总资产', type: 'line', smooth: true, showSymbol: false,
+                data: INTRADAY.map(p => num(p.totalAsset)),
+                lineStyle: {width: 1.6}, areaStyle: {opacity: 0.10}},
+            {name: '持仓市值', type: 'line', smooth: true, showSymbol: false,
+                data: INTRADAY.map(p => num(p.marketValue)),
+                lineStyle: {width: 1.2, type: 'dashed'}}
+        ],
+        graphic: [{type: 'text', right: 6, bottom: 2, style: {
+            text: '当前 ' + money(last.totalAsset) + ' · 当日 ' + signed(last.dayPnlPct) + '%',
+            fontSize: 11, fill: '#909399'}}]
+    });
+}
 async function loadDaily() {
     const r = await get(`/api/quant/strategies/${CUR.id}/daily`);
     DAILY_ROWS = r.data || [];

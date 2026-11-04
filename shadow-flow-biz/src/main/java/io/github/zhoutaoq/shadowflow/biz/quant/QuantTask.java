@@ -188,12 +188,24 @@ public class QuantTask {
     }
 
     /** T+1：开盘前把每条持仓的可用数量对齐到持仓数量 */
+    /**
+     * 开盘前放开 T+1：把可用数量对齐到持仓数量。
+     *
+     * <p><b>只放开「今天之前买的」</b>。这一步本来只在开盘前跑，但 {@link #initToday()} 是
+     * 「发现今天没初始化过就补一次」—— 服务在盘中重启时也会补跑，如果无条件放开，
+     * 当天刚买的份额立刻变成可卖，T+1 就形同虚设。所以按 {@code lastBuyDate} 卡一道。
+     */
     private int resetAvailableQty() {
+        String today = LocalDate.now().toString();
         int count = 0;
         for (Long userId : repository.listStrategyUserIds()) {
             List<QuantStrategy> strategies = repository.listStrategies(userId);
             for (QuantStrategy s : strategies) {
                 for (QuantHolding h : repository.listHoldings(s.getId())) {
+                    String lastBuy = h.getLastBuyDate();
+                    if (lastBuy != null && lastBuy.compareTo(today) >= 0) {
+                        continue;
+                    }
                     if (h.getAvailableQty() != h.getQuantity()) {
                         h.setAvailableQty(h.getQuantity());
                         repository.saveHolding(h);

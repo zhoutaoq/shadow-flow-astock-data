@@ -104,6 +104,34 @@ public class QuantDecisionService {
         return trades;
     }
 
+    /**
+     * mock 验证入口：用给定快照与指标跑一轮策略，不碰外网。
+     *
+     * <p>为什么需要它：L1 是三道硬门槛（大盘 / 主力 / 位置），真实行情里要凑齐全部通过并不容易，
+     * 买入链路因此一直没被真正跑通过。把指标做成可注入，就能把「判定之后」的下单、扣款、
+     * 建仓、T+1 锁仓整条链路验证掉，不用干等一个恰好符合条件的交易日。
+     *
+     * <p>只由 mock 开关控制的那组接口调用，生产路径（{@link #runOnce()}）完全不受影响。
+     */
+    public int runMock(long strategyId, Map<String, QuantQuote> snapshots, Map<String, QuantMetrics> metrics) {
+        QuantStrategy target = null;
+        for (Long uid : repository.listStrategyUserIds()) {
+            for (QuantStrategy s : repository.listStrategies(uid)) {
+                if (s.getId() == strategyId) {
+                    target = s;
+                    break;
+                }
+            }
+            if (target != null) {
+                break;
+            }
+        }
+        if (target == null) {
+            throw new IllegalArgumentException("策略 " + strategyId + " 不存在");
+        }
+        return runStrategy(target, indicators.market(), snapshots, metrics);
+    }
+
     /** 是否到该策略的决策间隔 */
     private boolean due(QuantStrategy s) {
         long now = System.currentTimeMillis();
@@ -123,20 +151,37 @@ public class QuantDecisionService {
     /* ==================== 单个策略 ==================== */
 
     private int runStrategy(QuantStrategy s, MarketContext market, Map<String, QuantQuote> snapshots) {
+        return runStrategy(s, market, snapshots, null);
+    }
+
+    /**
+     * @param forced 非 null 时直接用这份指标，不去算实时数据 —— 只给 mock 验证用，
+     *               生产路径走上面那个重载（forced = null）
+     */
+    int runStrategy(QuantStrategy s, MarketContext market, Map<String, QuantQuote> snapshots,
+                    Map<String, QuantMetrics> forced) {
         List<QuantHolding> holdings = repository.listHoldings(s.getId());
         List<String> codes = universe.codesOf(s.getId());
+        // mock 不受「标的次日生效」限制：注入的指标就是这一轮的候选
+        if (forced != null && codes.isEmpty()) {
+            codes = new ArrayList<>(forced.keySet());
+        }
         if (codes.isEmpty()) {
             return 0;
         }
 
         // 每只票算一次指标：持仓与候选共用同一份，避免同一轮里出现两个结论
         Map<String, QuantMetrics> metrics = new ConcurrentHashMap<>();
-        for (String code : codes) {
-            QuantQuote q = snapshots.get(code);
-            if (q == null) {
-                continue;
+        if (forced != null) {
+            metrics.putAll(forced);
+        } else {
+            for (String code : codes) {
+                QuantQuote q = snapshots.get(code);
+                if (q == null) {
+                    continue;
+                }
+                metrics.put(code, indicators.evaluate(q, em.mainFlow(code), em.dailyBars(code), market));
             }
-            metrics.put(code, indicators.evaluate(q, em.mainFlow(code), em.dailyBars(code), market));
         }
 
         int trades = 0;
