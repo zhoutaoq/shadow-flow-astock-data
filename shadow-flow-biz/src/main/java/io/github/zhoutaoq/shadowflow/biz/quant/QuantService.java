@@ -399,6 +399,12 @@ public class QuantService {
         p.put("takeProfitPct", s.getTakeProfitPct());
         p.put("trailDrawdownPct", s.getTrailDrawdownPct());
         p.put("decisionIntervalSec", s.getDecisionIntervalSec());
+        p.put("minVolumeRatio", s.getMinVolumeRatio());
+        p.put("minMainInflow", s.getMinMainInflow());
+        p.put("minMainInflow5d", s.getMinMainInflow5d());
+        p.put("requireMacdGolden", s.isRequireMacdGolden());
+        p.put("minWbRatio", s.getMinWbRatio());
+        p.put("maxDeviationPct", s.getMaxDeviationPct());
         return p;
     }
 

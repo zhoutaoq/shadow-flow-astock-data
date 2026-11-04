@@ -58,11 +58,12 @@
         .qf input, .qf textarea, .qf select { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: var(--r-ctl); border: 1px solid var(--border); background: var(--bg-input); color: var(--text); font-size: 13px; }
         .q-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         /* 初始持仓：一行五格，代码/名称/数量/成本/买入日 */
-        .q-init-row { display: grid; grid-template-columns: 84px 1fr 76px 88px 132px 24px; gap: 6px; margin-bottom: 6px; align-items: center; }
+        .q-init-row { display: grid; grid-template-columns: 1fr 76px 88px 132px 24px; gap: 6px; margin-bottom: 6px; align-items: center; }
         .q-init-row input { padding: 6px 8px; font-size: 12px; }
         .q-init-del { border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 15px; line-height: 1; padding: 0; }
         .q-init-del:hover { color: var(--up); }
         .q-note { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+        .q-sub { margin: 16px 0 8px; padding-top: 10px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--text-dim); }
         #chartDaily { width: 100%; height: 300px; }
         .q-chart-box { margin-top: 8px; }
     </style>
@@ -178,6 +179,21 @@
                 <select id="fEnabled"><option value="true">启用</option><option value="false">停用</option></select>
             </div>
         </div>
+        <div class="q-sub">买入硬门槛 —— 综合分决定谁排前面，这些决定能不能买</div>
+        <div class="q-row2">
+            <div class="qf"><label>量比 ≥</label><input id="fMinVr" type="number" step="0.1" min="0" value="1.0"></div>
+            <div class="qf"><label>今日主力净流入 ≥（万元）</label><input id="fMinMain" type="number" step="100" value="0"></div>
+        </div>
+        <div class="q-row2">
+            <div class="qf"><label>5 日主力净流入 ≥（万元）</label><input id="fMinMain5" type="number" step="100" value="0"></div>
+            <div class="qf"><label>委比 ≥（%）</label><input id="fMinWb" type="number" step="1" value="-10"></div>
+        </div>
+        <div class="q-row2">
+            <div class="qf"><label>现价偏离均价 ≤（%，防追高）</label><input id="fMaxDev" type="number" step="0.5" min="0" value="3"></div>
+            <div class="qf"><label>MACD</label>
+                <select id="fMacd"><option value="false">不看</option><option value="true">必须金叉</option></select>
+            </div>
+        </div>
         <div class="q-actions" style="justify-content:flex-end;margin-top:16px">
             <button class="btn-ghost" onclick="closeModal()">取消</button>
             <button onclick="saveStrategy()">保存</button>
@@ -186,6 +202,7 @@
 </div>
 
 <script src="/js/common.js?v=20261104a"></script>
+<script src="/js/stock-picker.js?v=20261019a"></script>
 <script src="/vendor/echarts.min.js"></script>
 <script>
 let STRATEGIES = [];
@@ -467,7 +484,9 @@ function openCreate() {
     document.getElementById('initPosWrap').style.display = '';
     resetInitRows();
     setParams({minScore: 60, maxHoldings: 5, maxPositionPct: 20, decisionIntervalSec: 60,
-        stopLossPct: 5, takeProfitPct: 15, trailDrawdownPct: 8, enabled: true});
+        stopLossPct: 5, takeProfitPct: 15, trailDrawdownPct: 8, enabled: true,
+        minVolumeRatio: 1.0, minMainInflow: 0, minMainInflow5d: 0,
+        minWbRatio: -10, maxDeviationPct: 3, requireMacdGolden: false});
     document.getElementById('mask').classList.add('show');
 }
 
@@ -494,8 +513,7 @@ function addInitRow(prefill) {
     const p = prefill || {};
     const div = document.createElement('div');
     div.className = 'q-init-row';
-    div.innerHTML = '<input class="ip-code" maxlength="6" placeholder="6 位代码" value="' + (p.code || '') + '">'
-        + '<input class="ip-name" placeholder="名称（可空）" value="' + (p.name || '') + '">'
+    div.innerHTML = '<div class="ip-pick"></div>'
         + '<input class="ip-qty" type="number" min="1" step="100" placeholder="数量" value="' + (p.quantity || '') + '">'
         + '<input class="ip-cost" type="number" min="0" step="0.01" placeholder="成本价" value="' + (p.costPrice || '') + '">'
         + '<input class="ip-date" type="date" value="' + (p.buyDate || todayStr()) + '">'
@@ -507,6 +525,15 @@ function addInitRow(prefill) {
     div.querySelectorAll('input').forEach(function (i) {
         i.addEventListener('input', recalcInit);
     });
+    // 标的走和「我的账户」同一个选择器：名称/代码模糊匹配，不用手敲数字
+    const pick = createStockPicker(div.querySelector('.ip-pick'), {
+        multiple: false,
+        onChange: recalcInit
+    });
+    if (p.code) {
+        pick.setItems([{code: p.code, name: p.name || p.code}]);
+    }
+    div.__pick = pick;
     rows.appendChild(div);
     recalcInit();
 }
@@ -542,13 +569,13 @@ function recalcInit() {
 function collectInitPositions() {
     const out = [];
     document.querySelectorAll('#initPosRows .q-init-row').forEach(function (row) {
-        const code = row.querySelector('.ip-code').value.trim();
+        const picked = row.__pick ? row.__pick.getFirst() : null;
+        if (!picked || !picked.code) return;
         const qty = num(row.querySelector('.ip-qty').value);
         const cost = num(row.querySelector('.ip-cost').value);
-        if (!code) return;
         out.push({
-            code: code,
-            name: row.querySelector('.ip-name').value.trim(),
+            code: picked.code,
+            name: picked.name || picked.code,
             quantity: qty,
             costPrice: cost,
             buyDate: row.querySelector('.ip-date').value || todayStr()
@@ -565,6 +592,12 @@ function setParams(p) {
     document.getElementById('fStop').value = num(p.stopLossPct);
     document.getElementById('fTake').value = num(p.takeProfitPct);
     document.getElementById('fTrail').value = num(p.trailDrawdownPct);
+    document.getElementById('fMinVr').value = p.minVolumeRatio == null ? 1 : num(p.minVolumeRatio);
+    document.getElementById('fMinMain').value = p.minMainInflow == null ? 0 : num(p.minMainInflow);
+    document.getElementById('fMinMain5').value = p.minMainInflow5d == null ? 0 : num(p.minMainInflow5d);
+    document.getElementById('fMinWb').value = p.minWbRatio == null ? -10 : num(p.minWbRatio);
+    document.getElementById('fMaxDev').value = p.maxDeviationPct == null ? 3 : num(p.maxDeviationPct);
+    document.getElementById('fMacd').value = p.requireMacdGolden ? 'true' : 'false';
     document.getElementById('fEnabled').value = String(p.enabled !== false);
 }
 
@@ -585,7 +618,13 @@ async function saveStrategy() {
             decisionIntervalSec: num(document.getElementById('fInterval').value),
             stopLossPct: num(document.getElementById('fStop').value),
             takeProfitPct: num(document.getElementById('fTake').value),
-            trailDrawdownPct: num(document.getElementById('fTrail').value)
+            trailDrawdownPct: num(document.getElementById('fTrail').value),
+            minVolumeRatio: num(document.getElementById('fMinVr').value),
+            minMainInflow: num(document.getElementById('fMinMain').value),
+            minMainInflow5d: num(document.getElementById('fMinMain5').value),
+            minWbRatio: num(document.getElementById('fMinWb').value),
+            maxDeviationPct: num(document.getElementById('fMaxDev').value),
+            requireMacdGolden: document.getElementById('fMacd').value === 'true'
         }
     };
     const capital = num(document.getElementById('fCapital').value);

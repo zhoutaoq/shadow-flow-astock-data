@@ -173,6 +173,24 @@ public class QuantTask {
                 if (p.hasNonNull("trailDrawdownPct")) {
                     s.setTrailDrawdownPct(p.get("trailDrawdownPct").decimalValue());
                 }
+                if (p.hasNonNull("minVolumeRatio")) {
+                    s.setMinVolumeRatio(p.get("minVolumeRatio").decimalValue());
+                }
+                if (p.hasNonNull("minMainInflow")) {
+                    s.setMinMainInflow(p.get("minMainInflow").decimalValue());
+                }
+                if (p.hasNonNull("minMainInflow5d")) {
+                    s.setMinMainInflow5d(p.get("minMainInflow5d").decimalValue());
+                }
+                if (p.hasNonNull("requireMacdGolden")) {
+                    s.setRequireMacdGolden(p.get("requireMacdGolden").asBoolean(false));
+                }
+                if (p.hasNonNull("minWbRatio")) {
+                    s.setMinWbRatio(p.get("minWbRatio").decimalValue());
+                }
+                if (p.hasNonNull("maxDeviationPct")) {
+                    s.setMaxDeviationPct(p.get("maxDeviationPct").decimalValue());
+                }
                 if (p.hasNonNull("decisionIntervalSec")) {
                     s.setDecisionIntervalSec(Math.max(30, p.get("decisionIntervalSec").asInt(60)));
                 }

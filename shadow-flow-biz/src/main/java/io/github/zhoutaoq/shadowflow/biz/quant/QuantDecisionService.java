@@ -276,6 +276,13 @@ public class QuantDecisionService {
             if (m.getAvgScore() < 50) {
                 continue;
             }
+            // 用户在策略里设的硬门槛：量比 / 主力资金 / MACD / 委比 / 追高幅度
+            String miss = hardFilterMiss(s, m, q);
+            if (miss != null) {
+                log.info("[quant] 策略 {} {} 综合分 {} 但卡在硬门槛：{}",
+                        s.getId(), m.getCode(), m.getTotalScore(), miss);
+                continue;
+            }
             BigDecimal budget = totalAsset.multiply(maxPct).divide(HUNDRED, 2, BigDecimal.ROUND_HALF_UP);
             if (budget.compareTo(cash) > 0) {
                 budget = cash;
@@ -292,6 +299,56 @@ public class QuantDecisionService {
         s.setCash(cash);
         repository.saveStrategy(s);
         return trades;
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
+    }
+
+    /**
+     * 买入硬门槛：分数过了还不够，这几项得同时成立。
+     *
+     * <p>全部用 {@link QuantMetrics} / {@link QuantQuote} 里已经算好的原始值，不额外取数。
+     * 返回 null = 全过；否则返回第一个不满足项的中文说明（写进日志，事后能看出为什么没买）。
+     */
+    private String hardFilterMiss(QuantStrategy s, QuantMetrics m, QuantQuote q) {
+        BigDecimal minVr = s.getMinVolumeRatio();
+        if (minVr != null && m.getVolumeRatio() != null
+                && m.getVolumeRatio().compareTo(minVr) < 0) {
+            return "量比 " + m.getVolumeRatio().toPlainString() + " < " + minVr.toPlainString();
+        }
+        // 主力资金接口给的是「元」，策略里让人填「万元」更好读
+        BigDecimal minToday = s.getMinMainInflow();
+        if (minToday != null) {
+            BigDecimal todayWan = nz(m.getTodayMain())
+                    .divide(BigDecimal.valueOf(10000), 2, BigDecimal.ROUND_HALF_UP);
+            if (todayWan.compareTo(minToday) < 0) {
+                return "今日主力 " + todayWan.toPlainString() + " 万 < " + minToday.toPlainString() + " 万";
+            }
+        }
+        BigDecimal min5d = s.getMinMainInflow5d();
+        if (min5d != null) {
+            BigDecimal wan5 = nz(m.getMain5d())
+                    .divide(BigDecimal.valueOf(10000), 2, BigDecimal.ROUND_HALF_UP);
+            if (wan5.compareTo(min5d) < 0) {
+                return "5 日主力 " + wan5.toPlainString() + " 万 < " + min5d.toPlainString() + " 万";
+            }
+        }
+        if (s.isRequireMacdGolden() && nz(m.getMacdBar()).signum() <= 0) {
+            return "MACD 未金叉（柱 " + nz(m.getMacdBar()).toPlainString() + "）";
+        }
+        BigDecimal minWb = s.getMinWbRatio();
+        if (minWb != null && m.getWbRatio() != null && m.getWbRatio().compareTo(minWb) < 0) {
+            return "委比 " + m.getWbRatio().toPlainString() + "% < " + minWb.toPlainString() + "%";
+        }
+        BigDecimal maxDev = s.getMaxDeviationPct();
+        if (maxDev != null) {
+            BigDecimal dev = q.priceVsAvgPct();
+            if (dev != null && dev.compareTo(maxDev) > 0) {
+                return "现价高于均价 " + dev.toPlainString() + "% > " + maxDev.toPlainString() + "%";
+            }
+        }
+        return null;
     }
 
     /* ==================== 卖出判定 ==================== */

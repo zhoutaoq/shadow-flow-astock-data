@@ -53,6 +53,25 @@ public class QuantStrategy {
     /** 决策间隔（秒）：盘中每隔多久跑一轮 */
     private int decisionIntervalSec = 60;
 
+    /* ==================== 买入硬门槛（v1.9.11） ==================== */
+    /*
+     * 综合分决定「谁排前面」，下面这些决定「能不能买」—— 分数再高，量比没到、主力在流出，
+     * 也不该出手。每一项都对应 QuantMetrics 里已经算好的原始值，不额外取数。
+     */
+
+    /** 量比下限：低于这个数说明今天没人气 */
+    private BigDecimal minVolumeRatio = BigDecimal.valueOf(1.0);
+    /** 今日主力净流入下限（万元），允许填负数放宽 */
+    private BigDecimal minMainInflow = BigDecimal.ZERO;
+    /** 5 日主力净流入下限（万元） */
+    private BigDecimal minMainInflow5d = BigDecimal.ZERO;
+    /** 是否要求 MACD 金叉（柱线在零轴上方）；false = 不看这一项 */
+    private boolean requireMacdGolden = false;
+    /** 委比下限（%）：盘口买盘至少要有这么多 */
+    private BigDecimal minWbRatio = BigDecimal.valueOf(-10);
+    /** 现价离当日均价的最大偏离（%）：超过就是追高 */
+    private BigDecimal maxDeviationPct = BigDecimal.valueOf(3);
+
     /* ==================== 待生效 ==================== */
 
     /**
@@ -176,6 +195,54 @@ public class QuantStrategy {
 
     public void setTrailDrawdownPct(BigDecimal trailDrawdownPct) {
         this.trailDrawdownPct = trailDrawdownPct;
+    }
+
+    public BigDecimal getMinVolumeRatio() {
+        return minVolumeRatio;
+    }
+
+    public void setMinVolumeRatio(BigDecimal minVolumeRatio) {
+        this.minVolumeRatio = minVolumeRatio;
+    }
+
+    public BigDecimal getMinMainInflow() {
+        return minMainInflow;
+    }
+
+    public void setMinMainInflow(BigDecimal minMainInflow) {
+        this.minMainInflow = minMainInflow;
+    }
+
+    public BigDecimal getMinMainInflow5d() {
+        return minMainInflow5d;
+    }
+
+    public void setMinMainInflow5d(BigDecimal minMainInflow5d) {
+        this.minMainInflow5d = minMainInflow5d;
+    }
+
+    public boolean isRequireMacdGolden() {
+        return requireMacdGolden;
+    }
+
+    public void setRequireMacdGolden(boolean requireMacdGolden) {
+        this.requireMacdGolden = requireMacdGolden;
+    }
+
+    public BigDecimal getMinWbRatio() {
+        return minWbRatio;
+    }
+
+    public void setMinWbRatio(BigDecimal minWbRatio) {
+        this.minWbRatio = minWbRatio;
+    }
+
+    public BigDecimal getMaxDeviationPct() {
+        return maxDeviationPct;
+    }
+
+    public void setMaxDeviationPct(BigDecimal maxDeviationPct) {
+        this.maxDeviationPct = maxDeviationPct;
     }
 
     public int getDecisionIntervalSec() {
