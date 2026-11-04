@@ -288,7 +288,7 @@ public class AccountTransferService {
         for (JsonNode n : node) {
             String code = AccountService.normalizeCode(text(n.get("code")));
             if (code == null) {
-                throw new IllegalArgumentException("持仓里的标的代码「" + text(n.get("code")) + "」不是 6 位股票代码");
+                throw new IllegalArgumentException("持仓里的标的代码「" + text(n.get("code")) + "」不是合法的标的代码");
             }
             if (!codes.add(code)) {
                 throw new IllegalArgumentException("导入文件里 " + code + " 有重复的持仓记录，请先整理后再导");
@@ -341,7 +341,7 @@ public class AccountTransferService {
             }
             String code = AccountService.normalizeCode(text(n.get("code")));
             if (code == null) {
-                throw new IllegalArgumentException("操作记录里的标的代码「" + text(n.get("code")) + "」不是 6 位股票代码");
+                throw new IllegalArgumentException("操作记录里的标的代码「" + text(n.get("code")) + "」不是合法的标的代码");
             }
             int qty = intOf(n.get("quantity"), code + " 的数量");
             if (qty <= 0) {

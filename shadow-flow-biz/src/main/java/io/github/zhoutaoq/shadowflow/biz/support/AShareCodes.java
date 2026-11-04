@@ -31,4 +31,30 @@ public final class AShareCodes {
         }
         return false;
     }
+
+    /**
+     * 能不能进「账户」和「名录」——比 {@link #isAShare} 宽，因为要持仓的不只是股票。
+     *
+     * <p>收两类：6 位纯数字（A 股、ETF/LOF、北交所），5 位纯数字（港股）。
+     * 1/5 开头的 ETF 和 5 位港股以前被 {@link #isAShare} 挡在名录外，
+     * 结果账户里根本选不到标的，加不了持仓。
+     *
+     * <p>资讯板块和首页热门股仍然只认 A 股（用 {@link #isAShare}），那两处是「热点」口径，
+     * 混进 ETF 和港股没有意义 —— 所以这里是新开一个判断，不是改旧的。
+     */
+    public static boolean isTradable(String code) {
+        if (code == null) {
+            return false;
+        }
+        int len = code.length();
+        if (len != 5 && len != 6) {
+            return false;
+        }
+        for (int i = 0; i < len; i++) {
+            if (!Character.isDigit(code.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
 }

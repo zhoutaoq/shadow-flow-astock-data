@@ -383,7 +383,7 @@ public class FileStockListRepository implements StockListRepository, Reloadable 
             List<StockListItem> out = new ArrayList<>();
             for (JsonNode n : root) {
                 String code = n.path("code").asText(null);
-                if (code == null || !AShareCodes.isAShare(code.trim())) {
+                if (code == null || !AShareCodes.isTradable(code.trim())) {
                     continue;
                 }
                 out.add(new StockListItem(code.trim(), n.path("name").asText("").trim(), "stock"));

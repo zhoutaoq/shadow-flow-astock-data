@@ -64,7 +64,7 @@ public class StockListImportService {
                     continue;
                 }
                 String trimmed = code.trim();
-                if (!AShareCodes.isAShare(trimmed)) {
+                if (!AShareCodes.isTradable(trimmed)) {
                     skipped++;
                     continue;
                 }
