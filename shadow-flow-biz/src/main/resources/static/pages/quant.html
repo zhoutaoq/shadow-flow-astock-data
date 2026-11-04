@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>try{var t=localStorage.getItem("shadowflow_theme")||localStorage.getItem("jn_theme");if(t!=="light"&&t!=="dark"){var h=new Date().getHours();t=(h>=6&&h<18)?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+    <title>量化模拟炒股</title>
+    <link rel="stylesheet" href="/css/common.css?v=20261027d">
+    <style>
+        .q-wrap { max-width: 1180px; margin: 0 auto; padding: 20px 16px 60px; }
+        .q-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+        .q-head h1 { font-size: 20px; margin: 0; }
+        .q-head .sub { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+        .q-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .q-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+        .q-card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; cursor: pointer; transition: border-color .15s; }
+        .q-card:hover { border-color: var(--primary); }
+        .q-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+        .q-name { font-size: 15px; font-weight: 600; color: var(--text-strong); }
+        .q-badge { font-size: 11px; padding: 2px 8px; border-radius: var(--r-pill); border: 1px solid var(--border-soft); color: var(--text-dim); white-space: nowrap; }
+        .q-badge.on { color: var(--up); border-color: var(--up); }
+        .q-badge.pending { color: var(--primary); border-color: var(--primary); }
+        .q-asset { font-size: 24px; font-family: var(--font-mono); margin: 10px 0 2px; color: var(--text-strong); }
+        .q-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px; margin-top: 10px; font-size: 13px; }
+        .q-metrics div { display: flex; justify-content: space-between; }
+        .q-metrics span:first-child { color: var(--text-dim); }
+        .q-foot { display: flex; justify-content: space-between; margin-top: 12px; font-size: 12px; color: var(--text-dim); }
+        .up { color: var(--up); }
+        .down { color: var(--down); }
+        .q-panel { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; margin-top: 14px; }
+        .q-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border-soft); margin-bottom: 12px; flex-wrap: wrap; }
+        .q-tab { padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-dim); font-size: 13px; }
+        .q-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+        table.qt { width: 100%; border-collapse: collapse; font-size: 13px; }
+        table.qt th { text-align: left; color: var(--text-dim); font-weight: 500; padding: 8px 6px; border-bottom: 1px solid var(--border-soft); white-space: nowrap; }
+        table.qt td { padding: 8px 6px; border-bottom: 1px solid var(--border-soft); }
+        table.qt td.num { font-family: var(--font-mono); text-align: right; }
+        .q-empty { padding: 32px 8px; text-align: center; color: var(--text-dim); font-size: 13px; }
+        .q-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+        .q-chip { background: var(--bg-tint); border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; }
+        .q-chip b { font-family: var(--font-mono); margin-left: 6px; }
+        /* 账户概览：对齐「我的账户」那套 KPI 卡片，数字要一眼能读 */
+        .q-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 10px; margin: 12px 0; }
+        .q-kpi { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-elev); }
+        .q-kpi .kt { font-size: 12px; color: var(--text-dim); }
+        .q-kpi .kv { margin-top: 4px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 600; color: var(--text-strong); }
+        .q-kpi .kv.up { color: var(--up); }
+        .q-kpi .kv.down { color: var(--down); }
+        .q-kpi .ks { margin-top: 2px; font-size: 12px; color: var(--text-dim); font-family: var(--font-mono); }
+        .q-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+        .q-mask.show { display: flex; }
+        .q-modal { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--r-xl); width: 560px; max-width: 100%; max-height: 90vh; overflow: auto; padding: 20px; }
+        .q-modal h3 { margin: 0 0 14px; font-size: 16px; }
+        .qf { margin-bottom: 12px; }
+        .qf label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 5px; }
+        .qf input, .qf textarea, .qf select { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: var(--r-ctl); border: 1px solid var(--border); background: var(--bg-input); color: var(--text); font-size: 13px; }
+        .q-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        /* 初始持仓：一行五格，代码/名称/数量/成本/买入日 */
+        .q-init-row { display: grid; grid-template-columns: 84px 1fr 76px 88px 132px 24px; gap: 6px; margin-bottom: 6px; align-items: center; }
+        .q-init-row input { padding: 6px 8px; font-size: 12px; }
+        .q-init-del { border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 15px; line-height: 1; padding: 0; }
+        .q-init-del:hover { color: var(--up); }
+        .q-note { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+        #chartDaily { width: 100%; height: 300px; }
+        .q-chart-box { margin-top: 8px; }
+    </style>
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">影流数据</a>
+    <nav class="nav" id="nav"></nav>
+</header>
+
+<main class="q-wrap">
+    <div id="msgBox" class="msg"></div>
+
+    <section class="q-panel" id="gatePanel" style="display:none">
+        <h3>量化模拟炒股</h3>
+        <p class="q-note">这是一个模拟账户：按公开行情指标自动决策买卖，不涉及真实资金。</p>
+        <div class="q-actions" style="margin-top:12px">
+            <button onclick="openAuthModal({onSuccess: reload})">去登录</button>
+        </div>
+    </section>
+
+    <div id="listPanel" style="display:none">
+        <div class="q-head">
+            <div>
+                <h1>量化模拟炒股</h1>
+                <div class="sub">每个策略一本独立模拟账，初始资金 1 万 ~ 1000 万，最多同时持有 5 只</div>
+            </div>
+            <div class="q-actions">
+                <button class="btn-ghost" onclick="reload()">重新载入</button>
+                <button class="btn-ghost" id="initBtn" style="display:none" onclick="manualInit()">立即初始化</button>
+                <button onclick="openCreate()">＋ 新建策略</button>
+            </div>
+        </div>
+        <div class="q-grid" id="cards"></div>
+        <div class="q-empty" id="emptyTip" style="display:none">还没有策略，点「新建策略」开始</div>
+    </div>
+
+    <div id="detailPanel" style="display:none">
+        <div class="q-head">
+            <div>
+                <h1 id="dTitle">策略</h1>
+                <div class="sub" id="dSub"></div>
+            </div>
+            <div class="q-actions">
+                <button class="btn-ghost" onclick="backToList()">← 返回列表</button>
+                <button class="btn-ghost" onclick="openEdit()">编辑参数</button>
+                <button class="btn-ghost" onclick="removeStrategy()">删除</button>
+            </div>
+        </div>
+
+        <div class="q-chips" id="dChips"></div>
+
+        <div class="q-panel">
+            <div class="q-tabs">
+                <div class="q-tab active" data-tab="pos" onclick="switchTab('pos')">持仓</div>
+                <div class="q-tab" data-tab="trade" onclick="switchTab('trade')">交易记录</div>
+                <div class="q-tab" data-tab="daily" onclick="switchTab('daily')">每日收益</div>
+                <div class="q-tab" data-tab="month" onclick="switchTab('month')">每月收益</div>
+            </div>
+            <div id="tabPos"></div>
+            <div id="tabTrade" style="display:none"></div>
+            <div id="tabDaily" style="display:none"></div>
+            <div id="tabMonth" style="display:none"></div>
+        </div>
+    </div>
+</main>
+
+<div class="q-mask" id="mask">
+    <div class="q-modal">
+        <h3 id="mTitle">新建策略</h3>
+        <div class="qf">
+            <label>策略名称</label>
+            <input id="fName" maxlength="32" placeholder="例如：主力跟随-主线">
+        </div>
+        <div class="qf">
+            <label>备注</label>
+            <input id="fRemark" maxlength="100" placeholder="可选">
+        </div>
+        <div class="qf" id="capWrap">
+            <label>初始资金（元）</label>
+            <input id="fCapital" type="number" min="10000" max="10000000" step="10000" value="100000" oninput="recalcInit()">
+            <div class="q-note">范围 1 万 ~ 1000 万。编辑时改这里会清空持仓与流水，等于重开一本账。</div>
+        </div>
+        <div class="qf" id="initPosWrap">
+            <label>初始持仓（可选，成本从初始资金里扣）</label>
+            <div id="initPosRows"></div>
+            <button type="button" class="btn-ghost" onclick="addInitRow()">+ 加一只</button>
+            <div class="q-note" id="initPosSum">持仓成本 0.00 元 · 可用 100000.00 元</div>
+            <div class="q-note">买入日期决定当天能不能卖：填今天就是 T+1，次日才可卖；填历史日期则立刻可卖。最多 5 只。</div>
+        </div>
+        <div class="qf">
+            <label>监控标的（6 位代码，逗号或空格分隔）</label>
+            <textarea id="fCodes" rows="2" placeholder="600584, 000001"></textarea>
+            <div class="q-note">与下面的参数一样，保存后<b>次日 0 点生效</b>，盘中不改。</div>
+        </div>
+        <div class="q-row2">
+            <div class="qf"><label>买入最低综合分（0-100）</label><input id="fMinScore" type="number" step="1" value="60"></div>
+            <div class="qf"><label>最多持仓只数（1-5）</label><input id="fMaxHold" type="number" min="1" max="5" step="1" value="5"></div>
+        </div>
+        <div class="q-row2">
+            <div class="qf"><label>单票最大仓位（%）</label><input id="fMaxPct" type="number" step="1" value="20"></div>
+            <div class="qf"><label>决策间隔（秒，≥30）</label><input id="fInterval" type="number" min="30" step="10" value="60"></div>
+        </div>
+        <div class="q-row2">
+            <div class="qf"><label>止损（%）</label><input id="fStop" type="number" step="0.5" value="5"></div>
+            <div class="qf"><label>止盈（%）</label><input id="fTake" type="number" step="0.5" value="15"></div>
+        </div>
+        <div class="q-row2">
+            <div class="qf"><label>移动止盈回撤（%）</label><input id="fTrail" type="number" step="0.5" value="8"></div>
+            <div class="qf"><label>状态</label>
+                <select id="fEnabled"><option value="true">启用</option><option value="false">停用</option></select>
+            </div>
+        </div>
+        <div class="q-actions" style="justify-content:flex-end;margin-top:16px">
+            <button class="btn-ghost" onclick="closeModal()">取消</button>
+            <button onclick="saveStrategy()">保存</button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/common.js?v=20261103a"></script>
+<script src="/vendor/echarts.min.js"></script>
+<script>
+let STRATEGIES = [];
+let CUR = null;
+let EDITING = null;
+let CHART = null;
+let TABS = {pos: null, trade: null, daily: null, month: null};
+
+/* ==================== 初始化 ==================== */
+
+(async function boot() {
+    await loadMe();
+    renderNav();
+    if (!isLogin()) {
+        document.getElementById('gatePanel').style.display = '';
+        document.getElementById('listPanel').style.display = 'none';
+        return;
+    }
+    document.getElementById('gatePanel').style.display = 'none';
+    document.getElementById('listPanel').style.display = '';
+    if (isAdmin()) {
+        document.getElementById('initBtn').style.display = '';
+    }
+    await reload();
+})();
+
+/* ==================== 列表 ==================== */
+
+async function reload() {
+    const r = await get('/api/quant/strategies');
+    if (!r.success) return;
+    STRATEGIES = r.data || [];
+    renderCards();
+}
+
+function renderCards() {
+    const box = document.getElementById('cards');
+    document.getElementById('emptyTip').style.display = STRATEGIES.length ? 'none' : '';
+    box.innerHTML = STRATEGIES.map(s => {
+        const dayCls = num(s.dayPnl) >= 0 ? 'up' : 'down';
+        const cumCls = num(s.cumPnl) >= 0 ? 'up' : 'down';
+        const badge = s.enabled
+            ? '<span class="q-badge on">运行中</span>'
+            : '<span class="q-badge">已停用</span>';
+        const pending = s.pending ? '<span class="q-badge pending">待生效</span>' : '';
+        return `<div class="q-card" onclick="openDetail(${s.id})">
+            <div class="q-card-top">
+                <div class="q-name">${esc(s.name)}</div>
+                <div style="display:flex;gap:6px">${pending}${badge}</div>
+            </div>
+            <div class="q-asset">${money(s.totalAsset)}</div>
+            <div class="q-metrics">
+                <div><span>当日盈亏</span><span class="${dayCls}">${signed(s.dayPnl)} (${signed(s.dayPnlPct)}%)</span></div>
+                <div><span>累计收益</span><span class="${cumCls}">${signed(s.cumPnl)} (${signed(s.cumPnlPct)}%)</span></div>
+                <div><span>持仓</span><span>${s.holdingCount} / ${s.maxHoldings} 只</span></div>
+                <div><span>可用资金</span><span>${money(s.cash)}</span></div>
+            </div>
+            <div class="q-foot">
+                <span>初始 ${money(s.initCapital)}</span>
+                <span>标的 ${countCodes(s.watchCodes)} 只</span>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function countCodes(codes) {
+    if (!codes) return 0;
+    return codes.split(/[,，;；\s]+/).filter(x => x).length;
+}
+
+/* ==================== 详情 ==================== */
+
+async function openDetail(id) {
+    const s = STRATEGIES.find(x => x.id === id);
+    if (!s) return;
+    CUR = s;
+    document.getElementById('listPanel').style.display = 'none';
+    document.getElementById('detailPanel').style.display = '';
+    document.getElementById('dTitle').textContent = s.name;
+    document.getElementById('dSub').textContent =
+        `初始资金 ${money(s.initCapital)} · 决策间隔 ${s.decisionIntervalSec}s · 最低分 ${s.minScore}`;
+    renderChips(s);
+    switchTab('pos');
+    await Promise.all([loadPositions(), loadTrades(), loadDaily(), loadMonthly()]);
+}
+
+function backToList() {
+    document.getElementById('detailPanel').style.display = 'none';
+    document.getElementById('listPanel').style.display = '';
+    reload();
+}
+
+function renderChips(s) {
+    const dayCls = num(s.dayPnl) >= 0 ? 'up' : 'down';
+    const cumCls = num(s.cumPnl) >= 0 ? 'up' : 'down';
+    // 与「我的账户」同一套读法：总资产在最左，盈亏带百分比
+    document.getElementById('dChips').innerHTML = `
+        <div class="q-kpis">
+            <div class="q-kpi"><div class="kt">总资产</div>
+                <div class="kv">${money(s.totalAsset)}</div>
+                <div class="ks">期初 ${money(s.initCapital)}</div></div>
+            <div class="q-kpi"><div class="kt">持仓市值</div>
+                <div class="kv">${money(s.marketValue)}</div>
+                <div class="ks">${s.holdingCount || 0} 只持仓</div></div>
+            <div class="q-kpi"><div class="kt">可用资金</div>
+                <div class="kv">${money(s.cash)}</div>
+                <div class="ks">仓位 ${num(s.totalAsset) > 0 ? (num(s.marketValue) / num(s.totalAsset) * 100).toFixed(1) : '0.0'}%</div></div>
+            <div class="q-kpi"><div class="kt">当日盈亏</div>
+                <div class="kv ${dayCls}">${signed(s.dayPnl)}</div>
+                <div class="ks ${dayCls}">${signed(s.dayPnlPct)}%</div></div>
+            <div class="q-kpi"><div class="kt">累计收益</div>
+                <div class="kv ${cumCls}">${signed(s.cumPnl)}</div>
+                <div class="ks ${cumCls}">${signed(s.cumPnlPct)}%</div></div>
+        </div>`;
+}
+
+function switchTab(key) {
+    document.querySelectorAll('.q-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === key));
+    ['pos', 'trade', 'daily', 'month'].forEach(k => {
+        document.getElementById('tab' + cap(k)).style.display = k === key ? '' : 'none';
+    });
+    if (key === 'daily') drawDailyChart();
+}
+
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+async function loadPositions() {
+    const r = await get(`/api/quant/strategies/${CUR.id}/positions`);
+    const rows = r.data || [];
+    const box = document.getElementById('tabPos');
+    if (!rows.length) { box.innerHTML = '<div class="q-empty">当前空仓</div>'; return; }
+    box.innerHTML = `<table class="qt"><thead><tr>
+        <th>代码</th><th>名称</th><th>数量</th><th>可用</th><th>成本</th><th>现价</th>
+        <th>涨跌幅</th><th>市值</th><th>浮动盈亏</th><th>建仓日</th></tr></thead><tbody>
+        ${rows.map(p => `<tr>
+            <td>${p.code}</td><td>${esc(p.name || '')}</td>
+            <td class="num">${p.quantity}</td><td class="num">${p.availableQty}</td>
+            <td class="num">${num(p.costPrice).toFixed(3)}</td>
+            <td class="num">${num(p.price).toFixed(2)}</td>
+            <td class="num ${num(p.changePct) >= 0 ? 'up' : 'down'}">${signed(p.changePct)}%</td>
+            <td class="num">${money(p.marketValue)}</td>
+            <td class="num ${num(p.pnl) >= 0 ? 'up' : 'down'}">${signed(p.pnl)} (${signed(p.pnlPct)}%)</td>
+            <td>${p.openDate || ''}</td></tr>`).join('')}
+        </tbody></table>`;
+}
+
+async function loadTrades() {
+    const r = await get(`/api/quant/strategies/${CUR.id}/trades?limit=200`);
+    const rows = r.data || [];
+    const box = document.getElementById('tabTrade');
+    if (!rows.length) { box.innerHTML = '<div class="q-empty">还没有成交</div>'; return; }
+    box.innerHTML = `<table class="qt"><thead><tr>
+        <th>时间</th><th>方向</th><th>代码</th><th>名称</th><th>价格</th><th>数量</th>
+        <th>成交额</th><th>费用</th><th>已实现盈亏</th><th>决策依据</th></tr></thead><tbody>
+        ${rows.map(t => `<tr>
+            <td>${t.time || ''}</td>
+            <td class="${t.action === 'buy' ? 'up' : 'down'}">${t.action === 'buy' ? '买入' : '卖出'}</td>
+            <td>${t.code}</td><td>${esc(t.name || '')}</td>
+            <td class="num">${num(t.price).toFixed(2)}</td>
+            <td class="num">${t.quantity}</td>
+            <td class="num">${money(t.turnover)}</td>
+            <td class="num">${num(t.fee).toFixed(2)}</td>
+            <td class="num ${num(t.realizedPnl) >= 0 ? 'up' : 'down'}">${t.action === 'sell' ? signed(t.realizedPnl) : '—'}</td>
+            <td style="max-width:320px;color:var(--text-dim);font-size:12px">${esc(t.reason || '')}</td></tr>`).join('')}
+        </tbody></table>`;
+}
+
+let DAILY_ROWS = [];
+async function loadDaily() {
+    const r = await get(`/api/quant/strategies/${CUR.id}/daily`);
+    DAILY_ROWS = r.data || [];
+    const box = document.getElementById('tabDaily');
+    if (!DAILY_ROWS.length) { box.innerHTML = '<div class="q-empty">还没有结算数据（收盘后 15:05 生成）</div>'; return; }
+    box.innerHTML = `<div class="q-chart-box"><div id="chartDaily"></div></div>
+        <table class="qt" style="margin-top:12px"><thead><tr>
+        <th>日期</th><th>总资产</th><th>当日盈亏</th><th>当日收益率</th>
+        <th>累计盈亏</th><th>累计收益率</th><th>持仓数</th></tr></thead><tbody>
+        ${DAILY_ROWS.slice().reverse().map(d => `<tr>
+            <td>${d.tradeDate}</td>
+            <td class="num">${money(d.totalAsset)}</td>
+            <td class="num ${num(d.dayPnl) >= 0 ? 'up' : 'down'}">${signed(d.dayPnl)}</td>
+            <td class="num ${num(d.dayPnlPct) >= 0 ? 'up' : 'down'}">${signed(d.dayPnlPct)}%</td>
+            <td class="num ${num(d.cumPnl) >= 0 ? 'up' : 'down'}">${signed(d.cumPnl)}</td>
+            <td class="num ${num(d.cumPnlPct) >= 0 ? 'up' : 'down'}">${signed(d.cumPnlPct)}%</td>
+            <td class="num">${d.holdingCount}</td></tr>`).join('')}
+        </tbody></table>`;
+    if (document.querySelector('.q-tab.active')?.dataset.tab === 'daily') drawDailyChart();
+}
+
+function drawDailyChart() {
+    const el = document.getElementById('chartDaily');
+    if (!el || !DAILY_ROWS.length || !window.echarts) return;
+    if (CHART) { CHART.dispose(); CHART = null; }
+    CHART = echarts.init(el);
+    CHART.setOption({
+        grid: {left: 60, right: 20, top: 24, bottom: 32},
+        tooltip: {trigger: 'axis'},
+        xAxis: {type: 'category', data: DAILY_ROWS.map(d => d.tradeDate), axisLabel: {fontSize: 11}},
+        yAxis: {type: 'value', scale: true, axisLabel: {fontSize: 11}},
+        series: [{
+            name: '总资产', type: 'line', smooth: true, showSymbol: false,
+            data: DAILY_ROWS.map(d => num(d.totalAsset)),
+            lineStyle: {width: 1.6}, areaStyle: {opacity: 0.12}
+        }]
+    });
+}
+
+async function loadMonthly() {
+    const r = await get(`/api/quant/strategies/${CUR.id}/monthly`);
+    const rows = r.data || [];
+    const box = document.getElementById('tabMonth');
+    if (!rows.length) { box.innerHTML = '<div class="q-empty">还没有月度数据</div>'; return; }
+    box.innerHTML = `<table class="qt"><thead><tr>
+        <th>月份</th><th>交易日</th><th>月初资产</th><th>月末资产</th><th>当月盈亏</th><th>当月收益率</th></tr></thead><tbody>
+        ${rows.map(m => `<tr>
+            <td>${m.month}</td><td class="num">${m.days}</td>
+            <td class="num">${money(m.startAsset)}</td><td class="num">${money(m.endAsset)}</td>
+            <td class="num ${num(m.pnl) >= 0 ? 'up' : 'down'}">${signed(m.pnl)}</td>
+            <td class="num ${num(m.pct) >= 0 ? 'up' : 'down'}">${signed(m.pct)}%</td></tr>`).join('')}
+        </tbody></table>`;
+}
+
+/* ==================== 新建 / 编辑 ==================== */
+
+function openCreate() {
+    EDITING = null;
+    document.getElementById('mTitle').textContent = '新建策略';
+    document.getElementById('fName').value = '';
+    document.getElementById('fRemark').value = '';
+    document.getElementById('fCapital').value = '100000';
+    document.getElementById('capWrap').style.display = '';
+    document.getElementById('fCodes').value = '';
+    // 初始持仓只在建账时录：编辑改的是运行参数，不能凭空多出几百股
+    document.getElementById('initPosWrap').style.display = '';
+    resetInitRows();
+    setParams({minScore: 60, maxHoldings: 5, maxPositionPct: 20, decisionIntervalSec: 60,
+        stopLossPct: 5, takeProfitPct: 15, trailDrawdownPct: 8, enabled: true});
+    document.getElementById('mask').classList.add('show');
+}
+
+function openEdit() {
+    if (!CUR) return;
+    EDITING = CUR;
+    document.getElementById('mTitle').textContent = '编辑策略';
+    document.getElementById('fName').value = CUR.name || '';
+    document.getElementById('fRemark').value = CUR.remark || '';
+    document.getElementById('fCapital').value = num(CUR.initCapital);
+    document.getElementById('capWrap').style.display = '';
+    document.getElementById('initPosWrap').style.display = 'none';
+    document.getElementById('fCodes').value = CUR.watchCodes || '';
+    setParams(CUR);
+    document.getElementById('mask').classList.add('show');
+}
+
+/* ==================== 初始持仓 ==================== */
+
+/** 一行：代码 / 名称 / 数量 / 成本价 / 买入日 / 删除 */
+function addInitRow(prefill) {
+    const rows = document.getElementById('initPosRows');
+    if (rows.children.length >= 5) { toast('初始持仓最多 5 只', 'err'); return; }
+    const p = prefill || {};
+    const div = document.createElement('div');
+    div.className = 'q-init-row';
+    div.innerHTML = '<input class="ip-code" maxlength="6" placeholder="6 位代码" value="' + (p.code || '') + '">'
+        + '<input class="ip-name" placeholder="名称（可空）" value="' + (p.name || '') + '">'
+        + '<input class="ip-qty" type="number" min="1" step="100" placeholder="数量" value="' + (p.quantity || '') + '">'
+        + '<input class="ip-cost" type="number" min="0" step="0.01" placeholder="成本价" value="' + (p.costPrice || '') + '">'
+        + '<input class="ip-date" type="date" value="' + (p.buyDate || todayStr()) + '">'
+        + '<button type="button" class="q-init-del" title="删除这一行">×</button>';
+    div.querySelector('.q-init-del').addEventListener('click', function () {
+        div.remove();
+        recalcInit();
+    });
+    div.querySelectorAll('input').forEach(function (i) {
+        i.addEventListener('input', recalcInit);
+    });
+    rows.appendChild(div);
+    recalcInit();
+}
+
+function resetInitRows() {
+    document.getElementById('initPosRows').innerHTML = '';
+    addInitRow();
+}
+
+function todayStr() {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + m + '-' + day;
+}
+
+/** 成本合计从初始资金里扣，剩下的才是可用金额 —— 建账时先让人看见这笔账 */
+function recalcInit() {
+    const capital = num(document.getElementById('fCapital').value);
+    let cost = 0;
+    document.querySelectorAll('#initPosRows .q-init-row').forEach(function (row) {
+        const q = num(row.querySelector('.ip-qty').value);
+        const c = num(row.querySelector('.ip-cost').value);
+        if (q > 0 && c > 0) cost += q * c;
+    });
+    const left = capital - cost;
+    const el = document.getElementById('initPosSum');
+    el.textContent = '持仓成本 ' + money(cost) + ' 元 · 可用 ' + money(left) + ' 元'
+        + (left < 0 ? '（成本已超过初始资金）' : '');
+    el.style.color = left < 0 ? 'var(--up)' : '';
+}
+
+function collectInitPositions() {
+    const out = [];
+    document.querySelectorAll('#initPosRows .q-init-row').forEach(function (row) {
+        const code = row.querySelector('.ip-code').value.trim();
+        const qty = num(row.querySelector('.ip-qty').value);
+        const cost = num(row.querySelector('.ip-cost').value);
+        if (!code) return;
+        out.push({
+            code: code,
+            name: row.querySelector('.ip-name').value.trim(),
+            quantity: qty,
+            costPrice: cost,
+            buyDate: row.querySelector('.ip-date').value || todayStr()
+        });
+    });
+    return out;
+}
+
+function setParams(p) {
+    document.getElementById('fMinScore').value = num(p.minScore);
+    document.getElementById('fMaxHold').value = num(p.maxHoldings);
+    document.getElementById('fMaxPct').value = num(p.maxPositionPct);
+    document.getElementById('fInterval').value = num(p.decisionIntervalSec);
+    document.getElementById('fStop').value = num(p.stopLossPct);
+    document.getElementById('fTake').value = num(p.takeProfitPct);
+    document.getElementById('fTrail').value = num(p.trailDrawdownPct);
+    document.getElementById('fEnabled').value = String(p.enabled !== false);
+}
+
+function closeModal() { document.getElementById('mask').classList.remove('show'); }
+
+async function saveStrategy() {
+    const name = document.getElementById('fName').value.trim();
+    if (!name) { toast('请填策略名称', 'err'); return; }
+    const body = {
+        name,
+        remark: document.getElementById('fRemark').value.trim(),
+        enabled: document.getElementById('fEnabled').value === 'true',
+        codes: document.getElementById('fCodes').value,
+        params: {
+            minScore: num(document.getElementById('fMinScore').value),
+            maxHoldings: num(document.getElementById('fMaxHold').value),
+            maxPositionPct: num(document.getElementById('fMaxPct').value),
+            decisionIntervalSec: num(document.getElementById('fInterval').value),
+            stopLossPct: num(document.getElementById('fStop').value),
+            takeProfitPct: num(document.getElementById('fTake').value),
+            trailDrawdownPct: num(document.getElementById('fTrail').value)
+        }
+    };
+    const capital = num(document.getElementById('fCapital').value);
+    if (!EDITING) {
+        body.initCapital = capital;
+        body.positions = collectInitPositions();
+        let cost = 0;
+        body.positions.forEach(p => { cost += (p.quantity * p.costPrice); });
+        if (cost > capital) { toast('初始持仓成本已超过初始资金，先把资金调大或减少持仓', 'err'); return; }
+    } else if (capital !== num(EDITING.initCapital)) {
+        if (!confirm('修改初始资金会清空持仓与交易流水（等于重开一本账），继续？')) return;
+        body.initCapital = capital;
+    }
+
+    const r = EDITING
+        ? await put(`/api/quant/strategies/${EDITING.id}`, body)
+        : await post('/api/quant/strategies', body);
+    if (!r.success) return;
+    toast(r.message || '已保存', 'ok');
+    closeModal();
+    await reload();
+    if (EDITING && CUR) {
+        const fresh = STRATEGIES.find(x => x.id === CUR.id);
+        if (fresh) { CUR = fresh; renderChips(fresh); }
+    }
+}
+
+async function removeStrategy() {
+    if (!CUR) return;
+    if (!confirm(`删除策略「${CUR.name}」？持仓、成交与收益记录会一并删除。`)) return;
+    const r = await del(`/api/quant/strategies/${CUR.id}`);
+    if (!r.success) return;
+    toast('已删除', 'ok');
+    backToList();
+}
+
+async function manualInit() {
+    const r = await post('/api/quant/admin/init', {});
+    if (!r.success) return;
+    toast(`初始化完成：${r.data.codes} 只标的`, 'ok');
+    await reload();
+}
+
+/* ==================== 工具 ==================== */
+
+function num(v) {
+    const n = Number(v);
+    return isFinite(n) ? n : 0;
+}
+
+function money(v) {
+    return num(v).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function signed(v) {
+    const n = num(v);
+    return (n > 0 ? '+' : '') + n.toFixed(2);
+}
+
+function esc(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>

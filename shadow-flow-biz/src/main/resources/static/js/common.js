@@ -1444,6 +1444,7 @@ const NAV_ITEMS = [
     {key: 'backtest', text: '策略回测', href: '/pages/backtest.html', login: true},
     {key: 'watch', text: '盯盘', href: '/pages/watch.html', login: true},
     {key: 'account', text: '我的账户', href: '/pages/account.html', login: true},
+    {key: 'quant', text: '量化模拟', href: '/pages/quant.html', login: true},
     {key: 'feedback', text: '问题反馈', href: '/pages/feedback.html'},
     {
         key: 'admin', text: '系统管理', admin: true, children: [

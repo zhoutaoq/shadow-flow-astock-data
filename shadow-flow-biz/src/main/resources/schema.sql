@@ -247,3 +247,113 @@ CREATE TABLE IF NOT EXISTS shadowflow_backtest_trade (
     PRIMARY KEY (id),
     KEY idx_shadowflow_bt_trade_bt (backtest_id, trade_date)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '回测交易明细';
+
+-- ============================================================
+-- v2.0 量化模拟炒股
+-- ============================================================
+
+-- 量化策略（一本模拟账 + 一套规则）。参数分生效 / 待生效两份：
+-- 页面保存只写 pending_json，次日 0 点由 QuantInitTask 合并，盘中改参数不生效。
+CREATE TABLE IF NOT EXISTS shadowflow_quant_strategy (
+    id                    BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+    user_id               BIGINT         NOT NULL                COMMENT '归属用户',
+    strategy_name         VARCHAR(64)    NOT NULL                COMMENT '策略名称',
+    remark                VARCHAR(255)   NULL                    COMMENT '备注',
+    enabled               TINYINT        NOT NULL DEFAULT 1      COMMENT '是否启用',
+    init_capital          DECIMAL(20, 4) NOT NULL DEFAULT 100000 COMMENT '初始资金(元)',
+    cash                  DECIMAL(20, 4) NOT NULL DEFAULT 100000 COMMENT '可用资金(元)',
+    watch_codes           TEXT           NULL                    COMMENT '生效标的，逗号分隔',
+    min_score             DECIMAL(6, 2)  NOT NULL DEFAULT 60     COMMENT '买入最低综合分',
+    max_holdings          INT            NOT NULL DEFAULT 5      COMMENT '最多持仓只数',
+    max_position_pct      DECIMAL(6, 2)  NOT NULL DEFAULT 20     COMMENT '单票最大仓位占比(%)',
+    stop_loss_pct         DECIMAL(6, 2)  NOT NULL DEFAULT 5      COMMENT '止损(%)',
+    take_profit_pct       DECIMAL(6, 2)  NOT NULL DEFAULT 15     COMMENT '止盈(%)',
+    trail_drawdown_pct    DECIMAL(6, 2)  NOT NULL DEFAULT 8      COMMENT '移动止盈回撤(%)',
+    decision_interval_sec INT            NOT NULL DEFAULT 60     COMMENT '决策间隔(秒)',
+    pending_json          TEXT           NULL                    COMMENT '待生效变更(次日0点合并)',
+    create_time           DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time           DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    KEY idx_shadowflow_quant_strategy_user (user_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '量化策略';
+
+-- 量化持仓（一个策略一只标的一条）
+CREATE TABLE IF NOT EXISTS shadowflow_quant_holding (
+    id            BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+    strategy_id   BIGINT         NOT NULL                COMMENT '策略 id',
+    user_id       BIGINT         NOT NULL                COMMENT '归属用户',
+    stock_code    VARCHAR(16)    NOT NULL                COMMENT '标的代码',
+    stock_name    VARCHAR(64)    NULL                    COMMENT '标的名称',
+    quantity      INT            NOT NULL DEFAULT 0      COMMENT '持仓数量(股)',
+    cost_price    DECIMAL(18, 4) NOT NULL DEFAULT 0      COMMENT '成本价',
+    available_qty INT            NOT NULL DEFAULT 0      COMMENT '可用数量(T+1)',
+    open_date     VARCHAR(10)    NULL                    COMMENT '建仓日',
+    last_buy_date VARCHAR(10)    NULL                    COMMENT '最近买入日',
+    peak_price    DECIMAL(18, 4) NOT NULL DEFAULT 0      COMMENT '持仓期最高价(移动止盈)',
+    create_time   DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time   DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_shadowflow_quant_holding (strategy_id, stock_code),
+    KEY idx_shadowflow_quant_holding_user (user_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '量化持仓';
+
+-- 量化成交（逐笔，含决策原因与综合分）
+CREATE TABLE IF NOT EXISTS shadowflow_quant_trade (
+    id           BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+    strategy_id  BIGINT         NOT NULL                COMMENT '策略 id',
+    user_id      BIGINT         NOT NULL                COMMENT '归属用户',
+    action       VARCHAR(8)     NOT NULL                COMMENT 'buy-买入 sell-卖出',
+    stock_code   VARCHAR(16)    NOT NULL                COMMENT '标的代码',
+    stock_name   VARCHAR(64)    NULL                    COMMENT '标的名称',
+    price        DECIMAL(18, 4) NOT NULL DEFAULT 0      COMMENT '成交价',
+    quantity     INT            NOT NULL DEFAULT 0      COMMENT '成交数量(股)',
+    turnover     DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '成交额',
+    fee          DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '费用',
+    realized_pnl DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '已实现盈亏(卖出)',
+    cash_after   DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '成交后可用资金',
+    score        DECIMAL(6, 2)  NULL                    COMMENT '下单时综合分',
+    reason       VARCHAR(512)   NULL                    COMMENT '决策原因',
+    trade_date   VARCHAR(10)    NOT NULL                COMMENT '成交日',
+    trade_time   DATETIME       NOT NULL                COMMENT '成交时刻',
+    PRIMARY KEY (id),
+    KEY idx_shadowflow_quant_trade (strategy_id, trade_date),
+    KEY idx_shadowflow_quant_trade_user (user_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '量化成交';
+
+-- 量化每日快照（每日收益，月收益按日聚合）
+CREATE TABLE IF NOT EXISTS shadowflow_quant_daily (
+    id            BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+    strategy_id   BIGINT         NOT NULL                COMMENT '策略 id',
+    user_id       BIGINT         NOT NULL                COMMENT '归属用户',
+    trade_date    VARCHAR(10)    NOT NULL                COMMENT '交易日',
+    cash          DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '收盘现金',
+    market_value  DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '收盘持仓市值',
+    total_asset   DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '总资产',
+    day_pnl       DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '当日盈亏',
+    day_pnl_pct   DECIMAL(10, 4) NOT NULL DEFAULT 0      COMMENT '当日收益率(%)',
+    cum_pnl       DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '累计盈亏',
+    cum_pnl_pct   DECIMAL(10, 4) NOT NULL DEFAULT 0      COMMENT '累计收益率(%)',
+    holding_count INT            NOT NULL DEFAULT 0      COMMENT '持仓只数',
+    create_time   DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_shadowflow_quant_daily (strategy_id, trade_date),
+    KEY idx_shadowflow_quant_daily_user (user_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '量化每日快照';
+
+-- 量化日内分时（每分钟一条总资产快照 + 持仓明细 JSON）
+CREATE TABLE IF NOT EXISTS shadowflow_quant_intraday (
+    id            BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+    strategy_id   BIGINT         NOT NULL                COMMENT '策略 id',
+    user_id       BIGINT         NOT NULL                COMMENT '归属用户',
+    trade_date    VARCHAR(10)    NOT NULL                COMMENT '交易日',
+    point_time    VARCHAR(8)     NOT NULL                COMMENT '时刻 HH:mm',
+    cash          DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '现金',
+    market_value  DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '持仓市值',
+    total_asset   DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '总资产',
+    day_pnl_pct   DECIMAL(10, 4) NOT NULL DEFAULT 0      COMMENT '当日收益率(%)',
+    holdings_json TEXT           NULL                    COMMENT '持仓明细快照',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_shadowflow_quant_intraday (strategy_id, trade_date, point_time),
+    KEY idx_shadowflow_quant_intraday_user (user_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '量化日内分时';
+
