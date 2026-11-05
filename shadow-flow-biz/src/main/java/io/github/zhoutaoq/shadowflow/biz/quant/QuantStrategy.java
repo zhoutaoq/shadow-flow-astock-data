@@ -85,6 +85,15 @@ public class QuantStrategy {
      */
     private BigDecimal minVolSurge = BigDecimal.valueOf(1.2);
 
+    /* ==================== 分时卖出信号（v1.9.14） ==================== */
+
+    /** 放量滞涨：分时量能到这个倍数、涨幅却没超过 volStallMaxPct 时，按出货处理 */
+    private BigDecimal volStallSurge = BigDecimal.valueOf(2.0);
+    /** 放量滞涨的涨幅上限（%）：超过这个涨幅说明确实在涨，不算滞涨 */
+    private BigDecimal volStallMaxPct = BigDecimal.valueOf(1.0);
+    /** 委差转负阈值（手）：卖盘比买盘厚这么多就减仓；填很大的负数等于不看 */
+    private BigDecimal exitWeiCha = BigDecimal.valueOf(-500);
+
     /* ==================== 待生效 ==================== */
 
     /**
@@ -256,6 +265,30 @@ public class QuantStrategy {
 
     public void setMinVolSurge(BigDecimal minVolSurge) {
         this.minVolSurge = minVolSurge;
+    }
+
+    public BigDecimal getVolStallSurge() {
+        return volStallSurge;
+    }
+
+    public void setVolStallSurge(BigDecimal volStallSurge) {
+        this.volStallSurge = volStallSurge;
+    }
+
+    public BigDecimal getVolStallMaxPct() {
+        return volStallMaxPct;
+    }
+
+    public void setVolStallMaxPct(BigDecimal volStallMaxPct) {
+        this.volStallMaxPct = volStallMaxPct;
+    }
+
+    public BigDecimal getExitWeiCha() {
+        return exitWeiCha;
+    }
+
+    public void setExitWeiCha(BigDecimal exitWeiCha) {
+        this.exitWeiCha = exitWeiCha;
     }
 
     public BigDecimal getMinWeiCha() {

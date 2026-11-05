@@ -40,7 +40,8 @@ public class DbQuantRepository implements QuantRepository {
             + " init_capital, cash, watch_codes, min_score, max_holdings, max_position_pct,"
             + " stop_loss_pct, take_profit_pct, trail_drawdown_pct, decision_interval_sec,"
             + " min_volume_ratio, min_main_inflow, min_main_inflow_5d, require_macd_golden,"
-            + " min_wb_ratio, max_deviation_pct, min_wei_cha, min_vol_surge, pending_json,"
+            + " min_wb_ratio, max_deviation_pct, min_wei_cha, min_vol_surge,"
+            + " vol_stall_surge, vol_stall_max_pct, exit_wei_cha, pending_json,"
             + " DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') AS create_time,"
             + " DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') AS update_time";
 
@@ -106,12 +107,12 @@ public class DbQuantRepository implements QuantRepository {
                 + " max_holdings, max_position_pct, stop_loss_pct, take_profit_pct, trail_drawdown_pct,"
                 + " decision_interval_sec, min_volume_ratio, min_main_inflow, min_main_inflow_5d,"
                 + " require_macd_golden, min_wb_ratio, max_deviation_pct, min_wei_cha, min_vol_surge,"
-                + " pending_json)"
+                + " vol_stall_surge, vol_stall_max_pct, exit_wei_cha, pending_json)"
                 + " VALUES (:userId, :name, :remark, :enabled, :initCapital, :cash, :watchCodes, :minScore,"
                 + " :maxHoldings, :maxPositionPct, :stopLossPct, :takeProfitPct, :trailDrawdownPct,"
                 + " :decisionIntervalSec, :minVolumeRatio, :minMainInflow, :minMainInflow5d,"
                 + " :requireMacdGolden, :minWbRatio, :maxDeviationPct, :minWeiCha, :minVolSurge,"
-                + " :pendingJson)";
+                + " :volStallSurge, :volStallMaxPct, :exitWeiCha, :pendingJson)";
         KeyHolder keys = new GeneratedKeyHolder();
         named.update(sql, strategyParams(strategy), keys);
         Number key = keys.getKey();
@@ -134,6 +135,8 @@ public class DbQuantRepository implements QuantRepository {
                 + " min_main_inflow_5d = :minMainInflow5d, require_macd_golden = :requireMacdGolden,"
                 + " min_wb_ratio = :minWbRatio, max_deviation_pct = :maxDeviationPct,"
                 + " min_wei_cha = :minWeiCha, min_vol_surge = :minVolSurge,"
+                + " vol_stall_surge = :volStallSurge, vol_stall_max_pct = :volStallMaxPct,"
+                + " exit_wei_cha = :exitWeiCha,"
                 + " pending_json = :pendingJson"
                 + " WHERE id = :id AND user_id = :userId";
         MapSqlParameterSource p = strategyParams(strategy).addValue("id", strategy.getId());
@@ -166,6 +169,9 @@ public class DbQuantRepository implements QuantRepository {
                 .addValue("maxDeviationPct", s.getMaxDeviationPct())
                 .addValue("minWeiCha", s.getMinWeiCha())
                 .addValue("minVolSurge", s.getMinVolSurge())
+                .addValue("volStallSurge", s.getVolStallSurge())
+                .addValue("volStallMaxPct", s.getVolStallMaxPct())
+                .addValue("exitWeiCha", s.getExitWeiCha())
                 .addValue("pendingJson", s.getPendingJson());
     }
 

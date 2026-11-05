@@ -159,7 +159,7 @@
         <div class="qf">
             <label>标的池</label>
             <div id="codesPickerBox"></div>
-            <div class="q-note">和「盯盘」一样按名称或代码搜，选几只算几只；与下面的参数一样<b>次日 0 点生效</b>。</div>
+            <div class="q-note">按名称或代码搜，选几只算几只。<b>只收沪深 A 股</b>（ETF、港股不进池子）。与下面的参数一样<b>次日 0 点生效</b>。</div>
         </div>
         <div class="q-row2">
             <div class="qf"><label>参考分（0-100，仅供参考，不作为买卖依据）</label><input id="fMinScore" type="number" step="1" value="60">
@@ -169,7 +169,7 @@
         </div>
         <div class="q-row2">
             <div class="qf"><label>单票最大仓位（%）</label><input id="fMaxPct" type="number" step="1" value="20">
-                <div class="q-note">默认 20%，五只刚好满仓；单票不会超过总资产的这个比例。</div></div>
+                <div class="q-note">这是上限。实际买入 = 上限 × 信号系数（0.4~1.0）：委差为正、明显放量、主力流入各加 0.2。</div></div>
             <div class="qf"><label>决策间隔（秒，≥30）</label><input id="fInterval" type="number" min="30" step="10" value="60">
                 <div class="q-note">默认 60 秒看一次分时信号，越短越灵敏、也越容易被噪音带偏。</div></div>
         </div>
@@ -508,7 +508,8 @@ function openCreate() {
     setParams({minScore: 60, maxHoldings: 5, maxPositionPct: 20, decisionIntervalSec: 60,
         stopLossPct: 5, takeProfitPct: 15, trailDrawdownPct: 8, enabled: true,
         minVolumeRatio: 1.0, minMainInflow: 0, minMainInflow5d: 0,
-        minWbRatio: -10, maxDeviationPct: 3, minWeiCha: 0, minVolSurge: 1.2, requireMacdGolden: false});
+        minWbRatio: -10, maxDeviationPct: 3, minWeiCha: 0, minVolSurge: 1.2, volStallSurge: 2.0, volStallMaxPct: 1.0, exitWeiCha: -500,
+        requireMacdGolden: false});
     document.getElementById('mask').classList.add('show');
 }
 
@@ -627,6 +628,9 @@ function setParams(p) {
     document.getElementById('fMaxDev').value = p.maxDeviationPct == null ? 3 : num(p.maxDeviationPct);
     document.getElementById('fMinWei').value = p.minWeiCha == null ? 0 : num(p.minWeiCha);
     document.getElementById('fMinSurge').value = p.minVolSurge == null ? 1.2 : num(p.minVolSurge);
+    document.getElementById('fStallSurge').value = p.volStallSurge == null ? 2 : num(p.volStallSurge);
+    document.getElementById('fStallMaxPct').value = p.volStallMaxPct == null ? 1 : num(p.volStallMaxPct);
+    document.getElementById('fExitWei').value = p.exitWeiCha == null ? -500 : num(p.exitWeiCha);
     document.getElementById('fMacd').value = p.requireMacdGolden ? 'true' : 'false';
     document.getElementById('fEnabled').value = String(p.enabled !== false);
 }
@@ -656,6 +660,9 @@ async function saveStrategy() {
             maxDeviationPct: num(document.getElementById('fMaxDev').value),
             minWeiCha: num(document.getElementById('fMinWei').value),
             minVolSurge: num(document.getElementById('fMinSurge').value),
+            volStallSurge: num(document.getElementById('fStallSurge').value),
+            volStallMaxPct: num(document.getElementById('fStallMaxPct').value),
+            exitWeiCha: num(document.getElementById('fExitWei').value),
             requireMacdGolden: document.getElementById('fMacd').value === 'true'
         }
     };

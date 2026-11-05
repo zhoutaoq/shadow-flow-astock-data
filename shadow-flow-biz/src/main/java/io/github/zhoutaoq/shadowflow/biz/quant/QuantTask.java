@@ -197,6 +197,15 @@ public class QuantTask {
                 if (p.hasNonNull("minVolSurge")) {
                     s.setMinVolSurge(p.get("minVolSurge").decimalValue());
                 }
+                if (p.hasNonNull("volStallSurge")) {
+                    s.setVolStallSurge(p.get("volStallSurge").decimalValue());
+                }
+                if (p.hasNonNull("volStallMaxPct")) {
+                    s.setVolStallMaxPct(p.get("volStallMaxPct").decimalValue());
+                }
+                if (p.hasNonNull("exitWeiCha")) {
+                    s.setExitWeiCha(p.get("exitWeiCha").decimalValue());
+                }
                 if (p.hasNonNull("decisionIntervalSec")) {
                     s.setDecisionIntervalSec(Math.max(30, p.get("decisionIntervalSec").asInt(60)));
                 }

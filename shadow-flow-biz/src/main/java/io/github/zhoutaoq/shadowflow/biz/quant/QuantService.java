@@ -1,6 +1,7 @@
 package io.github.zhoutaoq.shadowflow.biz.quant;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.zhoutaoq.shadowflow.biz.support.AShareCodes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -156,8 +157,8 @@ public class QuantService {
                 continue;
             }
             String code = String.valueOf(m.get("code")).trim();
-            if (!code.matches("\\d{6}")) {
-                throw new IllegalArgumentException("代码「" + code + "」不是 6 位数字");
+            if (!AShareCodes.isAShare(code)) {
+                throw new IllegalArgumentException("代码「" + code + "」不是 A 股（量化只做沪深 A 股，不含 ETF / 港股）");
             }
             if (!seen.add(code)) {
                 throw new IllegalArgumentException("初始持仓里 " + code + " 重复了");
@@ -407,6 +408,9 @@ public class QuantService {
         p.put("maxDeviationPct", s.getMaxDeviationPct());
         p.put("minWeiCha", s.getMinWeiCha());
         p.put("minVolSurge", s.getMinVolSurge());
+        p.put("volStallSurge", s.getVolStallSurge());
+        p.put("volStallMaxPct", s.getVolStallMaxPct());
+        p.put("exitWeiCha", s.getExitWeiCha());
         return p;
     }
 
@@ -428,7 +432,9 @@ public class QuantService {
         List<String> out = new ArrayList<>();
         for (String part : raw.split("[,，;；\\s]+")) {
             String code = EastmoneyClient.normalize(part);
-            if (!code.isEmpty() && !out.contains(code)) {
+            // 量化只做 A 股：ETF、港股、北交所各有一套涨跌停和交收规则，
+            // 混进来会让「涨跌停买不到 / 跌停卖不出」这条判不准，索性不进池子
+            if (!code.isEmpty() && AShareCodes.isAShare(code) && !out.contains(code)) {
                 out.add(code);
             }
         }

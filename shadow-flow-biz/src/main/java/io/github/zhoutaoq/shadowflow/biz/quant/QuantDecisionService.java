@@ -216,6 +216,12 @@ public class QuantDecisionService {
                         s.getId(), h.getCode(), reason);
                 continue;
             }
+            // 跌停卖不出：挂在跌停板上排队也轮不到
+            if (atLimitDown(q)) {
+                log.info("[quant] 策略 {} {} 跌停（{}），卖不出（{}），等下一个 tick",
+                        s.getId(), h.getCode(), q.getPrice(), reason);
+                continue;
+            }
             cash = doSell(s, h, q, reason, cash, today);
             trades++;
         }
@@ -276,6 +282,11 @@ public class QuantDecisionService {
             if (!m.isL1Pass()) {
                 continue;
             }
+            // 涨停买不到：模拟盘也一样，不给「一字板也能成交」的假象
+            if (atLimitUp(q)) {
+                log.info("[quant] 策略 {} {} 涨停（{}），买不到，跳过", s.getId(), m.getCode(), q.getPrice());
+                continue;
+            }
             // 综合分只作参考展示，不作买入门槛（见 QuantMetrics 的说明：权重表是参考，不是判据）
             // 第二层：不追高 —— 现价离均价太远说明当天已经拉过一段
             if (m.getAvgScore() < 50) {
@@ -288,7 +299,10 @@ public class QuantDecisionService {
                         s.getId(), m.getCode(), m.getTotalScore(), miss);
                 continue;
             }
-            BigDecimal budget = totalAsset.multiply(maxPct).divide(HUNDRED, 2, BigDecimal.ROUND_HALF_UP);
+            // 仓位不写死 20%：分时信号越强买得越多（0.4~1.0 倍）
+            BigDecimal strength = positionStrength(m, q);
+            BigDecimal budget = totalAsset.multiply(maxPct).multiply(strength)
+                    .divide(HUNDRED, 2, BigDecimal.ROUND_HALF_UP);
             if (budget.compareTo(cash) > 0) {
                 budget = cash;
             }
@@ -304,6 +318,63 @@ public class QuantDecisionService {
         s.setCash(cash);
         repository.saveStrategy(s);
         return trades;
+    }
+
+    /**
+     * 涨跌幅限制（%）：创业板 / 科创板 20%，ST 5%，其余 10%。
+     */
+    private BigDecimal limitPctOf(QuantQuote q) {
+        String name = q.getName() == null ? "" : q.getName();
+        if (name.toUpperCase().contains("ST")) {
+            return new BigDecimal("5");
+        }
+        String code = q.getCode() == null ? "" : q.getCode();
+        if (code.startsWith("30") || code.startsWith("68")) {
+            return new BigDecimal("20");
+        }
+        return new BigDecimal("10");
+    }
+
+    /** 涨停：买不到。留 0.1% 余量，避免浮点误差把「差一分钱」判成涨停 */
+    private boolean atLimitUp(QuantQuote q) {
+        BigDecimal pre = q.getPreClose();
+        if (pre == null || pre.signum() <= 0) {
+            return false;
+        }
+        BigDecimal line = pre.multiply(BigDecimal.ONE.add(
+                limitPctOf(q).divide(BigDecimal.valueOf(100), 4, BigDecimal.ROUND_HALF_UP)));
+        return q.getPrice().compareTo(line.multiply(new BigDecimal("0.999"))) >= 0;
+    }
+
+    /** 跌停：卖不出 */
+    private boolean atLimitDown(QuantQuote q) {
+        BigDecimal pre = q.getPreClose();
+        if (pre == null || pre.signum() <= 0) {
+            return false;
+        }
+        BigDecimal line = pre.multiply(BigDecimal.ONE.subtract(
+                limitPctOf(q).divide(BigDecimal.valueOf(100), 4, BigDecimal.ROUND_HALF_UP)));
+        return q.getPrice().compareTo(line.multiply(new BigDecimal("1.001"))) <= 0;
+    }
+
+    /**
+     * 仓位系数：分时信号越强，买得越多。
+     *
+     * <p>基础 0.4（弱信号也只试一成多仓位），委差为正 / 明显放量 / 主力在流入 各加 0.2，封顶 1.0。
+     * 用户要的是「买入比例根据分时来」，所以这里不是固定 20%，而是 20% × 系数。
+     */
+    private BigDecimal positionStrength(QuantMetrics m, QuantQuote q) {
+        BigDecimal k = new BigDecimal("0.4");
+        if (nz(q.getWeiCha()).signum() > 0) {
+            k = k.add(new BigDecimal("0.2"));
+        }
+        if (nz(m.getVolSurge()).compareTo(new BigDecimal("1.5")) >= 0) {
+            k = k.add(new BigDecimal("0.2"));
+        }
+        if (nz(m.getTodayMain()).signum() > 0) {
+            k = k.add(new BigDecimal("0.2"));
+        }
+        return k.min(BigDecimal.ONE);
     }
 
     private static BigDecimal nz(BigDecimal v) {
@@ -412,6 +483,28 @@ public class QuantDecisionService {
             if (price.compareTo(trailLine) <= 0) {
                 return "移动止盈：最高 " + peak.toPlainString() + " 回撤到 " + price.toPlainString()
                         + "（回撤 " + trail.toPlainString() + "%）";
+            }
+        }
+
+        // 放量滞涨：量大但价格没动，多是在借量出货
+        BigDecimal stallSurge = s.getVolStallSurge();
+        BigDecimal stallMaxPct = s.getVolStallMaxPct();
+        if (m != null && stallSurge != null && stallMaxPct != null) {
+            BigDecimal surge = nz(m.getVolSurge());
+            BigDecimal chg = q.getChangePct() == null ? BigDecimal.ZERO : q.getChangePct();
+            if (surge.compareTo(stallSurge) >= 0 && chg.compareTo(stallMaxPct) <= 0) {
+                return "放量滞涨：量能 " + surge.toPlainString() + " 倍但只涨 "
+                        + chg.toPlainString() + "%";
+            }
+        }
+
+        // 委差转负：买盘撤了，盘口反过来压在卖方
+        BigDecimal exitWei = s.getExitWeiCha();
+        if (exitWei != null) {
+            BigDecimal weiShou = nz(q.getWeiCha())
+                    .divide(BigDecimal.valueOf(100), 2, BigDecimal.ROUND_HALF_UP);
+            if (weiShou.compareTo(exitWei) <= 0) {
+                return "委差转负：" + weiShou.toPlainString() + " 手（卖盘比买盘厚）";
             }
         }
 
