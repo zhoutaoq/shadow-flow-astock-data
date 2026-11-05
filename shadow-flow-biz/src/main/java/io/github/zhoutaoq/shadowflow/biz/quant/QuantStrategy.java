@@ -71,6 +71,13 @@ public class QuantStrategy {
     private BigDecimal minWbRatio = BigDecimal.valueOf(-10);
     /** 现价离当日均价的最大偏离（%）：超过就是追高 */
     private BigDecimal maxDeviationPct = BigDecimal.valueOf(3);
+    /**
+     * 委差下限（手）：买五档合计减卖五档合计。
+     *
+     * <p>默认 0 = 买盘不能比卖盘薄。填负数放宽，填正数要求明显的买盘优势。
+     * 用「手」而不是「股」，因为盘口挂单习惯按手看（1 手 = 100 股）。
+     */
+    private BigDecimal minWeiCha = BigDecimal.ZERO;
 
     /* ==================== 待生效 ==================== */
 
@@ -235,6 +242,14 @@ public class QuantStrategy {
 
     public void setMinWbRatio(BigDecimal minWbRatio) {
         this.minWbRatio = minWbRatio;
+    }
+
+    public BigDecimal getMinWeiCha() {
+        return minWeiCha;
+    }
+
+    public void setMinWeiCha(BigDecimal minWeiCha) {
+        this.minWeiCha = minWeiCha;
     }
 
     public BigDecimal getMaxDeviationPct() {

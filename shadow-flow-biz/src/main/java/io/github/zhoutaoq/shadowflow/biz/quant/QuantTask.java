@@ -191,6 +191,9 @@ public class QuantTask {
                 if (p.hasNonNull("maxDeviationPct")) {
                     s.setMaxDeviationPct(p.get("maxDeviationPct").decimalValue());
                 }
+                if (p.hasNonNull("minWeiCha")) {
+                    s.setMinWeiCha(p.get("minWeiCha").decimalValue());
+                }
                 if (p.hasNonNull("decisionIntervalSec")) {
                     s.setDecisionIntervalSec(Math.max(30, p.get("decisionIntervalSec").asInt(60)));
                 }

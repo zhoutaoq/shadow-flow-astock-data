@@ -51,6 +51,12 @@ public class QuantQuote {
     private BigDecimal avgPrice = BigDecimal.ZERO;
     /** 委比（%）：只有单只接口给，未补时为 null */
     private BigDecimal wbRatio;
+    /** 买五档挂单合计（股） */
+    private BigDecimal bidVolume = BigDecimal.ZERO;
+    /** 卖五档挂单合计（股） */
+    private BigDecimal askVolume = BigDecimal.ZERO;
+    /** 委差（股）= 买五档合计 − 卖五档合计；正数说明买盘厚 */
+    private BigDecimal weiCha = BigDecimal.ZERO;
     /** 外盘（手） */
     private BigDecimal outerVolume;
     /** 内盘（手） */
@@ -210,6 +216,30 @@ public class QuantQuote {
 
     public void setAvgPrice(BigDecimal avgPrice) {
         this.avgPrice = avgPrice;
+    }
+
+    public BigDecimal getBidVolume() {
+        return bidVolume;
+    }
+
+    public void setBidVolume(BigDecimal bidVolume) {
+        this.bidVolume = bidVolume;
+    }
+
+    public BigDecimal getAskVolume() {
+        return askVolume;
+    }
+
+    public void setAskVolume(BigDecimal askVolume) {
+        this.askVolume = askVolume;
+    }
+
+    public BigDecimal getWeiCha() {
+        return weiCha;
+    }
+
+    public void setWeiCha(BigDecimal weiCha) {
+        this.weiCha = weiCha;
     }
 
     public BigDecimal getWbRatio() {

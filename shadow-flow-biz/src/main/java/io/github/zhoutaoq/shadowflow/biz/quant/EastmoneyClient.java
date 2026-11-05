@@ -109,6 +109,11 @@ public class EastmoneyClient {
         if (distinct.isEmpty()) {
             return out;
         }
+        // 先走新浪：线上只有它通，而且带买卖五档（委差要用）；空结果才退回东财
+        Map<String, QuantQuote> sina = sinaSnapshots(distinct);
+        if (!sina.isEmpty()) {
+            return sina;
+        }
         // 一次请求不宜过长，按 50 只分批
         for (int from = 0; from < distinct.size(); from += 50) {
             List<String> batch = distinct.subList(from, Math.min(from + 50, distinct.size()));
@@ -134,6 +139,130 @@ public class EastmoneyClient {
             }
         }
         return out;
+    }
+
+    private static final String SINA_QUOTE_URL = "https://hq.sinajs.cn/list=";
+    private static final String SINA_REFERER = "https://finance.sina.com.cn";
+
+    /**
+     * 新浪快照：线上唯一稳得住的行情源。
+     *
+     * <p>量化的行情原来全压在东财 {@code push2}，而线上那台机器连不上它（TCP 通、TLS 之后空回复），
+     * 等于策略在线上拿不到任何价格。新浪这条同时会给「买卖五档」，正好把委差一起补上。
+     *
+     * <p>字段位（A 股 33 段，实测）：0 名称、1 今开、2 昨收、3 现价、4 最高、5 最低、
+     * 8 成交量(股)、9 成交额(元)、10~19 买一~买五（量,价 交替）、20~29 卖一~卖五。
+     */
+    private Map<String, QuantQuote> sinaSnapshots(List<String> codes) {
+        Map<String, QuantQuote> out = new LinkedHashMap<>();
+        for (int from = 0; from < codes.size(); from += 50) {
+            List<String> batch = codes.subList(from, Math.min(from + 50, codes.size()));
+            StringBuilder list = new StringBuilder();
+            for (String c : batch) {
+                if (list.length() > 0) {
+                    list.append(',');
+                }
+                list.append(sinaSymbol(c));
+            }
+            String body;
+            try {
+                body = doGet(SINA_QUOTE_URL + list, java.nio.charset.Charset.forName("GBK"));
+            } catch (Exception e) {
+                log.debug("[quant] 新浪行情失败：{}", e.getMessage());
+                continue;
+            }
+            for (String line : body.split("\n")) {
+                QuantQuote q = parseSinaLine(line);
+                if (q != null) {
+                    out.put(q.getCode(), q);
+                }
+            }
+        }
+        return out;
+    }
+
+    private QuantQuote parseSinaLine(String line) {
+        int varAt = line.indexOf("hq_str_");
+        int eq = line.indexOf('=', varAt);
+        if (varAt < 0 || eq < 0) {
+            return null;
+        }
+        String sym = line.substring(varAt + 7, eq).trim();
+        int begin = line.indexOf('"', eq);
+        int end = line.lastIndexOf('"');
+        if (begin < 0 || end <= begin) {
+            return null;
+        }
+        String[] f = line.substring(begin + 1, end).split(",", -1);
+        // A 股 33 段；不足的是港股/退市，量化这一版只管 A 股
+        if (f.length < 32) {
+            return null;
+        }
+        QuantQuote q = new QuantQuote();
+        q.setCode(sym.length() > 2 ? sym.substring(2) : sym);
+        q.setName(f[0]);
+        q.setOpen(num(f[1]));
+        q.setPreClose(num(f[2]));
+        q.setPrice(num(f[3]));
+        q.setHigh(num(f[4]));
+        q.setLow(num(f[5]));
+        q.setVolume(num(f[8]));
+        q.setAmount(num(f[9]));
+
+        BigDecimal bid = BigDecimal.ZERO;
+        BigDecimal ask = BigDecimal.ZERO;
+        for (int i = 10; i <= 18; i += 2) {
+            bid = bid.add(num(f[i]));
+        }
+        for (int i = 20; i <= 28; i += 2) {
+            ask = ask.add(num(f[i]));
+        }
+        q.setBidVolume(bid);
+        q.setAskVolume(ask);
+        q.setWeiCha(bid.subtract(ask));
+
+        BigDecimal total = bid.add(ask);
+        if (total.signum() > 0) {
+            q.setWbRatio(bid.subtract(ask).multiply(BigDecimal.valueOf(100))
+                    .divide(total, 2, BigDecimal.ROUND_HALF_UP));
+        }
+        if (q.getVolume().signum() > 0) {
+            q.setAvgPrice(q.getAmount().divide(q.getVolume(), 4, BigDecimal.ROUND_HALF_UP));
+        }
+        BigDecimal pre = q.getPreClose();
+        if (pre.signum() > 0) {
+            q.setChangePct(q.getPrice().subtract(pre).multiply(BigDecimal.valueOf(100))
+                    .divide(pre, 2, BigDecimal.ROUND_HALF_UP));
+            q.setChangeAmt(q.getPrice().subtract(pre));
+        }
+        return q;
+    }
+
+    /** 6 位代码 → 新浪带市场前缀；5 位港股量化不做，返回空由上层跳过 */
+    private String sinaSymbol(String code) {
+        if (code == null || code.length() != 6) {
+            return "";
+        }
+        char c = code.charAt(0);
+        if (c == '0' || c == '1' || c == '3') {
+            return "sz" + code;
+        }
+        return "sh" + code;
+    }
+
+    private static BigDecimal num(String s) {
+        if (s == null) {
+            return BigDecimal.ZERO;
+        }
+        String v = s.trim();
+        if (v.isEmpty() || "-".equals(v)) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            return new BigDecimal(v);
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
     }
 
     /**
@@ -599,6 +728,10 @@ public class EastmoneyClient {
     }
 
     private String doGet(String urlStr) throws IOException {
+        return doGet(urlStr, StandardCharsets.UTF_8);
+    }
+
+    private String doGet(String urlStr, java.nio.charset.Charset charset) throws IOException {
         HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
@@ -618,7 +751,7 @@ public class EastmoneyClient {
             while ((n = in.read(buf)) > 0) {
                 out.write(buf, 0, n);
             }
-            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+            return new String(out.toByteArray(), charset);
         } finally {
             conn.disconnect();
         }

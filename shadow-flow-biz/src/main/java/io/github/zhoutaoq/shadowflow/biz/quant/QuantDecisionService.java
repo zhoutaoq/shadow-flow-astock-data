@@ -42,6 +42,13 @@ public class QuantDecisionService {
 
     /** 一手 = 100 股 */
     private static final int LOT = 100;
+    /**
+     * 滑点：万分之二。
+     *
+     * <p>模拟盘按「现价」成交是不真实的 —— 真实下单要么挂单等，要么吃点差价。
+     * 买入往上抬 0.02%、卖出往下压 0.02%，一年下来这点差异足以让一个「纸上盈利」的策略露出真面目。
+     */
+    private static final BigDecimal SLIPPAGE = new BigDecimal("0.0002");
     /** 与回测同一口径的摩擦成本 */
     private static final BigDecimal FEE_RATE = new BigDecimal("0.0001");
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
@@ -269,9 +276,7 @@ public class QuantDecisionService {
             if (!m.isL1Pass()) {
                 continue;
             }
-            if (m.getTotalScore().compareTo(minScore) < 0) {
-                continue;
-            }
+            // 综合分只作参考展示，不作买入门槛（见 QuantMetrics 的说明：权重表是参考，不是判据）
             // 第二层：不追高 —— 现价离均价太远说明当天已经拉过一段
             if (m.getAvgScore() < 50) {
                 continue;
@@ -340,6 +345,15 @@ public class QuantDecisionService {
         BigDecimal minWb = s.getMinWbRatio();
         if (minWb != null && m.getWbRatio() != null && m.getWbRatio().compareTo(minWb) < 0) {
             return "委比 " + m.getWbRatio().toPlainString() + "% < " + minWb.toPlainString() + "%";
+        }
+        BigDecimal minWei = s.getMinWeiCha();
+        if (minWei != null) {
+            // 股 → 手，盘口习惯按手看
+            BigDecimal weiShou = nz(q.getWeiCha())
+                    .divide(BigDecimal.valueOf(100), 2, BigDecimal.ROUND_HALF_UP);
+            if (weiShou.compareTo(minWei) < 0) {
+                return "委差 " + weiShou.toPlainString() + " 手 < " + minWei.toPlainString() + " 手";
+            }
         }
         BigDecimal maxDev = s.getMaxDeviationPct();
         if (maxDev != null) {
@@ -411,7 +425,9 @@ public class QuantDecisionService {
         if (qty <= 0) {
             return cash;
         }
-        BigDecimal price = q.getPrice();
+        // 卖出价按滑点下压
+        BigDecimal price = q.getPrice().multiply(BigDecimal.ONE.subtract(SLIPPAGE))
+                .setScale(4, BigDecimal.ROUND_HALF_UP);
         BigDecimal turnover = price.multiply(BigDecimal.valueOf(qty));
         BigDecimal fee = turnover.multiply(FEE_RATE).setScale(2, BigDecimal.ROUND_HALF_UP);
         BigDecimal cost = h.getCostPrice() == null ? BigDecimal.ZERO : h.getCostPrice();
@@ -451,7 +467,9 @@ public class QuantDecisionService {
 
     private BigDecimal doBuy(QuantStrategy s, QuantMetrics m, QuantQuote q, int qty,
                              BigDecimal cash, String today) {
-        BigDecimal price = q.getPrice();
+        // 买入价按滑点上浮
+        BigDecimal price = q.getPrice().multiply(BigDecimal.ONE.add(SLIPPAGE))
+                .setScale(4, BigDecimal.ROUND_HALF_UP);
         BigDecimal turnover = price.multiply(BigDecimal.valueOf(qty));
         BigDecimal fee = turnover.multiply(FEE_RATE).setScale(2, BigDecimal.ROUND_HALF_UP);
         BigDecimal cashAfter = cash.subtract(turnover).subtract(fee);

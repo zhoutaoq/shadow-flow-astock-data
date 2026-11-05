@@ -51,7 +51,7 @@
         .q-kpi .ks { margin-top: 2px; font-size: 12px; color: var(--text-dim); font-family: var(--font-mono); }
         .q-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
         .q-mask.show { display: flex; }
-        .q-modal { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--r-xl); width: 560px; max-width: 100%; max-height: 90vh; overflow: auto; padding: 20px; }
+        .q-modal { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--r-xl); width: 780px; max-width: 100%; max-height: 90vh; overflow: auto; padding: 20px; }
         .q-modal h3 { margin: 0 0 14px; font-size: 16px; }
         .qf { margin-bottom: 12px; }
         .qf label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 5px; }
@@ -157,26 +157,34 @@
             <div class="q-note">买入日期决定当天能不能卖：填今天就是 T+1，次日才可卖；填历史日期则立刻可卖。最多 5 只。</div>
         </div>
         <div class="qf">
-            <label>监控标的（6 位代码，逗号或空格分隔）</label>
-            <textarea id="fCodes" rows="2" placeholder="600584, 000001"></textarea>
-            <div class="q-note">与下面的参数一样，保存后<b>次日 0 点生效</b>，盘中不改。</div>
+            <label>标的池</label>
+            <div id="codesPickerBox"></div>
+            <div class="q-note">和「盯盘」一样按名称或代码搜，选几只算几只；与下面的参数一样<b>次日 0 点生效</b>。</div>
         </div>
         <div class="q-row2">
-            <div class="qf"><label>买入最低综合分（0-100）</label><input id="fMinScore" type="number" step="1" value="60"></div>
-            <div class="qf"><label>最多持仓只数（1-5）</label><input id="fMaxHold" type="number" min="1" max="5" step="1" value="5"></div>
+            <div class="qf"><label>参考分（0-100，仅供参考，不作为买卖依据）</label><input id="fMinScore" type="number" step="1" value="60">
+                <div class="q-note">只用来看「这只票各项指标加起来大概什么水平」，买卖由下面的分时信号决定。</div></div>
+            <div class="qf"><label>最多持仓只数（1-5）</label><input id="fMaxHold" type="number" min="1" max="5" step="1" value="5">
+                <div class="q-note">默认 5 只，最多也就是 5 只。</div></div>
         </div>
         <div class="q-row2">
-            <div class="qf"><label>单票最大仓位（%）</label><input id="fMaxPct" type="number" step="1" value="20"></div>
-            <div class="qf"><label>决策间隔（秒，≥30）</label><input id="fInterval" type="number" min="30" step="10" value="60"></div>
+            <div class="qf"><label>单票最大仓位（%）</label><input id="fMaxPct" type="number" step="1" value="20">
+                <div class="q-note">默认 20%，五只刚好满仓；单票不会超过总资产的这个比例。</div></div>
+            <div class="qf"><label>决策间隔（秒，≥30）</label><input id="fInterval" type="number" min="30" step="10" value="60">
+                <div class="q-note">默认 60 秒看一次分时信号，越短越灵敏、也越容易被噪音带偏。</div></div>
         </div>
         <div class="q-row2">
-            <div class="qf"><label>止损（%）</label><input id="fStop" type="number" step="0.5" value="5"></div>
-            <div class="qf"><label>止盈（%）</label><input id="fTake" type="number" step="0.5" value="15"></div>
+            <div class="qf"><label>止损（%）</label><input id="fStop" type="number" step="0.5" value="5">
+                <div class="q-note">默认 5%：跌破成本价 5% 就走，不看别的条件。</div></div>
+            <div class="qf"><label>止盈（%）</label><input id="fTake" type="number" step="0.5" value="15">
+                <div class="q-note">默认 15%：涨到成本价 +15% 落袋。</div></div>
         </div>
         <div class="q-row2">
-            <div class="qf"><label>移动止盈回撤（%）</label><input id="fTrail" type="number" step="0.5" value="8"></div>
+            <div class="qf"><label>移动止盈回撤（%）</label><input id="fTrail" type="number" step="0.5" value="8">
+                <div class="q-note">浮盈超过止盈线一半后启用：从最高点回撤这么多就走，默认 8%。</div></div>
             <div class="qf"><label>状态</label>
                 <select id="fEnabled"><option value="true">启用</option><option value="false">停用</option></select>
+                <div class="q-note">停用后不再开新仓，已有持仓保留（不会自动清仓）。</div>
             </div>
         </div>
         <div class="q-sub">买入硬门槛 —— 综合分决定谁排前面，这些决定能不能买</div>
@@ -189,10 +197,17 @@
             <div class="qf"><label>委比 ≥（%）</label><input id="fMinWb" type="number" step="1" value="-10"></div>
         </div>
         <div class="q-row2">
-            <div class="qf"><label>现价偏离均价 ≤（%，防追高）</label><input id="fMaxDev" type="number" step="0.5" min="0" value="3"></div>
+            <div class="qf"><label>委差 ≥（手）</label><input id="fMinWei" type="number" step="100" value="0">
+                <div class="q-note">买五档合计 − 卖五档合计。默认 0 = 买盘不能比卖盘薄；填正数要求明显买盘优势。</div></div>
+            <div class="qf"><label>现价偏离均价 ≤（%）</label><input id="fMaxDev" type="number" step="0.5" min="0" value="3">
+                <div class="q-note">默认 3%：现价比当日均价高出这个数就不追。</div></div>
+        </div>
+        <div class="q-row2">
             <div class="qf"><label>MACD</label>
                 <select id="fMacd"><option value="false">不看</option><option value="true">必须金叉</option></select>
+                <div class="q-note">选「必须金叉」时，MACD 柱线必须在零轴上方才买。</div>
             </div>
+            <div class="qf"></div>
         </div>
         <div class="q-actions" style="justify-content:flex-end;margin-top:16px">
             <button class="btn-ghost" onclick="closeModal()">取消</button>
@@ -373,6 +388,7 @@ async function loadTrades() {
 
 let DAILY_ROWS = [];
 let INTRADAY = [];
+let codesPicker = null;   // 标的池：和盯盘同一个多选组件
 let CHART_IT = null;
 
 /**
@@ -479,14 +495,19 @@ function openCreate() {
     document.getElementById('fRemark').value = '';
     document.getElementById('fCapital').value = '100000';
     document.getElementById('capWrap').style.display = '';
-    document.getElementById('fCodes').value = '';
+    if (!codesPicker) {
+        codesPicker = createStockPicker(document.getElementById('codesPickerBox'), {
+            multiple: true, gridColumns: 3
+        });
+    }
+    codesPicker.setItems([]);
     // 初始持仓只在建账时录：编辑改的是运行参数，不能凭空多出几百股
     document.getElementById('initPosWrap').style.display = '';
     resetInitRows();
     setParams({minScore: 60, maxHoldings: 5, maxPositionPct: 20, decisionIntervalSec: 60,
         stopLossPct: 5, takeProfitPct: 15, trailDrawdownPct: 8, enabled: true,
         minVolumeRatio: 1.0, minMainInflow: 0, minMainInflow5d: 0,
-        minWbRatio: -10, maxDeviationPct: 3, requireMacdGolden: false});
+        minWbRatio: -10, maxDeviationPct: 3, minWeiCha: 0, requireMacdGolden: false});
     document.getElementById('mask').classList.add('show');
 }
 
@@ -499,7 +520,13 @@ function openEdit() {
     document.getElementById('fCapital').value = num(CUR.initCapital);
     document.getElementById('capWrap').style.display = '';
     document.getElementById('initPosWrap').style.display = 'none';
-    document.getElementById('fCodes').value = CUR.watchCodes || '';
+    if (!codesPicker) {
+        codesPicker = createStockPicker(document.getElementById('codesPickerBox'), {
+            multiple: true, gridColumns: 3
+        });
+    }
+    codesPicker.setItems((CUR.watchCodes || '').split(',').filter(Boolean)
+        .map(c => ({code: c.trim(), name: ''})));
     setParams(CUR);
     document.getElementById('mask').classList.add('show');
 }
@@ -597,6 +624,7 @@ function setParams(p) {
     document.getElementById('fMinMain5').value = p.minMainInflow5d == null ? 0 : num(p.minMainInflow5d);
     document.getElementById('fMinWb').value = p.minWbRatio == null ? -10 : num(p.minWbRatio);
     document.getElementById('fMaxDev').value = p.maxDeviationPct == null ? 3 : num(p.maxDeviationPct);
+    document.getElementById('fMinWei').value = p.minWeiCha == null ? 0 : num(p.minWeiCha);
     document.getElementById('fMacd').value = p.requireMacdGolden ? 'true' : 'false';
     document.getElementById('fEnabled').value = String(p.enabled !== false);
 }
@@ -610,7 +638,7 @@ async function saveStrategy() {
         name,
         remark: document.getElementById('fRemark').value.trim(),
         enabled: document.getElementById('fEnabled').value === 'true',
-        codes: document.getElementById('fCodes').value,
+        codes: (codesPicker ? codesPicker.getCodes() : []).join(','),
         params: {
             minScore: num(document.getElementById('fMinScore').value),
             maxHoldings: num(document.getElementById('fMaxHold').value),
@@ -624,6 +652,7 @@ async function saveStrategy() {
             minMainInflow5d: num(document.getElementById('fMinMain5').value),
             minWbRatio: num(document.getElementById('fMinWb').value),
             maxDeviationPct: num(document.getElementById('fMaxDev').value),
+            minWeiCha: num(document.getElementById('fMinWei').value),
             requireMacdGolden: document.getElementById('fMacd').value === 'true'
         }
     };

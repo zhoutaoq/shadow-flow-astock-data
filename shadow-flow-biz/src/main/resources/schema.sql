@@ -276,6 +276,7 @@ CREATE TABLE IF NOT EXISTS shadowflow_quant_strategy (
     require_macd_golden   TINYINT        NOT NULL DEFAULT 0      COMMENT '买入是否要求 MACD 金叉',
     min_wb_ratio          DECIMAL(8, 2)  NOT NULL DEFAULT -10   COMMENT '委比下限(%)',
     max_deviation_pct     DECIMAL(6, 2)  NOT NULL DEFAULT 3      COMMENT '现价偏离均价上限(%)',
+    min_wei_cha           DECIMAL(16, 2) NOT NULL DEFAULT 0      COMMENT '委差下限(手)',
     pending_json          TEXT           NULL                    COMMENT '待生效变更(次日0点合并)',
     create_time           DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time           DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',

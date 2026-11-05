@@ -405,6 +405,7 @@ public class QuantService {
         p.put("requireMacdGolden", s.isRequireMacdGolden());
         p.put("minWbRatio", s.getMinWbRatio());
         p.put("maxDeviationPct", s.getMaxDeviationPct());
+        p.put("minWeiCha", s.getMinWeiCha());
         return p;
     }
 
