@@ -182,6 +182,20 @@
         <div class="q-row2">
             <div class="qf"><label>移动止盈回撤（%）</label><input id="fTrail" type="number" step="0.5" value="8">
                 <div class="q-note">浮盈超过止盈线一半后启用：从最高点回撤这么多就走，默认 8%。</div></div>
+        </div>
+        <div class="q-sub">分时卖出信号 —— 满足任一条就卖，和止损止盈并列</div>
+        <div class="q-row2">
+            <div class="qf"><label>放量滞涨：量能 ≥（倍）</label><input id="fStallSurge" type="number" step="0.1" min="0" value="2.0">
+                <div class="q-note">默认 2 倍。量放到这个程度、价格却没动，通常是在借量出货。</div></div>
+            <div class="qf"><label>放量滞涨：涨幅 ≤（%）</label><input id="fStallMaxPct" type="number" step="0.5" value="1.0">
+                <div class="q-note">默认 1%。涨幅超过这个数说明确实在涨，不算滞涨。</div></div>
+        </div>
+        <div class="q-row2">
+            <div class="qf"><label>委差转负，小于（手）</label><input id="fExitWei" type="number" step="100" value="-500">
+                <div class="q-note">默认 -500 手：卖盘比买盘厚 500 手以上就减仓。填一个很大的负数等于不看。</div></div>
+            <div class="qf"></div>
+        </div>
+        <div class="q-row2">
             <div class="qf"><label>状态</label>
                 <select id="fEnabled"><option value="true">启用</option><option value="false">停用</option></select>
                 <div class="q-note">停用后不再开新仓，已有持仓保留（不会自动清仓）。</div>
