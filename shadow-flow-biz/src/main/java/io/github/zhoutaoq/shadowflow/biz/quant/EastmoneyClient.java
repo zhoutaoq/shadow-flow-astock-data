@@ -238,6 +238,44 @@ public class EastmoneyClient {
         return q;
     }
 
+    /**
+     * 分时量能倍数：这一分钟的量 ÷ 前 N 分钟均量。
+     *
+     * <p>1.0 = 与近期持平；2.0 = 放量一倍。放量才有资金真在推，
+     * 缩量的上涨多半是没人接的假动作 —— 这是「分时放量缩量」这一项的原始值。
+     *
+     * <p>新浪 1 分钟线，取 N+1 根：最后一根算当前，前面 N 根算均量。
+     */
+    public BigDecimal minuteVolumeSurge(String code, int lookback) {
+        String sym = sinaSymbol(code);
+        if (sym.isEmpty() || lookback < 1) {
+            return BigDecimal.ZERO;
+        }
+        String url = "https://quotes.sina.cn/cn/api/openapi.php/CN_MarketDataService.getKLineData"
+                + "?symbol=" + sym + "&scale=1&ma=no&datalen=" + (lookback + 1);
+        try {
+            JsonNode arr = mapper.readTree(doGet(url, StandardCharsets.UTF_8))
+                    .path("result").path("data");
+            if (!arr.isArray() || arr.size() < 2) {
+                return BigDecimal.ZERO;
+            }
+            int n = arr.size();
+            BigDecimal cur = new BigDecimal(arr.get(n - 1).path("volume").asText("0"));
+            BigDecimal sum = BigDecimal.ZERO;
+            for (int i = 0; i < n - 1; i++) {
+                sum = sum.add(new BigDecimal(arr.get(i).path("volume").asText("0")));
+            }
+            BigDecimal avg = sum.divide(BigDecimal.valueOf(n - 1), 4, BigDecimal.ROUND_HALF_UP);
+            if (avg.signum() <= 0) {
+                return BigDecimal.ZERO;
+            }
+            return cur.divide(avg, 2, BigDecimal.ROUND_HALF_UP);
+        } catch (Exception e) {
+            log.debug("[quant] {} 分钟量能获取失败：{}", code, e.getMessage());
+            return BigDecimal.ZERO;
+        }
+    }
+
     /** 6 位代码 → 新浪带市场前缀；5 位港股量化不做，返回空由上层跳过 */
     private String sinaSymbol(String code) {
         if (code == null || code.length() != 6) {

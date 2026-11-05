@@ -406,6 +406,7 @@ public class QuantService {
         p.put("minWbRatio", s.getMinWbRatio());
         p.put("maxDeviationPct", s.getMaxDeviationPct());
         p.put("minWeiCha", s.getMinWeiCha());
+        p.put("minVolSurge", s.getMinVolSurge());
         return p;
     }
 

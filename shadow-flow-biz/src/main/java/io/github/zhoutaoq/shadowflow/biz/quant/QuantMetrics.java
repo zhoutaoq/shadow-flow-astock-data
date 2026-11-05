@@ -73,6 +73,8 @@ public class QuantMetrics {
     private BigDecimal todayJumbo = BigDecimal.ZERO;
 
     private BigDecimal volumeRatio = BigDecimal.ZERO;
+    /** 分时量能倍数：当前分钟 ÷ 前 5 分钟均量，1.0 = 持平 */
+    private BigDecimal volSurge = BigDecimal.ZERO;
     private BigDecimal turnoverRate = BigDecimal.ZERO;
     private BigDecimal amount = BigDecimal.ZERO;
     private BigDecimal avgPrice = BigDecimal.ZERO;
@@ -319,6 +321,14 @@ public class QuantMetrics {
 
     public void setTodayJumbo(BigDecimal todayJumbo) {
         this.todayJumbo = todayJumbo;
+    }
+
+    public BigDecimal getVolSurge() {
+        return volSurge;
+    }
+
+    public void setVolSurge(BigDecimal volSurge) {
+        this.volSurge = volSurge;
     }
 
     public BigDecimal getVolumeRatio() {

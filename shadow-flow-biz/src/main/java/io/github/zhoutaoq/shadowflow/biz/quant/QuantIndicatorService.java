@@ -270,6 +270,8 @@ public class QuantIndicatorService {
 
         /* ---------- L2-① 量能（10%） ---------- */
         m.setVolumeRatio(q.getVolumeRatio());
+        // 分时量能：这一分钟相对前 5 分钟是放量还是缩量
+        m.setVolSurge(em.minuteVolumeSurge(q.getCode(), 5));
         m.setTurnoverRate(q.getTurnoverRate());
         m.setAmount(q.getAmount());
         m.setVolumeScore(scoreVolume(q.getVolumeRatio(), q.getTurnoverRate(), tech.bars));

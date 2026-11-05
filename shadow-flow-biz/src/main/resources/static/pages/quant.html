@@ -199,15 +199,16 @@
         <div class="q-row2">
             <div class="qf"><label>委差 ≥（手）</label><input id="fMinWei" type="number" step="100" value="0">
                 <div class="q-note">买五档合计 − 卖五档合计。默认 0 = 买盘不能比卖盘薄；填正数要求明显买盘优势。</div></div>
-            <div class="qf"><label>现价偏离均价 ≤（%）</label><input id="fMaxDev" type="number" step="0.5" min="0" value="3">
-                <div class="q-note">默认 3%：现价比当日均价高出这个数就不追。</div></div>
+            <div class="qf"><label>分时放量 ≥（倍）</label><input id="fMinSurge" type="number" step="0.1" min="0" value="1.2">
+                <div class="q-note">当前分钟量 ÷ 前 5 分钟均量。默认 1.2 = 至少放量 20%，缩量的上涨不买。</div></div>
         </div>
         <div class="q-row2">
+            <div class="qf"><label>现价偏离均价 ≤（%）</label><input id="fMaxDev" type="number" step="0.5" min="0" value="3">
+                <div class="q-note">默认 3%：现价比当日均价高出这个数就不追。</div></div>
             <div class="qf"><label>MACD</label>
                 <select id="fMacd"><option value="false">不看</option><option value="true">必须金叉</option></select>
                 <div class="q-note">选「必须金叉」时，MACD 柱线必须在零轴上方才买。</div>
             </div>
-            <div class="qf"></div>
         </div>
         <div class="q-actions" style="justify-content:flex-end;margin-top:16px">
             <button class="btn-ghost" onclick="closeModal()">取消</button>
@@ -507,7 +508,7 @@ function openCreate() {
     setParams({minScore: 60, maxHoldings: 5, maxPositionPct: 20, decisionIntervalSec: 60,
         stopLossPct: 5, takeProfitPct: 15, trailDrawdownPct: 8, enabled: true,
         minVolumeRatio: 1.0, minMainInflow: 0, minMainInflow5d: 0,
-        minWbRatio: -10, maxDeviationPct: 3, minWeiCha: 0, requireMacdGolden: false});
+        minWbRatio: -10, maxDeviationPct: 3, minWeiCha: 0, minVolSurge: 1.2, requireMacdGolden: false});
     document.getElementById('mask').classList.add('show');
 }
 
@@ -625,6 +626,7 @@ function setParams(p) {
     document.getElementById('fMinWb').value = p.minWbRatio == null ? -10 : num(p.minWbRatio);
     document.getElementById('fMaxDev').value = p.maxDeviationPct == null ? 3 : num(p.maxDeviationPct);
     document.getElementById('fMinWei').value = p.minWeiCha == null ? 0 : num(p.minWeiCha);
+    document.getElementById('fMinSurge').value = p.minVolSurge == null ? 1.2 : num(p.minVolSurge);
     document.getElementById('fMacd').value = p.requireMacdGolden ? 'true' : 'false';
     document.getElementById('fEnabled').value = String(p.enabled !== false);
 }
@@ -653,6 +655,7 @@ async function saveStrategy() {
             minWbRatio: num(document.getElementById('fMinWb').value),
             maxDeviationPct: num(document.getElementById('fMaxDev').value),
             minWeiCha: num(document.getElementById('fMinWei').value),
+            minVolSurge: num(document.getElementById('fMinSurge').value),
             requireMacdGolden: document.getElementById('fMacd').value === 'true'
         }
     };

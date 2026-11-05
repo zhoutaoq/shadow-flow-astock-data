@@ -78,6 +78,12 @@ public class QuantStrategy {
      * 用「手」而不是「股」，因为盘口挂单习惯按手看（1 手 = 100 股）。
      */
     private BigDecimal minWeiCha = BigDecimal.ZERO;
+    /**
+     * 分时放量倍数下限：当前分钟量 ÷ 前 5 分钟均量。
+     *
+     * <p>默认 1.2 = 至少看到 20% 的放量；填 1 或 0 等于不看。
+     */
+    private BigDecimal minVolSurge = BigDecimal.valueOf(1.2);
 
     /* ==================== 待生效 ==================== */
 
@@ -242,6 +248,14 @@ public class QuantStrategy {
 
     public void setMinWbRatio(BigDecimal minWbRatio) {
         this.minWbRatio = minWbRatio;
+    }
+
+    public BigDecimal getMinVolSurge() {
+        return minVolSurge;
+    }
+
+    public void setMinVolSurge(BigDecimal minVolSurge) {
+        this.minVolSurge = minVolSurge;
     }
 
     public BigDecimal getMinWeiCha() {

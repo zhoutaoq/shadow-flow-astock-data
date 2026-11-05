@@ -346,6 +346,13 @@ public class QuantDecisionService {
         if (minWb != null && m.getWbRatio() != null && m.getWbRatio().compareTo(minWb) < 0) {
             return "委比 " + m.getWbRatio().toPlainString() + "% < " + minWb.toPlainString() + "%";
         }
+        BigDecimal minSurge = s.getMinVolSurge();
+        if (minSurge != null && minSurge.compareTo(BigDecimal.ONE) > 0) {
+            BigDecimal surge = nz(m.getVolSurge());
+            if (surge.signum() > 0 && surge.compareTo(minSurge) < 0) {
+                return "分时量能 " + surge.toPlainString() + " 倍 < " + minSurge.toPlainString() + " 倍";
+            }
+        }
         BigDecimal minWei = s.getMinWeiCha();
         if (minWei != null) {
             // 股 → 手，盘口习惯按手看
