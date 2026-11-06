@@ -766,6 +766,11 @@ a.acct-hold-item.acct-more:hover { background: var(--bg-tint); }
     height: 264px;
 }
 
+.aprofit-tree {
+    width: 100%;
+    height: 320px;
+}
+
 .atrend-empty {
     display: flex;
     align-items: center;
