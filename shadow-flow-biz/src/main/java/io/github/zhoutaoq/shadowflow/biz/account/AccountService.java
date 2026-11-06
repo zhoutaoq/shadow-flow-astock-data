@@ -1310,7 +1310,12 @@ public class AccountService {
     /** 行情快照的日期（yyyy-MM-dd）；取不到返回空串 */
     private static String quoteDayOf(Quote q) {
         String t = q == null ? null : q.getTimeText();
-        return t != null && t.length() >= 10 ? t.substring(0, 10) : "";
+        if (t == null || t.length() < 10) {
+            return "";
+        }
+        // 港股快照的日期是 yyyy/MM/dd（新浪 hk 接口给的是 2026/11/05），A 股是 yyyy-MM-dd。
+        // 不归一化的话，港股的「今天」永远对不上 liveToday，当日盈亏会被一直算成 0。
+        return t.substring(0, 10).replace('/', '-');
     }
 
     /**

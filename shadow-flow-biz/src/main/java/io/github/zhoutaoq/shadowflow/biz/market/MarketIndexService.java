@@ -18,8 +18,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 大盘指数行情：一次请求取回首页顶部的几个主要指数。
@@ -119,6 +122,46 @@ public class MarketIndexService {
             {"100.KS11", "韩国综指"},
     };
 
+    /**
+     * 腾讯全球指数：{腾讯代码, 页面展示名}。
+     *
+     * <p>只放腾讯确实提供的两个：{@code usINX} 是标普 500（不是 usSPX），{@code usIXIC} 是纳指。
+     * 费半/日经/韩国综指在腾讯没有对应代码（实测 usSOX / jpN225 / krKS11 都返回空），
+     * 那三个仍由东财补，线上拿不到就少几行，但不影响标普纳指这两条。
+     */
+    private static final String[][] TENCENT_OVERSEAS = {
+            {"usINX", "标普500指数"},
+            {"usIXIC", "纳斯达克指数"},
+    };
+
+    private static final String TENCENT_URL = "https://qt.gtimg.cn/q=";
+    private static final String TENCENT_REFERER = "https://finance.qq.com";
+
+    /**
+     * 百度股市通全球指数：{代码, 市场, 展示名}。
+     *
+     * <p>五个全齐，且数值与东财同一时刻一致（实测 SOX 10268.65 / NK225 61077.90 /
+     * SPX 7688.62 / IXIC 25736.51 / KOSPI 5383.80）。腾讯缺日经和韩国，东财在线上被整片拒绝，
+     * 所以百度做主源、另两家兜底。
+     *
+     * <p>接口是单只查询，不能批量：五个请求串起来约 0.5 秒，外层有 2 秒缓存挡着，代价可接受。
+     */
+    private static final String[][] BAIDU_OVERSEAS = {
+            {"SPX", "us", "标普500指数"},
+            {"IXIC", "us", "纳斯达克指数"},
+            {"SOX", "us", "费城半导体指数"},
+            {"NK225", "jp", "日经225"},
+            {"KOSPI", "kr", "韩国综指"},
+    };
+    private static final String BAIDU_URL = "https://finance.pae.baidu.com/vapi/v1/getquotation"
+            + "?srcid=5353&pointType=string&group=quotation_index_minute&newFormat=1";
+    private static final String BAIDU_REFERER = "https://finance.baidu.com/";
+
+    private static final Pattern BAIDU_PRICE = Pattern.compile("\"price\":\"([0-9.]+)\"");
+    private static final Pattern BAIDU_RATIO = Pattern.compile("\"ratio\":\"(-?[0-9.]+)\"");
+    private static final Pattern BAIDU_PRECLOSE =
+            Pattern.compile("\"name\":\"昨收\",\"value\":\"([0-9.]+)\"");
+
     private final ObjectMapper mapper = new ObjectMapper();
 
     /**
@@ -147,7 +190,44 @@ public class MarketIndexService {
             m.setMarket("global");
             out.add(m);
         }
+        for (MarketIndex m : out) {
+            fillDerived(m);
+        }
         return out;
+    }
+
+    /**
+     * 上游没给的那一项，用另外两项推出来。
+     *
+     * <p>海外指数有四个源（东财 / 腾讯 / 百度 / 新浪），各自缺的字段不一样 ——
+     * 实测腾讯给全了三项，但线上走的另一条只给了点位和涨跌额，涨跌幅是空的，
+     * 首页那一格就成了空白。既然「涨跌幅 = 涨跌额 ÷ 昨收」「昨收 = 点位 − 涨跌额」，
+     * 有点位和涨跌额就一定能算出涨跌幅，不该因为某个源少一列就整格空着。
+     */
+    private void fillDerived(MarketIndex m) {
+        BigDecimal point = m.getPoint();
+        if (point == null || point.signum() <= 0) {
+            return;
+        }
+        BigDecimal change = m.getChange();
+        BigDecimal pct = m.getChangePercent();
+        BigDecimal hundred = BigDecimal.valueOf(100);
+
+        if (change == null && pct != null) {
+            BigDecimal factor = BigDecimal.ONE.add(pct.divide(hundred, 6, BigDecimal.ROUND_HALF_UP));
+            if (factor.signum() > 0) {
+                BigDecimal pre = point.divide(factor, 6, BigDecimal.ROUND_HALF_UP);
+                m.setChange(point.subtract(pre).setScale(4, BigDecimal.ROUND_HALF_UP));
+            }
+            return;
+        }
+        if (pct == null && change != null) {
+            BigDecimal pre = point.subtract(change);
+            if (pre.signum() > 0) {
+                m.setChangePercent(change.multiply(hundred)
+                        .divide(pre, 2, BigDecimal.ROUND_HALF_UP));
+            }
+        }
     }
 
     private List<MarketIndex> domestic() {
@@ -206,6 +286,72 @@ public class MarketIndexService {
     }
 
     private List<MarketIndex> fetchOverseas() {
+        // 三级合并，按展示名去重（三家返回的 code 各不一样，名字是我们自己定的，稳定）：
+        // 百度五个全有 → 腾讯补标普/纳指 → 东财补剩下的（线上基本拿不到，留作本机与将来兜底）
+        Map<String, MarketIndex> merged = new LinkedHashMap<>();
+        for (MarketIndex mi : fetchOverseasFromBaidu()) {
+            merged.put(mi.getName(), mi);
+        }
+        for (MarketIndex mi : fetchOverseasFromTencent()) {
+            merged.putIfAbsent(mi.getName(), mi);
+        }
+        for (MarketIndex mi : fetchOverseasFromEastmoney()) {
+            merged.putIfAbsent(mi.getName(), mi);
+        }
+        return new ArrayList<>(merged.values());
+    }
+
+    /** 百度股市通：单只查询，五个指数逐个取；任一失败只跳过它自己 */
+    private List<MarketIndex> fetchOverseasFromBaidu() {
+        List<MarketIndex> out = new ArrayList<>();
+        for (String[] item : BAIDU_OVERSEAS) {
+            String url = BAIDU_URL + "&query=" + item[0] + "&code=" + item[0] + "&market_type=" + item[1];
+            try {
+                String body = doGet(url, BAIDU_REFERER, StandardCharsets.UTF_8);
+                MarketIndex mi = parseBaidu(body, item[0], item[2]);
+                if (mi != null) {
+                    out.add(mi);
+                }
+            } catch (IOException e) {
+                log.debug("[market] 百度 {} 取数失败：{}", item[0], e.getMessage());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 解析百度单只指数：{@code "price":"7688.62"}、{@code "ratio":"1.58"}、
+     * 昨收在 kv 列表里（{@code "name":"昨收","value":"..."}），涨跌额用它反算。
+     */
+    private MarketIndex parseBaidu(String body, String code, String displayName) {
+        if (body == null || body.isEmpty()) {
+            return null;
+        }
+        BigDecimal price = match(BAIDU_PRICE, body);
+        if (price == null || price.signum() <= 0) {
+            return null;
+        }
+        BigDecimal pct = match(BAIDU_RATIO, body);
+        BigDecimal preClose = match(BAIDU_PRECLOSE, body);
+        BigDecimal change = preClose != null && preClose.signum() > 0
+                ? price.subtract(preClose) : null;
+        return new MarketIndex(code, displayName, price, change, pct, null);
+    }
+
+    private static BigDecimal match(Pattern p, String body) {
+        Matcher m = p.matcher(body);
+        if (!m.find()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(m.group(1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** 东财那一路：多宿主轮询，全失败按分钟节流报一条 WARN */
+    private List<MarketIndex> fetchOverseasFromEastmoney() {
         StringBuilder secids = new StringBuilder();
         for (String[] item : OVERSEAS) {
             if (secids.length() > 0) {
@@ -241,6 +387,66 @@ public class MarketIndexService {
             warnThrottled(false, lastUrl, System.currentTimeMillis() - begin, lastError);
         }
         return Collections.emptyList();
+    }
+
+    /**
+     * 腾讯全球指数：一行形如 {@code v_usIXIC="200~纳斯达克~.IXIC~25736.51~25372.01~25652.78~..."}。
+     *
+     * <p>字段用 {@code ~} 分隔：1 名称、3 现价、4 昨收、31 涨跌额、32 涨跌幅。
+     * 与东财同一时刻数值一致，作为线上主源；取不到再回落到东财。
+     */
+    private List<MarketIndex> fetchOverseasFromTencent() {
+        List<MarketIndex> out = new ArrayList<>();
+        StringBuilder q = new StringBuilder();
+        for (String[] item : TENCENT_OVERSEAS) {
+            if (q.length() > 0) {
+                q.append(',');
+            }
+            q.append(item[0]);
+        }
+        String body;
+        try {
+            body = doGet(TENCENT_URL + q, TENCENT_REFERER, Charset.forName("GBK"));
+        } catch (IOException e) {
+            log.debug("[market] 腾讯海外指数取数失败：{}", e.getMessage());
+            return out;
+        }
+        Map<String, MarketIndex> parsed = new HashMap<>();
+        for (String line : body.split(";")) {
+            MarketIndex mi = parseTencentLine(line);
+            if (mi != null) {
+                parsed.put(mi.getCode(), mi);
+            }
+        }
+        for (String[] item : TENCENT_OVERSEAS) {
+            MarketIndex mi = parsed.get(item[0]);
+            if (mi != null) {
+                mi.setName(item[1]);
+                out.add(mi);
+            }
+        }
+        return out;
+    }
+
+    /** 一行腾讯指数的解析；代码取 {@code v_xxx=} 里的 xxx，保证与 TENCENT_OVERSEAS 对得上 */
+    private MarketIndex parseTencentLine(String line) {
+        int varAt = line.indexOf("v_");
+        int eq = line.indexOf('=');
+        int begin = line.indexOf('"');
+        int end = line.lastIndexOf('"');
+        if (varAt < 0 || eq <= varAt || begin < 0 || end <= begin) {
+            return null;
+        }
+        String key = line.substring(varAt + 2, eq).trim();
+        String[] f = line.substring(begin + 1, end).split("~");
+        if (f.length < 33) {
+            return null;
+        }
+        BigDecimal point = decimal(f[3]);
+        if (point == null || point.signum() <= 0) {
+            return null;
+        }
+        return new MarketIndex(key, f[1], point, decimal(f[31]), decimal(f[32]), null);
     }
 
     /**

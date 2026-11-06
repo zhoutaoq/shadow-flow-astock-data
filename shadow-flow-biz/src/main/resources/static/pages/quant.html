@@ -79,8 +79,8 @@
 
     <section class="q-panel" id="gatePanel" style="display:none">
         <h3>量化模拟炒股</h3>
-        <p class="q-note">这是一个模拟账户：按公开行情指标自动决策买卖，不涉及真实资金。</p>
-        <div class="q-actions" style="margin-top:12px">
+        <p class="q-note" id="gateNote">这是一个模拟账户：按公开行情指标自动决策买卖，不涉及真实资金。</p>
+        <div class="q-actions" style="margin-top:12px" id="gateActions">
             <button onclick="openAuthModal({onSuccess: reload})">去登录</button>
         </div>
     </section>
@@ -243,12 +243,24 @@ let TABS = {pos: null, trade: null, daily: null, month: null};
 
 /* ==================== 初始化 ==================== */
 
+/** 未登录 / 非超管时统一走这里：显示提示，藏掉功能入口 */
+function showGate(text, showLogin) {
+    document.getElementById('gatePanel').style.display = '';
+    document.getElementById('listPanel').style.display = 'none';
+    document.getElementById('gateNote').textContent = text;
+    document.getElementById('gateActions').style.display = showLogin ? '' : 'none';
+}
+
 (async function boot() {
     await loadMe();
     renderNav();
     if (!isLogin()) {
-        document.getElementById('gatePanel').style.display = '';
-        document.getElementById('listPanel').style.display = 'none';
+        showGate('登录后才能使用量化策略。', true);
+        return;
+    }
+    // 菜单已经按超管隐藏，这里再拦一次：直接敲 URL 也不让进
+    if (!isAdmin()) {
+        showGate('量化策略仅对超管开放。', false);
         return;
     }
     document.getElementById('gatePanel').style.display = 'none';

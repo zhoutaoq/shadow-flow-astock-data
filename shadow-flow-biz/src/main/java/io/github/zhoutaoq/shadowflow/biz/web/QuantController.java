@@ -158,10 +158,19 @@ public class QuantController {
 
     /* ==================== 工具 ==================== */
 
+    /**
+     * 量化策略只对超管开放。
+     *
+     * <p>菜单隐藏只是展示层，直接敲 URL 照样能进来 —— 所以每个接口都在这里卡一道，
+     * 普通用户连列表都拉不到。
+     */
     private static long requireUserId() {
         long userId = AuthContext.currentUserId();
         if (userId <= 0) {
             throw new IllegalArgumentException("请先登录");
+        }
+        if (!AuthContext.isAdmin()) {
+            throw new IllegalArgumentException("量化策略仅对超管开放");
         }
         return userId;
     }
