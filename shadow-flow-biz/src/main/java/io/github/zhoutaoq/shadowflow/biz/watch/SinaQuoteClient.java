@@ -133,7 +133,8 @@ public class SinaQuoteClient {
     /**
      * 腾讯港股：{@code v_hk09988="100~阿里巴巴-W~09988~104.700~109.100~105.000~...~时间~涨跌额~涨跌幅~最高~最低"}。
      *
-     * <p>与 A 股那套完全不同的字段位：现价在 3、昨收在 4、最高 34、最低 35、时间 31。
+     * <p>与 A 股那套完全不同的字段位：现价 3、昨收 4、时间 30、涨跌额 31、涨跌幅 32、
+     * 最高 33、最低 34。实测漏了一位——按 34/35 取会把最高当最低、时间当涨跌额。
      */
     private Quote fetchHkFromTencent(WatchTarget target) {
         String url = "https://qt.gtimg.cn/q=hk" + target.getCode();
@@ -165,8 +166,8 @@ public class SinaQuoteClient {
         }
         String name = f[1] == null || f[1].trim().isEmpty() ? target.getName() : f[1].trim();
         return new Quote(target.getCode(), name, price, preClose,
-                decimal(f[34]), decimal(f[35]), BigDecimal.ZERO, BigDecimal.ZERO,
-                System.currentTimeMillis(), f[31] == null ? "" : f[31].trim(), fromPreClose);
+                decimal(f[33]), decimal(f[34]), BigDecimal.ZERO, BigDecimal.ZERO,
+                System.currentTimeMillis(), f[30] == null ? "" : f[30].trim(), fromPreClose);
     }
 
     private Quote fetchFromSina(WatchTarget target) {
