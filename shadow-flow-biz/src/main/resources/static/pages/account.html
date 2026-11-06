@@ -645,6 +645,13 @@
      * <p>加仓按加权平均摊薄后，`51.00` 变成 `47.67`，光看新数字会忘了自己原来是 51 买的。
      * 显示成 `47.67（51.00）`，括号里是加仓前那一次的持仓成本。
      */
+    /** 总盈亏：有已实现部分就括起来，免得把卖掉的盈亏当成还在浮动 */
+    function realizedTag(p) {
+        const r = Number(p && p.realizedProfit);
+        if (!r) return '';
+        return ' <small class="adim">（已实现 ' + moneySigned(r) + '）</small>';
+    }
+
     function costWithPrev(p) {
         const now = money(p.costPrice);
         const prev = Number(p && p.prevCostPrice);
@@ -722,7 +729,7 @@
                 + '<td class="' + dayDir + '">' + moneySigned(p.dayProfit)
                 + '<br><small>' + (p.dayProfitPercent == null ? '—' : pctSigned(p.dayProfitPercent)) + '</small>'
                 + '<br><small class="adim">基准 ' + esc(p.dayBasis || '—') + '</small></td>'
-                + '<td class="' + totDir + '">' + moneySigned(p.totalProfit)
+                + '<td class="' + totDir + '">' + moneySigned(p.totalProfit) + realizedTag(p)
                 + '<br><small>' + pctSigned(p.totalProfitPercent) + '</small></td>'
                 + '<td class="ops"><span class="arow-act">'
                 + '<button class="btn-ghost btn-sm" onclick="openPositionModal(' + p.id + ')">改</button>'

@@ -20,6 +20,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -227,6 +228,9 @@ public class AccountService {
 
         for (Account a : accounts) {
             List<Position> positions = byAccount.getOrDefault(a.getId(), new ArrayList<>());
+            // 老数据没有 prevCostPrice（字段 v1.9.18 才加），从操作记录反推一遍；
+            // 顺手把每只票的已实现盈亏算出来，页面要在总盈亏后面加括号
+            fillCostHistory(positions, repository.listRecords(a.getUserId(), a.getId()));
             Calc c = calc(positions, quotes, today);
             BigDecimal realized = dayRealizedOf(a, today);
             BigDecimal dayProfit = c.dayProfit.add(realized);
@@ -903,6 +907,8 @@ public class AccountService {
         Account acct = getAccountRequired(userId, resolveAccountId(userId, accountId));
         String today = todayYmd();
         List<Position> positions = repository.listPositions(userId, acct.getId());
+        // 单账户详情也要反推「加仓前成本」和已实现盈亏，否则页面上的括号永远出不来
+        fillCostHistory(positions, repository.listRecords(userId, acct.getId()));
         Map<String, Quote> quotes = fetchQuotes(wantedOf(positions));
         Calc c = calc(positions, quotes, today);
         // v1.6.9：未开盘当日收益一律 0 —— 当日已实现也一样，今天还没成交过就不能算「当日」
@@ -1048,6 +1054,9 @@ public class AccountService {
 
         for (Account a : accounts) {
             List<Position> positions = byAccount.getOrDefault(a.getId(), new ArrayList<>());
+            // 老数据没有 prevCostPrice（字段 v1.9.18 才加），从操作记录反推一遍；
+            // 顺手把每只票的已实现盈亏算出来，页面要在总盈亏后面加括号
+            fillCostHistory(positions, repository.listRecords(a.getUserId(), a.getId()));
             Calc c = calc(positions, quotes, today);
             for (AccountSummary.PositionView v : c.views) {
                 v.setAccountId(a.getId());
@@ -1136,6 +1145,56 @@ public class AccountService {
      * （见 {@link #liveToday}，v1.6.9）：未开盘时基准价可能是成本价（建仓日 = 今天）或当日买入均价，
      * 与回落出来的昨收价一减就是一笔假的当日收益 —— 「还没开盘怎么就有当日收益了」说的就是这个。
      */
+    /**
+     * 从操作记录补齐「加仓前成本」和「已实现盈亏」。
+     *
+     * <p>{@code prevCostPrice} 是 v1.9.18 才有的字段，之前的加仓没有落值 ——
+     * 不反推的话，老持仓永远显示不出 {@code 47.67（51.00）} 那个括号。
+     *
+     * <p>按时间正序重放一遍：每次买入前记下当时的持仓成本（后面的覆盖前面的，
+     * 最终就是最近一次加仓前的成本）；卖出时把记录里的已实现盈亏累加。
+     */
+    private void fillCostHistory(List<Position> positions, List<TradeRecord> records) {
+        if (positions == null || positions.isEmpty() || records == null || records.isEmpty()) {
+            return;
+        }
+        List<TradeRecord> sorted = new ArrayList<>(records);
+        sorted.sort(Comparator.comparing((TradeRecord r) ->
+                (r.getTradeDate() == null ? "" : r.getTradeDate())
+                        + " " + (r.getTime() == null ? "" : r.getTime())));
+        for (Position p : positions) {
+            BigDecimal prev = null;
+            int qty = 0;
+            BigDecimal cost = BigDecimal.ZERO;
+            BigDecimal realized = BigDecimal.ZERO;
+            for (TradeRecord r : sorted) {
+                if (!p.getCode().equals(r.getCode())) {
+                    continue;
+                }
+                int q = r.getQuantity();
+                if (q <= 0) {
+                    continue;
+                }
+                if ("buy".equals(r.getAction())) {
+                    if (qty > 0) {
+                        prev = cost;
+                    }
+                    cost = cost.multiply(BigDecimal.valueOf(qty))
+                            .add(nz(r.getPrice()).multiply(BigDecimal.valueOf(q)))
+                            .divide(BigDecimal.valueOf(qty + q), MONEY_SCALE + 2, RoundingMode.HALF_UP);
+                    qty += q;
+                } else if ("sell".equals(r.getAction())) {
+                    qty = Math.max(0, qty - q);
+                    realized = realized.add(nz(r.getRealizedProfit()));
+                }
+            }
+            if (prev != null && p.getPrevCostPrice() == null) {
+                p.setPrevCostPrice(prev.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+            }
+            p.setRealizedProfit(realized.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+        }
+    }
+
     private Calc calc(List<Position> positions, Map<String, Quote> quotes, String today) {
         Calc c = new Calc();
         for (Position p : positions) {
@@ -1146,6 +1205,7 @@ public class AccountService {
             v.setName(p.getName());
             v.setCostPrice(p.getCostPrice());
             v.setPrevCostPrice(p.getPrevCostPrice());
+            v.setRealizedProfit(p.getRealizedProfit());
             v.setQuantity(p.getQuantity());
             // 可用数量按折算后的值下发（老数据没设过 = 全部可用），页面不必再判空
             v.setAvailableQty(usableQty(p));

@@ -42,6 +42,10 @@ public class Position {
      * 页面显示成 {@code 47.67（51.00）}，括号里那个就是它。
      */
     private BigDecimal prevCostPrice;
+
+    /** 这只标的的累计已实现盈亏：运行时按记录算出来，不落盘 */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private BigDecimal realizedProfit;
     /** 持仓数量（股） */
     private int quantity;
     /**
@@ -126,6 +130,14 @@ public class Position {
 
     public void setPrevCostPrice(BigDecimal prevCostPrice) {
         this.prevCostPrice = prevCostPrice;
+    }
+
+    public BigDecimal getRealizedProfit() {
+        return realizedProfit;
+    }
+
+    public void setRealizedProfit(BigDecimal realizedProfit) {
+        this.realizedProfit = realizedProfit;
     }
 
     public int getQuantity() {
