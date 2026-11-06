@@ -869,6 +869,19 @@
         return ' <small class="' + dir(pct) + '">（' + pctSigned(pct) + '）</small>';
     }
 
+    /**
+     * 港股行情时间：免费源延迟约 15 分钟，标出来。
+     *
+     * <p>不标看起来就像「系统不刷新」，实际是港交所免费行情本身延迟，我们每 3 秒拉一次
+     * 拿到的还是 15 分钟前那个价。A 股实时，不占这行。
+     */
+    function quoteTimeTag(p) {
+        if (String((p && p.code) || '').length !== 5) return '';
+        const mm = String((p && p.quoteTime) || '').match(/(\d{2}:\d{2})/);
+        if (!mm) return '';
+        return '<br><small class="adim">行情 ' + mm[1] + '（延迟约 15 分钟）</small>';
+    }
+
     function renderPositions(rows) {
         const body = document.getElementById('posBody');
         if (!rows.length) {
@@ -888,7 +901,7 @@
                 + '</td>'
                 + '<td class="adim">' + (p.openDate ? esc(p.openDate) : '—') + '</td>'
                 + '<td>' + money(p.costPrice) + '</td>'
-                + '<td>' + money(p.price) + dayChangeTag(p) + '</td>'
+                + '<td>' + money(p.price) + dayChangeTag(p) + quoteTimeTag(p) + '</td>'
                 + '<td>' + fmtNum(p.quantity, 0) + '</td>'
                 + '<td>' + fmtNum(usableQty(p), 0) + '</td>'
                 + '<td>' + money(p.costValue) + '</td>'
