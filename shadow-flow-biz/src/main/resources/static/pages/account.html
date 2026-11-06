@@ -656,6 +656,8 @@
         const now = money(p.costPrice);
         const prev = Number(p && p.prevCostPrice);
         if (!(prev > 0)) return now;
+        // 上一次和这一次成本一样时不必重复一遍
+        if (Math.abs(prev - Number(p.costPrice)) < 0.005) return now;
         return now + ' <small class="adim">（' + money(prev) + '）</small>';
     }
 

@@ -1165,6 +1165,7 @@ public class AccountService {
         for (Position p : positions) {
             BigDecimal prev = null;
             int qty = 0;
+            boolean seenBuy = false;
             BigDecimal cost = BigDecimal.ZERO;
             BigDecimal realized = BigDecimal.ZERO;
             for (TradeRecord r : sorted) {
@@ -1176,9 +1177,12 @@ public class AccountService {
                     continue;
                 }
                 if ("buy".equals(r.getAction())) {
-                    if (qty > 0) {
+                    // 清仓后再买也算「上一次的成本」—— 用户要看的是「我上一轮是什么价进的」，
+                    // 不要求中间一直拿着（亨通光电就是卖掉后又买回来的）
+                    if (seenBuy) {
                         prev = cost;
                     }
+                    seenBuy = true;
                     cost = cost.multiply(BigDecimal.valueOf(qty))
                             .add(nz(r.getPrice()).multiply(BigDecimal.valueOf(q)))
                             .divide(BigDecimal.valueOf(qty + q), MONEY_SCALE + 2, RoundingMode.HALF_UP);
