@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS shadowflow_position (
     stock_code     VARCHAR(16)    NOT NULL                COMMENT '标的代码',
     stock_name     VARCHAR(128)   NOT NULL DEFAULT ''     COMMENT '标的名称',
     cost_price     DECIMAL(20, 4) NOT NULL DEFAULT 0      COMMENT '成本价（元），加仓按加权平均重算',
+    prev_cost_price DECIMAL(20, 4) NULL                    COMMENT '加仓前的成本价（仅加过仓时有值）',
     quantity       INT            NOT NULL DEFAULT 0      COMMENT '持仓数量（股）',
     available_qty  INT            NULL                    COMMENT '可用数量（股）：能卖出的部分；NULL = 全部可用',
     open_date      VARCHAR(10)    NULL                    COMMENT '建仓日 yyyy-MM-dd（非必填）',

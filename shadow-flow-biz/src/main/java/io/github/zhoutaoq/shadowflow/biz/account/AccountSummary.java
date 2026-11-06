@@ -116,6 +116,8 @@ public class AccountSummary {
         /** 是否拿到了实时行情（取不到时页面要提示"现价以成本价兜底"） */
         private boolean quoted;
         /** 行情时间文本，如 2026-09-15 15:00:00 */
+        /** 加仓前的成本价；没加过仓为 null */
+        private BigDecimal prevCostPrice;
         private String quoteTime;
         /**
          * 现价口径（v1.6.7）：{@code 现价} / {@code 昨收} / {@code 最近价} / {@code 成本价}。
@@ -303,6 +305,14 @@ public class AccountSummary {
 
         public String getQuoteTime() {
             return quoteTime;
+        }
+
+        public BigDecimal getPrevCostPrice() {
+            return prevCostPrice;
+        }
+
+        public void setPrevCostPrice(BigDecimal prevCostPrice) {
+            this.prevCostPrice = prevCostPrice;
         }
 
         public void setQuoteTime(String quoteTime) {

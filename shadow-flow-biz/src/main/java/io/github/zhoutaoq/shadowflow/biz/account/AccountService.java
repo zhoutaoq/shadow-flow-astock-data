@@ -720,6 +720,8 @@ public class AccountService {
                 // 加仓：成本价按「老成本市值 + 本次成交额」加权平均重算，
                 // 这样买入那一刻账户总市值不变，不会凭空多出一段盈亏
                 int newQty = hit.getQuantity() + qty;
+                // 摊薄前先把原成本留一份，页面要显示「47.67（51.00）」这种
+                hit.setPrevCostPrice(nz(hit.getCostPrice()));
                 BigDecimal oldValue = nz(hit.getCostPrice()).multiply(BigDecimal.valueOf(hit.getQuantity()));
                 BigDecimal newCost = oldValue.add(turnover)
                         .divide(BigDecimal.valueOf(newQty), MONEY_SCALE + 2, RoundingMode.HALF_UP);
@@ -1143,6 +1145,7 @@ public class AccountService {
             v.setCode(p.getCode());
             v.setName(p.getName());
             v.setCostPrice(p.getCostPrice());
+            v.setPrevCostPrice(p.getPrevCostPrice());
             v.setQuantity(p.getQuantity());
             // 可用数量按折算后的值下发（老数据没设过 = 全部可用），页面不必再判空
             v.setAvailableQty(usableQty(p));

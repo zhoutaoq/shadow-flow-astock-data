@@ -35,6 +35,11 @@ public class SinaQuoteClient {
     /** 累计成交额（元），与上一轮差值即"拉升成交额" */
     private static final int F_AMOUNT = 9;
 
+    /** 港股行情 30 秒缓存：免费源本身延迟 15 分钟，取再勤也拿不到新价 */
+    private static final long HK_TTL_MS = 30_000L;
+    private final java.util.Map<String, Quote> hkCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, Long> hkAt = new java.util.concurrent.ConcurrentHashMap<>();
+
     private final WatchProperties props;
 
     public SinaQuoteClient(WatchProperties props) {
@@ -93,6 +98,78 @@ public class SinaQuoteClient {
         if (target == null) {
             return null;
         }
+        if (target.isHk()) {
+            return fetchHongKong(target);
+        }
+        return fetchFromSina(target);
+    }
+
+    /**
+     * 港股取价：先腾讯，失败回新浪。
+     *
+     * <p>港交所免费行情延迟约 15 分钟，两条源都躲不掉；实测同一时刻腾讯比新浪新 8 分钟
+     * （14:50 对 14:42），所以优先腾讯。30 秒缓存 —— 免费源 15 分钟才动一次，
+     * 取再勤也是同一个价，反而容易被限流。
+     */
+    private Quote fetchHongKong(WatchTarget target) {
+        String sym = target.getSymbol();
+        long now = System.currentTimeMillis();
+        Quote hit = hkCache.get(sym);
+        Long at = hkAt.get(sym);
+        if (hit != null && at != null && now - at < HK_TTL_MS) {
+            return hit;
+        }
+        Quote q = fetchHkFromTencent(target);
+        if (q == null) {
+            q = fetchFromSina(target);
+        }
+        if (q != null) {
+            hkCache.put(sym, q);
+            hkAt.put(sym, now);
+        }
+        return q;
+    }
+
+    /**
+     * 腾讯港股：{@code v_hk09988="100~阿里巴巴-W~09988~104.700~109.100~105.000~...~时间~涨跌额~涨跌幅~最高~最低"}。
+     *
+     * <p>与 A 股那套完全不同的字段位：现价在 3、昨收在 4、最高 34、最低 35、时间 31。
+     */
+    private Quote fetchHkFromTencent(WatchTarget target) {
+        String url = "https://qt.gtimg.cn/q=hk" + target.getCode();
+        String body;
+        try {
+            body = doGet(url, java.nio.charset.Charset.forName("GBK"));
+        } catch (IOException e) {
+            log.debug("[watch] 腾讯港股取数失败 {}：{}", target, e.getMessage());
+            return null;
+        }
+        int begin = body.indexOf('"');
+        int end = body.lastIndexOf('"');
+        if (begin < 0 || end <= begin) {
+            return null;
+        }
+        String[] f = body.substring(begin + 1, end).split("~");
+        if (f.length < 36) {
+            return null;
+        }
+        BigDecimal price = decimal(f[3]);
+        BigDecimal preClose = decimal(f[4]);
+        boolean fromPreClose = false;
+        if (price == null || price.signum() <= 0) {
+            if (preClose == null || preClose.signum() <= 0) {
+                return null;
+            }
+            price = preClose;
+            fromPreClose = true;
+        }
+        String name = f[1] == null || f[1].trim().isEmpty() ? target.getName() : f[1].trim();
+        return new Quote(target.getCode(), name, price, preClose,
+                decimal(f[34]), decimal(f[35]), BigDecimal.ZERO, BigDecimal.ZERO,
+                System.currentTimeMillis(), f[31] == null ? "" : f[31].trim(), fromPreClose);
+    }
+
+    private Quote fetchFromSina(WatchTarget target) {
         String url = props.getSina().getBaseUrl() + "/list=" + target.getSymbol();
         long begin = System.currentTimeMillis();
         String body;
@@ -197,6 +274,10 @@ public class SinaQuoteClient {
     }
 
     private String doGet(String urlStr) throws IOException {
+        return doGet(urlStr, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private String doGet(String urlStr, java.nio.charset.Charset charset) throws IOException {
         WatchProperties.Sina sina = props.getSina();
         HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
         conn.setRequestMethod("GET");

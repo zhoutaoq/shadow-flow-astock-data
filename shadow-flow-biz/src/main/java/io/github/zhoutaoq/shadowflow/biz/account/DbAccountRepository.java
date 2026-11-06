@@ -40,7 +40,7 @@ public class DbAccountRepository implements AccountRepository {
             + " DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') AS update_time";
 
     private static final String POSITION_COLUMNS = "id, user_id, account_id, stock_code AS code,"
-            + " stock_name AS name, cost_price, quantity, available_qty, open_date,"
+            + " stock_name AS name, cost_price, prev_cost_price, quantity, available_qty, open_date,"
             + " day_buy_date, day_buy_qty, day_buy_amount,"
             + " DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') AS create_time,"
             + " DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') AS update_time";
@@ -275,6 +275,7 @@ public class DbAccountRepository implements AccountRepository {
                 .addValue("code", position.getCode())
                 .addValue("name", position.getName())
                 .addValue("cost", nz(position.getCostPrice()))
+                .addValue("prevCost", position.getPrevCostPrice())
                 .addValue("qty", position.getQuantity())
                 .addValue("availableQty", position.getAvailableQty())
                 .addValue("openDate", position.getOpenDate())
@@ -284,9 +285,9 @@ public class DbAccountRepository implements AccountRepository {
         if (position.getId() == null) {
             KeyHolder keys = new GeneratedKeyHolder();
             named.update("INSERT INTO " + T_POSITION
-                            + " (user_id, account_id, stock_code, stock_name, cost_price, quantity, available_qty,"
-                            + " open_date, day_buy_date, day_buy_qty, day_buy_amount)"
-                            + " VALUES (:uid, :aid, :code, :name, :cost, :qty, :availableQty,"
+                            + " (user_id, account_id, stock_code, stock_name, cost_price, prev_cost_price,"
+                            + " quantity, available_qty, open_date, day_buy_date, day_buy_qty, day_buy_amount)"
+                            + " VALUES (:uid, :aid, :code, :name, :cost, :prevCost, :qty, :availableQty,"
                             + " :openDate, :dayBuyDate, :dayBuyQty, :dayBuyAmount)",
                     params, keys, new String[]{"id"});
             Number key = keys.getKey();
@@ -298,7 +299,8 @@ public class DbAccountRepository implements AccountRepository {
             params.addValue("id", position.getId());
             named.update("UPDATE " + T_POSITION
                             + " SET stock_code = :code, stock_name = :name,"
-                            + " cost_price = :cost, quantity = :qty, available_qty = :availableQty,"
+                            + " cost_price = :cost, prev_cost_price = :prevCost,"
+                            + " quantity = :qty, available_qty = :availableQty,"
                             + " open_date = :openDate,"
                             + " day_buy_date = :dayBuyDate, day_buy_qty = :dayBuyQty,"
                             + " day_buy_amount = :dayBuyAmount"

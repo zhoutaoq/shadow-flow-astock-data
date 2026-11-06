@@ -35,6 +35,13 @@ public class Position {
     private String name;
     /** 成本价（元）：加仓时按「老成本市值 + 本次成交额」加权平均重算 */
     private BigDecimal costPrice = BigDecimal.ZERO;
+    /**
+     * 加仓前的成本价：只有在「已有持仓又买入」时才有值。
+     *
+     * <p>加仓会按加权平均把 costPrice 摊薄，摊完就看不出「我原来是 51 块买的」。
+     * 页面显示成 {@code 47.67（51.00）}，括号里那个就是它。
+     */
+    private BigDecimal prevCostPrice;
     /** 持仓数量（股） */
     private int quantity;
     /**
@@ -111,6 +118,14 @@ public class Position {
 
     public void setCostPrice(BigDecimal costPrice) {
         this.costPrice = costPrice;
+    }
+
+    public BigDecimal getPrevCostPrice() {
+        return prevCostPrice;
+    }
+
+    public void setPrevCostPrice(BigDecimal prevCostPrice) {
+        this.prevCostPrice = prevCostPrice;
     }
 
     public int getQuantity() {

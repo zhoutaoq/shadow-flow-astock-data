@@ -861,6 +861,19 @@
      * <p>昨收取不到（行情全挂、按成本价兜底）时不显示 —— 那时候现价不是成交价，
      * 拿它算涨跌幅只会误导。
      */
+    /**
+     * 成本价：加过仓就带上摊薄前的原成本。
+     *
+     * <p>加仓按加权平均摊薄后，`51.00` 变成 `47.67`，光看新数字会忘了自己原来是 51 买的。
+     * 显示成 `47.67（51.00）`，括号里是加仓前那一次的持仓成本。
+     */
+    function costWithPrev(p) {
+        const now = money(p.costPrice);
+        const prev = Number(p && p.prevCostPrice);
+        if (!(prev > 0)) return now;
+        return now + ' <small class="adim">（' + money(prev) + '）</small>';
+    }
+
     function dayChangeTag(p) {
         const pre = Number(p && p.preClose);
         const px = Number(p && p.price);
@@ -900,7 +913,7 @@
                     ? '<span class="abadge abadge-day">当日买入 ' + fmtNum(p.dayBuyQty, 0) + ' 股</span>' : '')
                 + '</td>'
                 + '<td class="adim">' + (p.openDate ? esc(p.openDate) : '—') + '</td>'
-                + '<td>' + money(p.costPrice) + '</td>'
+                + '<td>' + costWithPrev(p) + '</td>'
                 + '<td>' + money(p.price) + dayChangeTag(p) + quoteTimeTag(p) + '</td>'
                 + '<td>' + fmtNum(p.quantity, 0) + '</td>'
                 + '<td>' + fmtNum(usableQty(p), 0) + '</td>'
