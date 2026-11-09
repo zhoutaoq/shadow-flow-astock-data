@@ -148,6 +148,10 @@ public class AccountService {
      * 空着时才最后退回成本价。
      */
     private final Map<String, BigDecimal> lastPriceCache = new ConcurrentHashMap<>();
+    /** 上一次取到该价格的时刻；缓存没有时效的话，昨天买、今天卖掉的票会一直按旧价算 */
+    private final Map<String, Long> lastPriceAt = new ConcurrentHashMap<>();
+    /** 兜底价的保鲜期：超过这个时间就不该再拿来算「当日」的盈亏 */
+    private static final long LAST_PRICE_TTL_MS = 5 * 60_000L;
 
     /**
      * 估值行情的 2 秒短缓存。
@@ -963,7 +967,7 @@ public class AccountService {
                 continue;
             }
             todays.add(r);
-            if (!quotes.containsKey(r.getCode()) && !lastPriceCache.containsKey(r.getCode())) {
+            if (!quotes.containsKey(r.getCode())) {
                 missing.putIfAbsent(r.getCode(),
                         r.getName() == null || r.getName().trim().isEmpty() ? r.getCode() : r.getName());
             }
@@ -999,6 +1003,18 @@ public class AccountService {
     }
 
     /** 某只标的的现价：本轮行情 → 最近一次取到的有效价 → null */
+    /** 兜底价：超过保鲜期就当没有，宁可这一项不参与计算，也不能拿几小时前的价冒充现价 */
+    private BigDecimal freshLastPrice(String code) {
+        if (code == null) {
+            return null;
+        }
+        Long at = lastPriceAt.get(code);
+        if (at == null || System.currentTimeMillis() - at > LAST_PRICE_TTL_MS) {
+            return null;
+        }
+        return freshLastPrice(code);
+    }
+
     private BigDecimal priceOf(String code, Map<String, Quote> quotes, Map<String, Quote> extra) {
         if (code == null) {
             return null;
@@ -1293,7 +1309,7 @@ public class AccountService {
         if (q != null && q.getPrice() != null && q.getPrice().signum() > 0) {
             return new PricePick(q.getPrice(), q.isPriceFromPreClose() ? PRICE_PRE_CLOSE : PRICE_LIVE);
         }
-        BigDecimal last = p.getCode() == null ? null : lastPriceCache.get(p.getCode());
+        BigDecimal last = p.getCode() == null ? null : freshLastPrice(p.getCode());
         if (last != null && last.signum() > 0) {
             return new PricePick(last, PRICE_LAST);
         }
@@ -1639,6 +1655,7 @@ public class AccountService {
                     quoteCacheAt.put(code, now);
                     if (q.getPrice() != null && q.getPrice().signum() > 0 && !q.isPriceFromPreClose()) {
                         lastPriceCache.put(code, q.getPrice());
+                        lastPriceAt.put(code, now);
                     }
                 }
             } catch (Exception ex) {
