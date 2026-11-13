@@ -193,7 +193,7 @@ shadowflow:
     # 无数据库模式下：sys-config.json / stock-list.json / backtest/ 都落在这里
     data-dir: ./data
     # 单个文件表的行数上限。会无限增长的日志类数据按设计不落盘，这里只兜底防止文件膨胀
-    max-rows: 10000
+    max-rows: 20000
     # 历史回测最多保留多少条，超出淘汰最旧的
     backtest-keep: 500
   # 我的账户（v1.5.6 第 ⑥ 条）
