@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -76,9 +77,30 @@ public class FileStockListRepository implements StockListRepository, Reloadable 
                 log.warn("[stock-list] 未找到股票名录种子文件（{}），名录为空，页面只能手输代码",
                         props.getStockListFile());
             }
-        } else {
-            log.info("[stock-list] 无数据库模式：{} 已载入 {} 条股票", table.file(), rows.size());
+            return;
         }
+        // 上限截断过的存量名录不会自己长回来，启动时按种子补缺，已有条目不动
+        List<StockListItem> seed = readSeed();
+        if (!seed.isEmpty()) {
+            Set<String> exist = new HashSet<>();
+            for (StockListItem it : rows) {
+                exist.add(it.getStockCode());
+            }
+            List<StockListItem> missing = new ArrayList<>();
+            for (StockListItem s : seed) {
+                if (exist.add(s.getStockCode())) {
+                    missing.add(new StockListItem(s.getStockCode(), s.getStockName(), "stock"));
+                }
+            }
+            if (!missing.isEmpty()) {
+                List<StockListItem> fresh = new ArrayList<>(rows);
+                fresh.addAll(missing);
+                rows = reindex(fresh);
+                persist();
+                log.info("[stock-list] 补齐名录缺口 {} 条，现有 {} 条", missing.size(), rows.size());
+            }
+        }
+        log.info("[stock-list] 无数据库模式：{} 已载入 {} 条股票", table.file(), rows.size());
     }
 
     @Override
